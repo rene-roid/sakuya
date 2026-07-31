@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { LibrariesTab } from './LibrariesTab';
 import { JobsTab } from './JobsTab';
 import { TaggingTab } from './TaggingTab';
@@ -17,8 +18,14 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key'];
 
+function isTabKey(value: string | null): value is TabKey {
+  return TABS.some((t) => t.key === value);
+}
+
 export function Settings() {
-  const [tab, setTab] = useState<TabKey>('libraries');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab');
+  const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'libraries');
 
   return (
     <div className="fade-in mx-auto flex max-w-[1200px] gap-8 px-8 pb-16 pt-7">
