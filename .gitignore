@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+apps/server/data/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+.env
+.vscode/*
+/tmp
+/out-tsc
+.idea/
