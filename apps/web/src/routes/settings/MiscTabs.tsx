@@ -75,6 +75,52 @@ export function SystemTab() {
   );
 }
 
+export function BehaviorTab() {
+  const queryClient = useQueryClient();
+  const showToast = useToast();
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const rememberMute = settings?.remember_mute_state === '1';
+
+  const patchMutation = useMutation({
+    mutationFn: (value: boolean) => api.patchSettings({ remember_mute_state: value ? '1' : '0' }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data);
+      showToast('Behaviour updated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  return (
+    <div>
+      <TabHeader title="Behaviour" subtitle="Playback and interaction preferences." />
+      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13.5px] font-bold">Remember video mute state</div>
+            <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
+              When enabled, muting or unmuting a video carries over to the next video you play.
+            </div>
+          </div>
+          <div
+            role="switch"
+            aria-checked={rememberMute}
+            onClick={() => patchMutation.mutate(!rememberMute)}
+            className={`relative h-6 w-11 flex-none cursor-pointer rounded-full transition-colors ${
+              rememberMute ? 'bg-accent' : 'bg-zinc-700'
+            } ${patchMutation.isPending ? 'opacity-60' : ''}`}
+          >
+            <div
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                rememberMute ? 'translate-x-[22px]' : 'translate-x-0.5'
+              }`}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between text-[13px]">

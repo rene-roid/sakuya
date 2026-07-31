@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS libraries (
   type TEXT NOT NULL DEFAULT 'mixed',
   thumbnail_media_id INTEGER,
   created_at INTEGER NOT NULL,
-  last_visited_at INTEGER
+  last_visited_at INTEGER,
+  auto_scan_interval INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS folders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,6 +82,9 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 `);
+
+// Migrate existing databases: add columns that may not exist yet.
+try { sqlite.exec('ALTER TABLE libraries ADD COLUMN auto_scan_interval INTEGER NOT NULL DEFAULT 0'); } catch {}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(

@@ -10,7 +10,7 @@ import type { SystemInfo } from '@sakuya/shared';
 
 export const settingsRouter = Router();
 
-const EDITABLE_KEYS = new Set(['ai_tagging_enabled', 'confidence_threshold', 'accent_color']);
+const EDITABLE_KEYS = new Set(['ai_tagging_enabled', 'confidence_threshold', 'accent_color', 'remember_mute_state']);
 
 settingsRouter.get(
   '/api/settings',

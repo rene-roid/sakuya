@@ -34,9 +34,28 @@ export function LibrariesTab() {
     onError: (err: Error) => showToast(err.message),
   });
 
+  const scanAllMutation = useMutation({
+    mutationFn: async () => {
+      for (const lib of libraries ?? []) {
+        await api.scanLibrary(lib.id);
+      }
+    },
+    onSuccess: () => showToast('Scan started for all libraries'),
+    onError: (err: Error) => showToast(err.message),
+  });
+
   return (
     <div>
-      <TabHeader title="Libraries" subtitle="Manage read-only folder imports per library." />
+      <div className="flex items-center justify-between">
+        <TabHeader title="Libraries" subtitle="Manage read-only folder imports per library." />
+        <button
+          disabled={!libraries?.length || scanAllMutation.isPending}
+          onClick={() => scanAllMutation.mutate()}
+          className="mb-4 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+        >
+          Scan All
+        </button>
+      </div>
       {(libraries ?? []).map((lib) => (
         <LibraryCard key={lib.id} lib={lib} onChanged={invalidate} />
       ))}
@@ -71,14 +90,35 @@ export function LibrariesTab() {
   );
 }
 
+const AUTO_SCAN_OPTIONS = [
+  { label: 'Off', value: 0 },
+  { label: '15 min', value: 15 },
+  { label: '30 min', value: 30 },
+  { label: '1 hour', value: 60 },
+  { label: '2 hours', value: 120 },
+  { label: '6 hours', value: 360 },
+  { label: '12 hours', value: 720 },
+  { label: '24 hours', value: 1440 },
+];
+
 function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () => void }) {
   const showToast = useToast();
   const [folderInput, setFolderInput] = useState('');
   const [showFolderInput, setShowFolderInput] = useState(false);
+  const [showThumbPicker, setShowThumbPicker] = useState(false);
+  const [thumbBust, setThumbBust] = useState(0);
 
   const scanMutation = useMutation({
     mutationFn: () => api.scanLibrary(lib.id),
     onSuccess: () => showToast(`Scan started: ${lib.name}`),
+    onError: (err: Error) => showToast(err.message),
+  });
+  const autoScanMutation = useMutation({
+    mutationFn: (intervalMinutes: number) => api.updateLibrary(lib.id, { autoScanInterval: intervalMinutes }),
+    onSuccess: () => {
+      onChanged();
+      showToast('Auto-scan updated');
+    },
     onError: (err: Error) => showToast(err.message),
   });
   const addFolderMutation = useMutation({
@@ -112,10 +152,17 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
     <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-4">
       <div className="mb-2.5 flex items-center gap-2.5">
         <div className="flex flex-1 items-center gap-2.5">
-          <div className="h-10 w-10 flex-none overflow-hidden rounded-lg bg-zinc-900">
+          <div
+            className="group relative h-10 w-10 flex-none cursor-pointer overflow-hidden rounded-lg bg-zinc-900"
+            title="Edit thumbnail"
+            onClick={() => setShowThumbPicker(true)}
+          >
             {lib.thumbMediaId && (
-              <img src={thumbUrl(lib.thumbMediaId)} alt="" className="h-full w-full object-cover" />
+              <img src={thumbUrl(lib.thumbMediaId, thumbBust)} alt="" className="h-full w-full object-cover" />
             )}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-[11px] text-zinc-100 opacity-0 transition-opacity group-hover:opacity-100">
+              ✎
+            </div>
           </div>
           <div>
             <div className="text-sm font-bold">{lib.name}</div>
@@ -191,6 +238,129 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
           + Add folder
         </div>
       )}
+      <div className="mt-3 flex items-center gap-2.5 border-t border-zinc-800 pt-3">
+        <span className="text-[12px] text-zinc-500">Auto-scan</span>
+        <select
+          value={lib.autoScanInterval}
+          disabled={autoScanMutation.isPending}
+          onChange={(e) => autoScanMutation.mutate(Number(e.target.value))}
+          className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
+        >
+          {AUTO_SCAN_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+        {lib.autoScanInterval > 0 && (
+          <span className="text-[11px] text-zinc-600">
+            Next scan in ~{lib.autoScanInterval >= 60 ? `${lib.autoScanInterval / 60}h` : `${lib.autoScanInterval}m`}
+          </span>
+        )}
+      </div>
+      {showThumbPicker && (
+        <ThumbnailPickerModal
+          lib={lib}
+          onClose={() => setShowThumbPicker(false)}
+          onChanged={() => {
+            onChanged();
+            setThumbBust((b) => b + 1);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ThumbnailPickerModal({
+  lib,
+  onClose,
+  onChanged,
+}: {
+  lib: LibraryWithStats;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const showToast = useToast();
+  const [bust, setBust] = useState(0);
+  const { data: media } = useQuery({
+    queryKey: ['media', 'thumb-picker', lib.id],
+    queryFn: () => api.mediaList({ libraryId: lib.id, tags: [], sort: 'recent', dir: 'desc', seed: 1 }),
+  });
+
+  const setThumbMutation = useMutation({
+    mutationFn: (mediaId: number | null) => api.updateLibrary(lib.id, { thumbnailMediaId: mediaId }),
+    onSuccess: () => {
+      onChanged();
+      showToast('Library thumbnail updated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (mediaId: number) => api.regenerateThumbnail(mediaId),
+    onSuccess: () => {
+      setBust((b) => b + 1);
+      onChanged();
+      showToast('Thumbnail regenerated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const currentThumbId = lib.thumbMediaId;
+
+  return (
+    <div
+      className="fade-in fixed inset-0 z-[90] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[80vh] w-[560px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-1 flex items-center justify-between">
+          <div className="text-[15px] font-bold">Library thumbnail</div>
+          <div className="cursor-pointer text-zinc-500 hover:text-zinc-200" onClick={onClose}>
+            ✕
+          </div>
+        </div>
+        <div className="mb-3.5 text-[12.5px] text-zinc-500">
+          Pick a media item as the cover, or force-regenerate the current thumbnail image.
+        </div>
+        <div className="mb-3.5 flex gap-2">
+          <button
+            disabled={!currentThumbId || regenerateMutation.isPending}
+            onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}
+            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+          >
+            ↻ Regenerate current thumbnail
+          </button>
+          <button
+            disabled={lib.thumbnailMediaId === null || setThumbMutation.isPending}
+            onClick={() => setThumbMutation.mutate(null)}
+            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+          >
+            Use latest media
+          </button>
+        </div>
+        <div className="grid flex-1 grid-cols-5 gap-2 overflow-y-auto">
+          {(media?.items ?? []).map((m) => (
+            <div
+              key={m.id}
+              title={m.filename}
+              onClick={() => setThumbMutation.mutate(m.id)}
+              className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 ${
+                currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-zinc-700'
+              }`}
+            >
+              <img src={thumbUrl(m.id, bust)} alt="" className="h-full w-full object-cover" />
+            </div>
+          ))}
+          {media && media.items.length === 0 && (
+            <div className="col-span-5 py-6 text-center text-[12.5px] text-zinc-600">No media in this library yet.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

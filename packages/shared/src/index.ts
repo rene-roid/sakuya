@@ -17,6 +17,7 @@ export interface Library {
   thumbnailMediaId: number | null;
   createdAt: number;
   lastVisitedAt: number | null;
+  autoScanInterval: number;
 }
 
 export interface LibraryWithStats extends Library {
@@ -106,6 +107,7 @@ export interface Settings {
   confidence_threshold: string;
   accent_color: string;
   model_status: ModelStatus;
+  remember_mute_state: string;
 }
 
 export interface DashboardResponse {

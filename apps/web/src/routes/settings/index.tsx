@@ -3,7 +3,7 @@ import { LibrariesTab } from './LibrariesTab';
 import { JobsTab } from './JobsTab';
 import { TaggingTab } from './TaggingTab';
 import { UploadsTab } from './UploadsTab';
-import { AppearanceTab, SystemTab } from './MiscTabs';
+import { AppearanceTab, BehaviorTab, SystemTab } from './MiscTabs';
 
 const TABS = [
   { key: 'libraries', label: 'Libraries' },
@@ -11,6 +11,7 @@ const TABS = [
   { key: 'tagging', label: 'AI Tagging' },
   { key: 'uploads', label: 'Uploads' },
   { key: 'appearance', label: 'Appearance' },
+  { key: 'behavior', label: 'Behaviour' },
   { key: 'system', label: 'System' },
 ] as const;
 
@@ -42,6 +43,7 @@ export function Settings() {
         {tab === 'tagging' && <TaggingTab />}
         {tab === 'uploads' && <UploadsTab />}
         {tab === 'appearance' && <AppearanceTab />}
+        {tab === 'behavior' && <BehaviorTab />}
         {tab === 'system' && <SystemTab />}
       </div>
     </div>

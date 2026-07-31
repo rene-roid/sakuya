@@ -6,6 +6,7 @@ const DEFAULTS: Record<string, string> = {
   confidence_threshold: '35',
   accent_color: '#8b5cf6',
   model_status: 'absent',
+  remember_mute_state: '0',
 };
 
 export function getSetting(key: string): string {

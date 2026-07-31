@@ -6,6 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
+import { scheduleLibrary } from '../services/autoScan';
 import { thumbPathFor } from '../services/thumbnailer';
 import type { LibraryWithStats } from '@sakuya/shared';
 
@@ -26,6 +27,7 @@ export function libraryWithStats(row: typeof schema.libraries.$inferSelect): Lib
     thumbnailMediaId: row.thumbnailMediaId,
     createdAt: row.createdAt,
     lastVisitedAt: row.lastVisitedAt,
+    autoScanInterval: row.autoScanInterval,
     itemCount: count.c,
     thumbMediaId: thumb,
     folders: libFolders,
@@ -53,6 +55,7 @@ librariesRouter.get(
 const libraryBodySchema = z.object({
   name: z.string().min(1).max(120),
   type: z.enum(['image', 'video', 'mixed']).default('mixed'),
+  autoScanInterval: z.number().int().min(0).default(0),
 });
 
 librariesRouter.post(
@@ -61,9 +64,10 @@ librariesRouter.post(
     const body = libraryBodySchema.parse(req.body);
     const row = db
       .insert(schema.libraries)
-      .values({ name: body.name, type: body.type, createdAt: Date.now() })
+      .values({ name: body.name, type: body.type, autoScanInterval: body.autoScanInterval, createdAt: Date.now() })
       .returning()
       .get();
+    scheduleLibrary(row.id, row.autoScanInterval);
     res.status(201).json(libraryWithStats(row));
   }),
 );
@@ -75,6 +79,9 @@ librariesRouter.patch(
     const body = libraryBodySchema.partial().extend({ thumbnailMediaId: z.number().nullable().optional() }).parse(req.body);
     const row = db.update(schema.libraries).set(body).where(eq(schema.libraries.id, id)).returning().get();
     if (!row) return res.status(404).json({ error: 'Not found' });
+    if (body.autoScanInterval !== undefined) {
+      scheduleLibrary(id, row.autoScanInterval);
+    }
     res.json(libraryWithStats(row));
   }),
 );

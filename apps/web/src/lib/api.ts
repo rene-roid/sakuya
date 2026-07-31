@@ -62,8 +62,12 @@ export const api = {
   dashboard: () => request<DashboardResponse>('/api/dashboard'),
   libraries: () => request<LibraryWithStats[]>('/api/libraries'),
   library: (id: number) => request<LibraryWithStats>(`/api/libraries/${id}`),
-  createLibrary: (body: { name: string; type: string }) =>
+  createLibrary: (body: { name: string; type: string; autoScanInterval?: number }) =>
     request<LibraryWithStats>('/api/libraries', { method: 'POST', body: JSON.stringify(body) }),
+  updateLibrary: (
+    id: number,
+    body: { name?: string; type?: string; autoScanInterval?: number; thumbnailMediaId?: number | null },
+  ) => request<LibraryWithStats>(`/api/libraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteLibrary: (id: number) => request<{ ok: true }>(`/api/libraries/${id}`, { method: 'DELETE' }),
   addFolder: (libraryId: number, path: string) =>
     request(`/api/libraries/${libraryId}/folders`, { method: 'POST', body: JSON.stringify({ path }) }),
@@ -75,6 +79,7 @@ export const api = {
   patchTags: (id: number, body: { add?: string[]; remove?: string[] }) =>
     request<MediaDetail>(`/api/media/${id}/tags`, { method: 'PATCH', body: JSON.stringify(body) }),
   retag: (id: number) => request<{ job: Job }>(`/api/media/${id}/retag`, { method: 'POST' }),
+  regenerateThumbnail: (id: number) => request<{ ok: true }>(`/api/media/${id}/thumbnail/regenerate`, { method: 'POST' }),
   saveProgress: (id: number, progress: number) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number }) => {
@@ -95,4 +100,5 @@ export const api = {
 };
 
 export const fileUrl = (id: number) => `/api/media/${id}/file`;
-export const thumbUrl = (id: number) => `/api/media/${id}/thumbnail`;
+export const thumbUrl = (id: number, cacheBust?: number) =>
+  cacheBust ? `/api/media/${id}/thumbnail?v=${cacheBust}` : `/api/media/${id}/thumbnail`;

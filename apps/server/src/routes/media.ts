@@ -179,6 +179,19 @@ mediaRouter.get(
   }),
 );
 
+mediaRouter.post(
+  '/api/media/:id/thumbnail/regenerate',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
+    const thumb = await generateThumbnail(row.path, id, row.type, row.durationSeconds);
+    db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, id)).run();
+    res.json({ ok: true });
+  }),
+);
+
 const tagsPatchSchema = z.object({
   add: z.array(z.string().min(1)).default([]),
   remove: z.array(z.string().min(1)).default([]),

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Media } from '@sakuya/shared';
 import { api, fileUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { useToast } from './Toast';
+
+const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 
 interface MediaViewerProps {
   items: Media[];
@@ -26,6 +28,22 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     queryFn: () => api.mediaDetail(item.id),
     enabled: !!item,
   });
+
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const rememberMute = settings?.remember_mute_state === '1';
+
+  const initialMuted = useMemo(() => {
+    if (!rememberMute) return true;
+    return localStorage.getItem(MUTE_STORAGE_KEY) !== '0';
+  }, [rememberMute, item?.id]);
+
+  const handleVolumeChange = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      if (!rememberMute) return;
+      localStorage.setItem(MUTE_STORAGE_KEY, e.currentTarget.muted ? '1' : '0');
+    },
+    [rememberMute],
+  );
 
   const step = useCallback(
     (dir: number) => {
@@ -104,10 +122,11 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             ref={videoRef}
             src={fileUrl(item.id)}
             autoPlay
-            muted
+            muted={initialMuted}
             loop
             controls
             onTimeUpdate={saveProgress}
+            onVolumeChange={handleVolumeChange}
             className="max-h-[85%] max-w-[92%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
           />
         ) : (
