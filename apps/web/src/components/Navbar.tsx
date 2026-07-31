@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useJobs } from '../hooks/useJobs';
+import { TagSearchInput } from './TagSearchInput';
 
 function navPill(active: boolean): string {
   return `cursor-pointer rounded-[7px] px-3.5 py-[7px] text-[13.5px] font-semibold ${
@@ -31,23 +32,29 @@ function JobsButton() {
 
   return (
     <div ref={rootRef} className="relative">
-      <div
-        title="Jobs"
-        onClick={() => setOpen((v) => !v)}
-        className={`relative flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
-          open ? 'bg-zinc-800' : 'hover:bg-zinc-900'
-        }`}
-      >
-        ⟳
-        {activeJobs.length > 0 && (
-          <span className="absolute right-1 top-1 h-[7px] w-[7px] rounded-full bg-accent" />
-        )}
-      </div>
-      {open && (
-        <div className="absolute right-0 top-[42px] z-50 w-[280px] rounded-[10px] border border-zinc-800 bg-[#111113] p-3 shadow-xl">
-          <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.3px] text-zinc-500">Running jobs</div>
-          {activeJobs.length === 0 && <div className="mb-3 text-[12.5px] text-zinc-600">None</div>}
-          {activeJobs.length > 0 && (
+        <div
+            title="Jobs"
+            onClick={() => setOpen((v) => !v)}
+            className={`relative flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
+                open ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+            }`}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 className="lucide lucide-activity-icon lucide-activity">
+                <path
+                    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>
+            </svg>
+            {activeJobs.length > 0 && (
+                <span className="absolute right-1 top-1 h-[7px] w-[7px] rounded-full bg-accent"/>
+            )}
+        </div>
+        {open && (
+            <div
+                className="absolute right-0 top-[42px] z-50 w-[280px] rounded-[10px] border border-zinc-800 bg-[#111113] p-3 shadow-xl">
+                <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.3px] text-zinc-500">Running jobs</div>
+                {activeJobs.length === 0 && <div className="mb-3 text-[12.5px] text-zinc-600">None</div>}
+                {activeJobs.length > 0 && (
             <div className="mb-3 flex flex-col gap-2">
               {activeJobs.map((job) => (
                 <div key={job.id} className="rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2">
@@ -80,7 +87,11 @@ function JobsButton() {
 export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [search, setSearch] = useState('');
+  const [searchTags, setSearchTags] = useState<string[]>([]);
+
+  const goToBoard = (tags: string[]) => {
+    navigate(tags.length ? `/board?tags=${tags.map(encodeURIComponent).join(',')}` : '/board');
+  };
 
   return (
     <div className="sticky top-0 z-40 flex h-[60px] items-center gap-6 border-b border-zinc-800 bg-zinc-950/75 px-5 backdrop-blur-xl">
@@ -100,32 +111,51 @@ export function Navbar() {
           Board
         </NavLink>
       </div>
-      <div className="relative ml-2 max-w-[420px] flex-1">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-zinc-500">⌕</span>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const q = search.trim();
-              navigate(q ? `/board?q=${encodeURIComponent(q)}` : '/board');
-            }
+      <div className="ml-2 max-w-[420px] flex-1">
+        <TagSearchInput
+          tags={searchTags}
+          onAddTag={(tag) => {
+            const next = [...searchTags, tag];
+            setSearchTags(next);
+            goToBoard(next);
           }}
+          onRemoveTag={(tag) => {
+            const next = searchTags.filter((t) => t !== tag);
+            setSearchTags(next);
+            goToBoard(next);
+          }}
+          onFreeText={(q) => navigate(`/board?q=${encodeURIComponent(q)}`)}
           placeholder="Search tags, titles..."
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 py-2 pl-8 pr-3 text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
         />
       </div>
       <div className="flex-1" />
       <JobsButton />
-      <div
-        title="Settings"
-        onClick={() => navigate('/settings')}
-        className={`flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
-          location.pathname.startsWith('/settings') ? 'bg-zinc-800' : 'hover:bg-zinc-900'
-        }`}
-      >
-        ⚙
-      </div>
+        <div
+            title="Settings"
+            onClick={() => navigate('/settings')}
+            className={`flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
+                location.pathname.startsWith('/settings') ? 'bg-zinc-800' : 'hover:bg-zinc-900'
+            }`}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                 className="lucide lucide-cog-icon lucide-cog">
+                <path d="M11 10.27 7 3.34"/>
+                <path d="m11 13.73-4 6.93"/>
+                <path d="M12 22v-2"/>
+                <path d="M12 2v2"/>
+                <path d="M14 12h8"/>
+                <path d="m17 20.66-1-1.73"/>
+                <path d="m17 3.34-1 1.73"/>
+                <path d="M2 12h2"/>
+                <path d="m20.66 17-1.73-1"/>
+                <path d="m20.66 7-1.73 1"/>
+                <path d="m3.34 17 1.73-1"/>
+                <path d="m3.34 7 1.73 1"/>
+                <circle cx="12" cy="12" r="2"/>
+                <circle cx="12" cy="12" r="8"/>
+            </svg>
+        </div>
     </div>
   );
 }

@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
 import { useMediaInfinite } from '../hooks/useMedia';
 import { FilterToolbar } from '../components/FilterToolbar';
@@ -6,11 +9,41 @@ import { TagSidebar } from '../components/TagSidebar';
 import { MediaGrid } from '../components/MediaGrid';
 import { MediaViewer } from '../components/MediaViewer';
 
+const BOARD_FILTERS_KEY = 'sakuya:boardFilters';
+
 export function Board() {
   const [filters, actions] = useFilters();
   const media = useMediaInfinite(filters);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const rememberFilters = settings?.board_remember_filters !== '0';
+  const restored = useRef(false);
+
+  // Restore last-used filters (once) when landing on a bare /board, if remembering is on.
+  useEffect(() => {
+    if (restored.current || settings === undefined) return;
+    restored.current = true;
+    if (!rememberFilters) {
+      localStorage.removeItem(BOARD_FILTERS_KEY);
+      return;
+    }
+    if (!location.search) {
+      const stored = localStorage.getItem(BOARD_FILTERS_KEY);
+      if (stored) navigate(`/board?${stored}`, { replace: true });
+    }
+  }, [settings, rememberFilters, location.search, navigate]);
+
+  // Persist current filters as they change.
+  useEffect(() => {
+    if (!rememberFilters) return;
+    const qs = location.search.replace(/^\?/, '');
+    if (qs) localStorage.setItem(BOARD_FILTERS_KEY, qs);
+    else localStorage.removeItem(BOARD_FILTERS_KEY);
+  }, [location.search, rememberFilters]);
 
   return (
     <div className="fade-in flex">

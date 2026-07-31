@@ -7,6 +7,11 @@ const DEFAULTS: Record<string, string> = {
   accent_color: '#8b5cf6',
   model_status: 'absent',
   remember_mute_state: '0',
+  autosearch_first_tag: '1',
+  continue_where_left: '1',
+  thumbnail_cache_enabled: '1',
+  board_remember_filters: '1',
+  tagger_model: 'wd-swinv2-tagger-v3',
 };
 
 export function getSetting(key: string): string {
@@ -35,4 +40,8 @@ export function aiTaggingEnabled(): boolean {
 export function confidenceThreshold(): number {
   const pct = Number(getSetting('confidence_threshold'));
   return Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) / 100 : 0.35;
+}
+
+export function thumbnailCacheEnabled(): boolean {
+  return getSetting('thumbnail_cache_enabled') !== '0';
 }

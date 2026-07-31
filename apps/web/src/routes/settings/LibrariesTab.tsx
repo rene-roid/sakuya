@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, thumbUrl } from '../../lib/api';
+import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { TabHeader } from './index';
 import type { LibraryWithStats } from '@sakuya/shared';
@@ -157,8 +157,12 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
             title="Edit thumbnail"
             onClick={() => setShowThumbPicker(true)}
           >
-            {lib.thumbMediaId && (
-              <img src={thumbUrl(lib.thumbMediaId, thumbBust)} alt="" className="h-full w-full object-cover" />
+            {lib.customImagePath ? (
+              <img src={libraryCoverUrl(lib.id, thumbBust)} alt="" className="h-full w-full object-cover" />
+            ) : (
+              lib.thumbMediaId && (
+                <img src={thumbUrl(lib.thumbMediaId, thumbBust)} alt="" className="h-full w-full object-cover" />
+              )
             )}
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-[11px] text-zinc-100 opacity-0 transition-opacity group-hover:opacity-100">
               ✎
@@ -283,6 +287,7 @@ function ThumbnailPickerModal({
 }) {
   const showToast = useToast();
   const [bust, setBust] = useState(0);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: media } = useQuery({
     queryKey: ['media', 'thumb-picker', lib.id],
     queryFn: () => api.mediaList({ libraryId: lib.id, tags: [], sort: 'recent', dir: 'desc', seed: 1 }),
@@ -307,6 +312,26 @@ function ThumbnailPickerModal({
     onError: (err: Error) => showToast(err.message),
   });
 
+  const uploadCoverMutation = useMutation({
+    mutationFn: (file: File) => api.uploadLibraryCover(lib.id, file),
+    onSuccess: () => {
+      setBust((b) => b + 1);
+      onChanged();
+      showToast('Custom cover uploaded');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const removeCoverMutation = useMutation({
+    mutationFn: () => api.removeLibraryCover(lib.id),
+    onSuccess: () => {
+      setBust((b) => b + 1);
+      onChanged();
+      showToast('Custom cover removed');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
   const currentThumbId = lib.thumbMediaId;
 
   return (
@@ -325,9 +350,38 @@ function ThumbnailPickerModal({
           </div>
         </div>
         <div className="mb-3.5 text-[12.5px] text-zinc-500">
-          Pick a media item as the cover, or force-regenerate the current thumbnail image.
+          {lib.customImagePath
+            ? 'A custom cover is set. It stays fixed until removed — pick a media item or remove it to auto-update again.'
+            : 'Pick a media item as the cover, upload a custom image, or force-regenerate the current thumbnail.'}
         </div>
-        <div className="mb-3.5 flex gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) uploadCoverMutation.mutate(file);
+            e.target.value = '';
+          }}
+        />
+        <div className="mb-3.5 flex flex-wrap gap-2">
+          <button
+            disabled={uploadCoverMutation.isPending}
+            onClick={() => fileInputRef.current?.click()}
+            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+          >
+            ⬆ Upload custom image
+          </button>
+          {lib.customImagePath && (
+            <button
+              disabled={removeCoverMutation.isPending}
+              onClick={() => removeCoverMutation.mutate()}
+              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-40"
+            >
+              Remove custom image
+            </button>
+          )}
           <button
             disabled={!currentThumbId || regenerateMutation.isPending}
             onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}

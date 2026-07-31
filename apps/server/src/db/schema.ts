@@ -5,6 +5,7 @@ export const libraries = sqliteTable('libraries', {
   name: text('name').notNull(),
   type: text('type', { enum: ['image', 'video', 'mixed'] }).notNull().default('mixed'),
   thumbnailMediaId: integer('thumbnail_media_id'),
+  customImagePath: text('custom_image_path'),
   createdAt: integer('created_at').notNull(),
   lastVisitedAt: integer('last_visited_at'),
   autoScanInterval: integer('auto_scan_interval').notNull().default(0),
@@ -39,6 +40,9 @@ export const media = sqliteTable(
     taggedAt: integer('tagged_at'),
     lastViewedAt: integer('last_viewed_at'),
     viewProgress: real('view_progress').notNull().default(0),
+    liked: integer('liked').notNull().default(0),
+    likedAt: integer('liked_at'),
+    perceptualHash: text('perceptual_hash'),
   },
   (t) => [
     uniqueIndex('media_path_idx').on(t.path),
@@ -46,6 +50,7 @@ export const media = sqliteTable(
     index('media_created_idx').on(t.createdAt),
     index('media_type_idx').on(t.type),
     index('media_hash_idx').on(t.contentHash),
+    index('media_liked_idx').on(t.liked),
   ],
 );
 
@@ -77,7 +82,7 @@ export const mediaTags = sqliteTable(
 
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  type: text('type', { enum: ['scan', 'tag', 'thumbnail', 'model-download'] }).notNull(),
+  type: text('type', { enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash'] }).notNull(),
   libraryId: integer('library_id'),
   label: text('label').notNull().default(''),
   status: text('status', { enum: ['queued', 'running', 'done', 'error'] }).notNull().default('queued'),

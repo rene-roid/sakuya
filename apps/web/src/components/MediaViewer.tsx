@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Media } from '@sakuya/shared';
-import { api, fileUrl } from '../lib/api';
+import { useNavigate } from 'react-router-dom';
+import type { Media, MediaTag, TagCategory } from '@sakuya/shared';
+import { api, fileUrl, thumbUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { useToast } from './Toast';
+import { HeartButton } from './HeartButton';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 
@@ -15,12 +17,23 @@ interface MediaViewerProps {
   onNearEnd?: () => void;
 }
 
+const ADD_CATEGORIES: { key: TagCategory; label: string }[] = [
+  { key: 'general', label: 'General' },
+  { key: 'character', label: 'Character' },
+  { key: 'rating', label: 'Rating' },
+];
+
 export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
-  const item = items[index];
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const showToast = useToast();
   const [tagInput, setTagInput] = useState('');
+  const [addCategory, setAddCategory] = useState<TagCategory>('general');
+  // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
+  const [jumpItem, setJumpItem] = useState<Media | null>(null);
+  const item = jumpItem ?? items[index];
   const lastSavedProgress = useRef(0);
+  const completedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const { data: detail } = useQuery({
@@ -31,6 +44,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
   const rememberMute = settings?.remember_mute_state === '1';
+  const resumeEnabled = settings?.continue_where_left !== '0';
+
+  const { data: similar } = useQuery({
+    queryKey: ['similar', item?.id],
+    queryFn: () => api.similar(item.id),
+    enabled: !!item,
+    staleTime: 30_000,
+  });
 
   const initialMuted = useMemo(() => {
     if (!rememberMute) return true;
@@ -45,9 +66,42 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     [rememberMute],
   );
 
+  const saveProgress = useCallback(() => {
+    const video = videoRef.current;
+    if (!video || !video.duration || !item) return;
+    // Once the video has been watched to the end, stop tracking for this mount so that
+    // the autoloop restarting at 0 doesn't re-add it to Continue Watching.
+    if (completedRef.current) return;
+    const progress = Math.min(video.currentTime / video.duration, 1);
+    if (progress >= 0.98) {
+      completedRef.current = true;
+      lastSavedProgress.current = progress;
+      api.saveProgress(item.id, progress).catch(() => {});
+      return;
+    }
+    if (Math.abs(progress - lastSavedProgress.current) < 0.03) return;
+    lastSavedProgress.current = progress;
+    api.saveProgress(item.id, progress).catch(() => {});
+  }, [item]);
+
+  // Mark viewed (updates lastViewedAt for both images and videos) when a new item opens.
+  useEffect(() => {
+    if (!item) return;
+    completedRef.current = false;
+    lastSavedProgress.current = item.viewProgress ?? 0;
+    api.saveProgress(item.id, item.viewProgress ?? 0).catch(() => {});
+  }, [item?.id]);
+
+  const handleClose = useCallback(() => {
+    saveProgress();
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    onClose();
+  }, [saveProgress, queryClient, onClose]);
+
   const step = useCallback(
     (dir: number) => {
       if (!items.length) return;
+      setJumpItem(null);
       let next = index + dir;
       if (next < 0) next = items.length - 1;
       if (next >= items.length) next = 0;
@@ -59,16 +113,29 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') handleClose();
       else if (e.key === 'ArrowRight') step(1);
       else if (e.key === 'ArrowLeft') step(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, step]);
+  }, [handleClose, step]);
+
+  const onLoadedMetadata = useCallback(
+    (e: React.SyntheticEvent<HTMLVideoElement>) => {
+      if (!resumeEnabled || !item) return;
+      const video = e.currentTarget;
+      const p = item.viewProgress;
+      if (p > 0.01 && p < 0.98 && video.duration) {
+        video.currentTime = p * video.duration;
+      }
+    },
+    [resumeEnabled, item],
+  );
 
   const tagMutation = useMutation({
-    mutationFn: (body: { add?: string[]; remove?: string[] }) => api.patchTags(item.id, body),
+    mutationFn: (body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> }) =>
+      api.patchTags(item.id, body),
     onSuccess: (updated) => {
       queryClient.setQueryData(['media-detail', item.id], updated);
       queryClient.invalidateQueries({ queryKey: ['tags'] });
@@ -84,25 +151,29 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     onError: (err: Error) => showToast(err.message),
   });
 
-  const saveProgress = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || !video.duration || !item) return;
-    const progress = Math.min(video.currentTime / video.duration, 1);
-    if (Math.abs(progress - lastSavedProgress.current) < 0.03) return;
-    lastSavedProgress.current = progress;
-    api.saveProgress(item.id, progress).catch(() => {});
-  }, [item]);
+  const openTag = useCallback(
+    (tag: string) => {
+      handleClose();
+      navigate(`/board?tags=${encodeURIComponent(tag)}`);
+    },
+    [handleClose, navigate],
+  );
 
   if (!item) return null;
+
+  const hasSimilar = (similar?.duplicates.length ?? 0) > 0 || (similar?.similar.length ?? 0) > 0;
 
   return (
     <div className="fade-in fixed inset-0 z-[80] flex bg-zinc-950/92 backdrop-blur">
       <div className="relative flex min-w-0 flex-1 items-center justify-center p-10">
-        <div
-          className="absolute right-4 top-4 z-10 flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-base text-zinc-100 hover:bg-white/10"
-          onClick={onClose}
-        >
-          ✕
+        <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
+          <div
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-base text-zinc-100 hover:bg-white/10"
+            onClick={handleClose}
+          >
+            ✕
+          </div>
         </div>
         <div
           className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/5 text-lg text-zinc-100 hover:bg-white/10"
@@ -125,6 +196,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             muted={initialMuted}
             loop
             controls
+            onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={saveProgress}
             onVolumeChange={handleVolumeChange}
             className="max-h-[85%] max-w-[92%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
@@ -135,6 +207,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             src={fileUrl(item.id)}
             alt={item.filename}
             className="max-h-[85%] max-w-[92%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+          />
+        )}
+
+        {hasSimilar && (
+          <SimilarPanel
+            duplicates={similar?.duplicates ?? []}
+            similar={similar?.similar ?? []}
+            onPick={(m) => setJumpItem(m)}
           />
         )}
       </div>
@@ -162,40 +242,150 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
         </div>
         <div className="mb-3 flex flex-wrap gap-1.5">
           {(detail?.tags ?? []).map((tag) => (
-            <div
+            <TagPill
               key={tag.name}
-              title={tag.confidence != null ? `${tag.source} · ${(tag.confidence * 100).toFixed(0)}%` : tag.source}
-              className={`flex items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${
-                tag.category === 'rating'
-                  ? 'bg-accent/20 text-violet-300'
-                  : tag.category === 'character'
-                    ? 'bg-emerald-500/15 text-emerald-300'
-                    : 'bg-zinc-800 text-zinc-200'
-              }`}
-            >
-              <span>{tag.name}</span>
-              <span
-                className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
-                onClick={() => tagMutation.mutate({ remove: [tag.name] })}
-              >
-                ×
-              </span>
-            </div>
+              tag={tag}
+              onOpen={() => openTag(tag.name)}
+              onRemove={() => tagMutation.mutate({ remove: [tag.name] })}
+              onSetCategory={(category) => tagMutation.mutate({ setCategory: { [tag.name]: category } })}
+            />
           ))}
           {detail && detail.tags.length === 0 && <div className="text-[11.5px] text-zinc-600">No tags yet</div>}
+        </div>
+        <div className="mb-1.5 flex gap-1">
+          {ADD_CATEGORIES.map((c) => (
+            <div
+              key={c.key}
+              onClick={() => setAddCategory(c.key)}
+              className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold ${
+                addCategory === c.key ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {c.label}
+            </div>
+          ))}
         </div>
         <input
           value={tagInput}
           onChange={(e) => setTagInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && tagInput.trim()) {
-              tagMutation.mutate({ add: [tagInput.trim()] });
+              tagMutation.mutate({ add: [tagInput.trim()], category: addCategory });
               setTagInput('');
             }
           }}
-          placeholder="Add tag, press Enter…"
+          placeholder={`Add ${addCategory} tag, press Enter…`}
           className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
         />
+      </div>
+    </div>
+  );
+}
+
+function categoryClasses(category: TagCategory): string {
+  return category === 'rating'
+    ? 'bg-accent/20 text-violet-300'
+    : category === 'character'
+      ? 'bg-emerald-500/15 text-emerald-300'
+      : 'bg-zinc-800 text-zinc-200';
+}
+
+function TagPill({
+  tag,
+  onOpen,
+  onRemove,
+  onSetCategory,
+}: {
+  tag: MediaTag;
+  onOpen: () => void;
+  onRemove: () => void;
+  onSetCategory: (category: TagCategory) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  return (
+    <div
+      title={tag.confidence != null ? `${tag.source} · ${(tag.confidence * 100).toFixed(0)}%` : tag.source}
+      className={`relative flex items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)}`}
+    >
+      <span className="cursor-pointer hover:underline" onClick={onOpen}>
+        {tag.name}
+      </span>
+      <span
+        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 text-[9px] hover:bg-white/20"
+        onClick={() => setMenuOpen((v) => !v)}
+        title="Change category"
+      >
+        ▾
+      </span>
+      <span
+        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+        onClick={onRemove}
+      >
+        ×
+      </span>
+      {menuOpen && (
+        <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl">
+          {(['general', 'character', 'rating', 'user'] as TagCategory[]).map((c) => (
+            <div
+              key={c}
+              className="cursor-pointer px-3 py-1.5 text-[11.5px] capitalize text-zinc-200 hover:bg-zinc-800"
+              onClick={() => {
+                setMenuOpen(false);
+                onSetCategory(c);
+              }}
+            >
+              {c}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SimilarPanel({
+  duplicates,
+  similar,
+  onPick,
+}: {
+  duplicates: Media[];
+  similar: Media[];
+  onPick: (m: Media) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  return (
+    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-zinc-800 bg-zinc-950/85 p-3 backdrop-blur">
+      <div className="mb-2 flex cursor-pointer items-center justify-between" onClick={() => setCollapsed((c) => !c)}>
+        <span className="text-[11px] font-bold tracking-[0.4px] text-zinc-400">SIMILAR & DUPLICATES</span>
+        <span className="text-zinc-500">{collapsed ? '▸' : '▾'}</span>
+      </div>
+      {!collapsed && (
+        <div className="flex flex-col gap-2">
+          {duplicates.length > 0 && (
+            <Section title={`Duplicates (${duplicates.length})`} items={duplicates} onPick={onPick} />
+          )}
+          {similar.length > 0 && <Section title={`Similar (${similar.length})`} items={similar} onPick={onPick} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, items, onPick }: { title: string; items: Media[]; onPick: (m: Media) => void }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10.5px] font-semibold text-zinc-500">{title}</div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {items.map((m) => (
+          <img
+            key={m.id}
+            src={thumbUrl(m.id)}
+            alt={m.filename}
+            title={m.filename}
+            onClick={() => onPick(m)}
+            className="h-12 w-12 flex-none cursor-pointer rounded-md border border-zinc-800 object-cover hover:border-accent"
+          />
+        ))}
       </div>
     </div>
   );

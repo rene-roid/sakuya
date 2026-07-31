@@ -14,8 +14,28 @@ export const MODEL_TAGS_PATH = path.join(MODELS_DIR, 'selected_tags.csv');
 export const PORT = Number(process.env.PORT ?? 3777);
 export const APP_VERSION = '0.1.0';
 
-export const MODEL_REPO_BASE =
-  'https://huggingface.co/SmilingWolf/wd-swinv2-tagger-v3/resolve/main';
+// Curated WD v3 taggers — all share 448px input + the same selected_tags.csv format,
+// so they are drop-in compatible with the existing preprocessing/inference code.
+export interface TaggerModelDef {
+  id: string;
+  label: string;
+  repo: string;
+}
+
+export const MODEL_REGISTRY: TaggerModelDef[] = [
+  { id: 'wd-swinv2-tagger-v3', label: 'WD SwinV2 v3 (default)', repo: 'SmilingWolf/wd-swinv2-tagger-v3' },
+  { id: 'wd-convnext-tagger-v3', label: 'WD ConvNeXT v3', repo: 'SmilingWolf/wd-convnext-tagger-v3' },
+  { id: 'wd-vit-tagger-v3', label: 'WD ViT v3', repo: 'SmilingWolf/wd-vit-tagger-v3' },
+  { id: 'wd-vit-large-tagger-v3', label: 'WD ViT Large v3', repo: 'SmilingWolf/wd-vit-large-tagger-v3' },
+  { id: 'wd-eva02-large-tagger-v3', label: 'WD EVA02 Large v3', repo: 'SmilingWolf/wd-eva02-large-tagger-v3' },
+];
+
+export const DEFAULT_MODEL_ID = 'wd-swinv2-tagger-v3';
+
+export function modelRepoBase(id: string): string {
+  const def = MODEL_REGISTRY.find((m) => m.id === id) ?? MODEL_REGISTRY[0];
+  return `https://huggingface.co/${def.repo}/resolve/main`;
+}
 
 export const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tiff']);
 export const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v', '.ts', '.wmv']);

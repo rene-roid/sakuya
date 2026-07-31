@@ -2,7 +2,7 @@ export type LibraryType = 'image' | 'video' | 'mixed';
 export type MediaType = 'image' | 'video';
 export type MediaSource = 'folder' | 'upload';
 export type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
-export type JobType = 'scan' | 'tag' | 'thumbnail' | 'model-download';
+export type JobType = 'scan' | 'tag' | 'thumbnail' | 'model-download' | 'hash';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
 export type TagSource = 'ai' | 'user';
@@ -15,6 +15,7 @@ export interface Library {
   name: string;
   type: LibraryType;
   thumbnailMediaId: number | null;
+  customImagePath: string | null;
   createdAt: number;
   lastVisitedAt: number | null;
   autoScanInterval: number;
@@ -50,6 +51,9 @@ export interface Media {
   taggedAt: number | null;
   lastViewedAt: number | null;
   viewProgress: number;
+  liked: boolean;
+  likedAt: number | null;
+  perceptualHash?: string | null;
   tagCount: number;
   libraryName?: string;
 }
@@ -88,6 +92,7 @@ export interface MediaListQuery {
   libraryId?: number;
   type?: MediaType;
   tags?: string[];
+  liked?: boolean;
   q?: string;
   sort?: SortMode;
   dir?: SortDir;
@@ -108,19 +113,40 @@ export interface Settings {
   accent_color: string;
   model_status: ModelStatus;
   remember_mute_state: string;
+  autosearch_first_tag: string;
+  continue_where_left: string;
+  thumbnail_cache_enabled: string;
+  board_remember_filters: string;
+  tagger_model: string;
 }
 
 export interface DashboardResponse {
   libraries: LibraryWithStats[];
   continueWatching: Media[];
+  recentlyViewed: Media[];
   recentlyAdded: Media[];
+  likedCount: number;
+  likedSampleId: number | null;
+}
+
+export interface TaggerModel {
+  id: string;
+  label: string;
+  repo: string;
 }
 
 export interface TaggerStatus {
   status: ModelStatus;
+  model: string;
   modelSizeBytes: number | null;
   tagCount: number | null;
   untaggedCount: number;
+  unhashedCount: number;
+}
+
+export interface SimilarResponse {
+  duplicates: Media[];
+  similar: Media[];
 }
 
 export interface SystemInfo {

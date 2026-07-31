@@ -6,36 +6,18 @@ import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
-import type { Media, MediaDetail, MediaListResponse } from '@sakuya/shared';
+import { rowToMedia } from '../lib/rowToMedia';
+import { thumbnailCacheEnabled } from '../lib/settings';
+import { hammingDistance } from '../services/perceptualHash';
+import type { MediaDetail, MediaListResponse, SimilarResponse } from '@sakuya/shared';
 
 export const mediaRouter = Router();
-
-function rowToMedia(row: any): Media {
-  return {
-    id: row.id,
-    libraryId: row.library_id,
-    source: row.source,
-    path: row.path,
-    filename: row.filename,
-    type: row.type,
-    width: row.width,
-    height: row.height,
-    sizeBytes: row.size_bytes,
-    durationSeconds: row.duration_seconds,
-    createdAt: row.created_at,
-    indexedAt: row.indexed_at,
-    taggedAt: row.tagged_at,
-    lastViewedAt: row.last_viewed_at,
-    viewProgress: row.view_progress,
-    tagCount: row.tag_count ?? 0,
-    libraryName: row.library_name ?? undefined,
-  };
-}
 
 const listQuerySchema = z.object({
   libraryId: z.coerce.number().int().optional(),
   type: z.enum(['image', 'video']).optional(),
   tags: z.string().optional(),
+  liked: z.coerce.number().int().optional(),
   q: z.string().optional(),
   sort: z.enum(['recent', 'name', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
@@ -63,6 +45,9 @@ mediaRouter.get(
     if (query.type) {
       conds.push('m.type = ?');
       params.push(query.type);
+    }
+    if (query.liked) {
+      conds.push('m.liked = 1');
     }
     if (query.q) {
       conds.push(
@@ -169,6 +154,12 @@ mediaRouter.get(
     const id = intParam(req.params.id);
     const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
     if (!row) return res.status(404).json({ error: 'Not found' });
+    // When the thumbnail cache is disabled, serve the original image directly.
+    // Videos always need a generated frame (a raw video is not a usable thumbnail).
+    if (!thumbnailCacheEnabled() && row.type === 'image') {
+      if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
+      return res.sendFile(row.path, { cacheControl: true, maxAge: '1h' });
+    }
     const thumb = thumbPathFor(id);
     if (!fs.existsSync(thumb)) {
       if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
@@ -192,9 +183,14 @@ mediaRouter.post(
   }),
 );
 
+const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
+
 const tagsPatchSchema = z.object({
   add: z.array(z.string().min(1)).default([]),
   remove: z.array(z.string().min(1)).default([]),
+  category: z.enum(TAG_CATEGORIES).default('user'),
+  // Change an existing tag's global category: { name -> category }.
+  setCategory: z.record(z.enum(TAG_CATEGORIES)).optional(),
 });
 
 mediaRouter.patch(
@@ -208,7 +204,7 @@ mediaRouter.patch(
     for (const raw of body.add) {
       const name = raw.trim().toLowerCase().replace(/\s+/g, '_');
       if (!name) continue;
-      const tagId = upsertTag(name, 'user');
+      const tagId = upsertTag(name, body.category);
       db.insert(schema.mediaTags)
         .values({ mediaId: id, tagId, confidence: null, source: 'user' })
         .onConflictDoNothing()
@@ -224,8 +220,77 @@ mediaRouter.patch(
         .run();
       touched.push(tag.id);
     }
+    if (body.setCategory) {
+      for (const [rawName, category] of Object.entries(body.setCategory)) {
+        const name = rawName.trim().toLowerCase();
+        db.update(schema.tags).set({ category }).where(eq(schema.tags.name, name)).run();
+      }
+    }
     refreshUsageCounts(touched);
     res.json(getDetail(id));
+  }),
+);
+
+const likeSchema = z.object({ liked: z.boolean() });
+
+mediaRouter.patch(
+  '/api/media/:id/like',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const { liked } = likeSchema.parse(req.body);
+    db.update(schema.media)
+      .set({ liked: liked ? 1 : 0, likedAt: liked ? Date.now() : null })
+      .where(eq(schema.media.id, id))
+      .run();
+    res.json(getDetail(id));
+  }),
+);
+
+mediaRouter.get(
+  '/api/media/:id/similar',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+
+    // Exact duplicates: same cheap content hash (size + first 4 MB).
+    const duplicates = row.contentHash
+      ? (sqlite
+          .query(
+            `SELECT m.*, l.name AS library_name,
+                    (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+             FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+             WHERE m.content_hash = ? AND m.id != ? LIMIT 24`,
+          )
+          .all(row.contentHash, id) as any[]).map(rowToMedia)
+      : [];
+
+    // Visual similarity: perceptual-hash hamming distance (images only).
+    const dupIds = new Set(duplicates.map((d) => d.id));
+    const similar: SimilarResponse['similar'] = [];
+    if (row.perceptualHash) {
+      const candidates = sqlite
+        .query(
+          `SELECT m.*, l.name AS library_name,
+                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+           FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+           WHERE m.type = 'image' AND m.perceptual_hash IS NOT NULL AND m.id != ?`,
+        )
+        .all(id) as any[];
+      const scored: { media: any; dist: number }[] = [];
+      for (const cand of candidates) {
+        if (dupIds.has(cand.id)) continue;
+        const dist = hammingDistance(row.perceptualHash, cand.perceptual_hash);
+        if (dist <= 10) scored.push({ media: cand, dist });
+      }
+      scored.sort((a, b) => a.dist - b.dist);
+      for (const s of scored.slice(0, 12)) similar.push(rowToMedia(s.media));
+    }
+
+    const body: SimilarResponse = { duplicates, similar };
+    res.json(body);
   }),
 );
 

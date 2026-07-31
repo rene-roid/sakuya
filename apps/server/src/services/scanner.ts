@@ -148,6 +148,15 @@ export async function indexFile(
   } catch (err) {
     console.error(`thumbnail failed for ${filePath}:`, err);
   }
+  if (type === 'image') {
+    try {
+      const { computeDHash } = await import('./perceptualHash');
+      const phash = await computeDHash(filePath);
+      db.update(schema.media).set({ perceptualHash: phash }).where(eq(schema.media.id, mediaId)).run();
+    } catch (err) {
+      console.error(`perceptual hash failed for ${filePath}:`, err);
+    }
+  }
   return mediaId;
 }
 

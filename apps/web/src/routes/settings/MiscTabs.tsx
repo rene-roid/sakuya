@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Settings } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
 import { useToast } from '../../components/Toast';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TabHeader } from './index';
 
 const ACCENTS = ['#8b5cf6', '#14b8a6', '#f43f5e'];
@@ -46,6 +49,10 @@ export function SystemTab() {
   const showToast = useToast();
   const queryClient = useQueryClient();
   const { data: info } = useQuery({ queryKey: ['system'], queryFn: api.system });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const [showCacheWarning, setShowCacheWarning] = useState(false);
+
+  const cacheEnabled = settings?.thumbnail_cache_enabled !== '0';
 
   const clearMutation = useMutation({
     mutationFn: api.clearThumbnails,
@@ -56,9 +63,37 @@ export function SystemTab() {
     onError: (err: Error) => showToast(err.message),
   });
 
+  const cacheMutation = useMutation({
+    mutationFn: (value: boolean) => api.patchSettings({ thumbnail_cache_enabled: value ? '1' : '0' }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data);
+      showToast('Thumbnail cache setting updated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
   return (
     <div>
       <TabHeader title="System" subtitle="Storage and maintenance." />
+      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13.5px] font-bold">Thumbnail cache</div>
+            <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
+              Generate and serve small webp thumbnails. Disabling serves full-resolution originals for images
+              (videos still use a generated frame).
+            </div>
+          </div>
+          <ToggleSwitch
+            checked={cacheEnabled}
+            pending={cacheMutation.isPending}
+            onChange={(value) => {
+              if (!value) setShowCacheWarning(true);
+              else cacheMutation.mutate(true);
+            }}
+          />
+        </div>
+      </div>
       <div className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
         <Row label="Version" value={info?.version ?? '—'} />
         <Row label="Media stored" value={info ? `${info.mediaCount} files · ${formatBytes(info.mediaBytes)}` : '—'} />
@@ -71,6 +106,46 @@ export function SystemTab() {
           Clear thumbnail cache
         </div>
       </div>
+      {showCacheWarning && (
+        <ConfirmDialog
+          title="Disable thumbnail cache?"
+          danger
+          confirmLabel="Disable anyway"
+          body="Without cached thumbnails, the board and dashboard will load full-resolution images directly. This can significantly hurt performance and load times on large libraries."
+          onCancel={() => setShowCacheWarning(false)}
+          onConfirm={() => {
+            setShowCacheWarning(false);
+            cacheMutation.mutate(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+export function ToggleSwitch({
+  checked,
+  onChange,
+  pending,
+}: {
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  pending?: boolean;
+}) {
+  return (
+    <div
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative h-6 w-11 flex-none cursor-pointer rounded-full transition-colors ${
+        checked ? 'bg-accent' : 'bg-zinc-700'
+      } ${pending ? 'opacity-60' : ''}`}
+    >
+      <div
+        className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+          checked ? 'translate-x-[22px]' : 'translate-x-0.5'
+        }`}
+      />
     </div>
   );
 }
@@ -79,10 +154,9 @@ export function BehaviorTab() {
   const queryClient = useQueryClient();
   const showToast = useToast();
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
-  const rememberMute = settings?.remember_mute_state === '1';
 
   const patchMutation = useMutation({
-    mutationFn: (value: boolean) => api.patchSettings({ remember_mute_state: value ? '1' : '0' }),
+    mutationFn: (body: Record<string, string>) => api.patchSettings(body),
     onSuccess: (data) => {
       queryClient.setQueryData(['settings'], data);
       showToast('Behaviour updated');
@@ -90,32 +164,55 @@ export function BehaviorTab() {
     onError: (err: Error) => showToast(err.message),
   });
 
+  const rows: { key: keyof Settings; label: string; desc: string; defaultOn?: boolean }[] = [
+    {
+      key: 'remember_mute_state',
+      label: 'Remember video mute state',
+      desc: 'Muting or unmuting a video carries over to the next video you play.',
+    },
+    {
+      key: 'continue_where_left',
+      label: 'Continue where you left off (video)',
+      desc: 'Resume videos at the position you last stopped watching.',
+      defaultOn: true,
+    },
+    {
+      key: 'autosearch_first_tag',
+      label: 'Auto-search first tag on Enter',
+      desc: 'Pressing Enter in a search box adds the first matching tag instead of a free-text search.',
+      defaultOn: true,
+    },
+    {
+      key: 'board_remember_filters',
+      label: 'Remember board filters',
+      desc: 'Restore your last Board filters when you return. Turn off to reset the board each time you leave.',
+      defaultOn: true,
+    },
+  ];
+
   return (
     <div>
       <TabHeader title="Behaviour" subtitle="Playback and interaction preferences." />
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="text-[13.5px] font-bold">Remember video mute state</div>
-            <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
-              When enabled, muting or unmuting a video carries over to the next video you play.
+      <div className="flex flex-col gap-2.5">
+        {rows.map((row) => {
+          const raw = settings?.[row.key];
+          const checked = raw !== undefined ? raw === '1' : !!row.defaultOn;
+          return (
+            <div key={row.key} className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[13.5px] font-bold">{row.label}</div>
+                  <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">{row.desc}</div>
+                </div>
+                <ToggleSwitch
+                  checked={checked}
+                  pending={patchMutation.isPending}
+                  onChange={(value) => patchMutation.mutate({ [row.key]: value ? '1' : '0' })}
+                />
+              </div>
             </div>
-          </div>
-          <div
-            role="switch"
-            aria-checked={rememberMute}
-            onClick={() => patchMutation.mutate(!rememberMute)}
-            className={`relative h-6 w-11 flex-none cursor-pointer rounded-full transition-colors ${
-              rememberMute ? 'bg-accent' : 'bg-zinc-700'
-            } ${patchMutation.isPending ? 'opacity-60' : ''}`}
-          >
-            <div
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                rememberMute ? 'translate-x-[22px]' : 'translate-x-0.5'
-              }`}
-            />
-          </div>
-        </div>
+          );
+        })}
       </div>
     </div>
   );

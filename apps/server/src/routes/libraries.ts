@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
@@ -8,6 +10,7 @@ import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
 import { scheduleLibrary } from '../services/autoScan';
 import { thumbPathFor } from '../services/thumbnailer';
+import { UPLOADS_DIR } from '../lib/config';
 import type { LibraryWithStats } from '@sakuya/shared';
 
 export const librariesRouter = Router();
@@ -25,11 +28,13 @@ export function libraryWithStats(row: typeof schema.libraries.$inferSelect): Lib
     name: row.name,
     type: row.type,
     thumbnailMediaId: row.thumbnailMediaId,
+    customImagePath: row.customImagePath ?? null,
     createdAt: row.createdAt,
     lastVisitedAt: row.lastVisitedAt,
     autoScanInterval: row.autoScanInterval,
     itemCount: count.c,
-    thumbMediaId: thumb,
+    // Cover precedence: custom uploaded image wins; otherwise a media thumbnail.
+    thumbMediaId: row.customImagePath ? null : thumb,
     folders: libFolders,
   };
 }
@@ -161,5 +166,70 @@ librariesRouter.post(
   wrap(async (req, res) => {
     const job = enqueueScanJob(intParam(req.params.id));
     res.json({ job });
+  }),
+);
+
+// Serve a library's custom cover image (if set).
+librariesRouter.get(
+  '/api/libraries/:id/cover',
+  wrap(async (req, res) => {
+    const row = db.select().from(schema.libraries).where(eq(schema.libraries.id, intParam(req.params.id))).get();
+    if (!row || !row.customImagePath || !fs.existsSync(row.customImagePath)) {
+      return res.status(404).json({ error: 'No custom cover' });
+    }
+    res.sendFile(row.customImagePath, { cacheControl: true, maxAge: '1h' });
+  }),
+);
+
+// Upload a custom cover image (multipart). Overrides the auto/media cover until removed.
+librariesRouter.post(
+  '/api/libraries/:id/cover',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const lib = db.select().from(schema.libraries).where(eq(schema.libraries.id, id)).get();
+    if (!lib) return res.status(404).json({ error: 'Not found' });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk as Buffer);
+    const request = new Request('http://localhost/api/libraries/cover', {
+      method: 'POST',
+      headers: { 'content-type': req.headers['content-type'] ?? '' },
+      body: Buffer.concat(chunks),
+    });
+    const form = await request.formData();
+    const file = form.get('file');
+    if (!file || typeof file === 'string') return res.status(400).json({ error: 'No file provided' });
+
+    const ext = (path.extname((file as any).name || '') || '.jpg').toLowerCase();
+    const dest = path.join(UPLOADS_DIR, `cover-${id}-${crypto.randomBytes(4).toString('hex')}${ext}`);
+    await fsp.writeFile(dest, Buffer.from(await (file as any).arrayBuffer()));
+
+    // Remove any previous custom cover file.
+    if (lib.customImagePath) await fsp.unlink(lib.customImagePath).catch(() => {});
+    const row = db
+      .update(schema.libraries)
+      .set({ customImagePath: dest })
+      .where(eq(schema.libraries.id, id))
+      .returning()
+      .get();
+    res.json(libraryWithStats(row));
+  }),
+);
+
+// Remove the custom cover, re-enabling the auto/media cover.
+librariesRouter.delete(
+  '/api/libraries/:id/cover',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const lib = db.select().from(schema.libraries).where(eq(schema.libraries.id, id)).get();
+    if (!lib) return res.status(404).json({ error: 'Not found' });
+    if (lib.customImagePath) await fsp.unlink(lib.customImagePath).catch(() => {});
+    const row = db
+      .update(schema.libraries)
+      .set({ customImagePath: null })
+      .where(eq(schema.libraries.id, id))
+      .returning()
+      .get();
+    res.json(libraryWithStats(row));
   }),
 );

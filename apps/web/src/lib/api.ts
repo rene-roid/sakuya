@@ -5,8 +5,11 @@ import type {
   MediaDetail,
   MediaListResponse,
   Settings,
+  SimilarResponse,
   SystemInfo,
+  TagCategory,
   TagCount,
+  TaggerModel,
   TaggerStatus,
 } from '@sakuya/shared';
 
@@ -19,9 +22,11 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // FormData sets its own multipart Content-Type (with boundary); don't override it.
+  const isForm = typeof FormData !== 'undefined' && init?.body instanceof FormData;
   const res = await fetch(path, {
     ...init,
-    headers: init?.body ? { 'Content-Type': 'application/json', ...init?.headers } : init?.headers,
+    headers: init?.body && !isForm ? { 'Content-Type': 'application/json', ...init?.headers } : init?.headers,
   });
   if (!res.ok) {
     let message = res.statusText;
@@ -38,6 +43,7 @@ export interface MediaFilters {
   libraryId?: number;
   type?: 'image' | 'video';
   tags: string[];
+  liked?: boolean;
   q?: string;
   sort: 'recent' | 'name' | 'random';
   dir: 'asc' | 'desc';
@@ -49,6 +55,7 @@ export function mediaQueryString(filters: MediaFilters, cursor?: string): string
   if (filters.libraryId) params.set('libraryId', String(filters.libraryId));
   if (filters.type) params.set('type', filters.type);
   if (filters.tags.length) params.set('tags', filters.tags.join(','));
+  if (filters.liked) params.set('liked', '1');
   if (filters.q) params.set('q', filters.q);
   params.set('sort', filters.sort);
   params.set('dir', filters.dir);
@@ -76,8 +83,13 @@ export const api = {
   mediaList: (filters: MediaFilters, cursor?: string) =>
     request<MediaListResponse>(`/api/media?${mediaQueryString(filters, cursor)}`),
   mediaDetail: (id: number) => request<MediaDetail>(`/api/media/${id}`),
-  patchTags: (id: number, body: { add?: string[]; remove?: string[] }) =>
-    request<MediaDetail>(`/api/media/${id}/tags`, { method: 'PATCH', body: JSON.stringify(body) }),
+  patchTags: (
+    id: number,
+    body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> },
+  ) => request<MediaDetail>(`/api/media/${id}/tags`, { method: 'PATCH', body: JSON.stringify(body) }),
+  likeMedia: (id: number, liked: boolean) =>
+    request<MediaDetail>(`/api/media/${id}/like`, { method: 'PATCH', body: JSON.stringify({ liked }) }),
+  similar: (id: number) => request<SimilarResponse>(`/api/media/${id}/similar`),
   retag: (id: number) => request<{ job: Job }>(`/api/media/${id}/retag`, { method: 'POST' }),
   regenerateThumbnail: (id: number) => request<{ ok: true }>(`/api/media/${id}/thumbnail/regenerate`, { method: 'POST' }),
   saveProgress: (id: number, progress: number) =>
@@ -98,8 +110,21 @@ export const api = {
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
   taggerTagAll: () => request<{ job: Job }>('/api/tagger/tag-all', { method: 'POST' }),
+  taggerModels: () => request<TaggerModel[]>('/api/tagger/models'),
+  selectTaggerModel: (modelId: string) =>
+    request<TaggerStatus>('/api/tagger/select', { method: 'POST', body: JSON.stringify({ modelId }) }),
+  taggerHashAll: () => request<{ job: Job }>('/api/tagger/hash-all', { method: 'POST' }),
+  uploadLibraryCover: (id: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return request<LibraryWithStats>(`/api/libraries/${id}/cover`, { method: 'POST', body: form });
+  },
+  removeLibraryCover: (id: number) =>
+    request<LibraryWithStats>(`/api/libraries/${id}/cover`, { method: 'DELETE' }),
 };
 
 export const fileUrl = (id: number) => `/api/media/${id}/file`;
 export const thumbUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/media/${id}/thumbnail?v=${cacheBust}` : `/api/media/${id}/thumbnail`;
+export const libraryCoverUrl = (id: number, cacheBust?: number) =>
+  cacheBust ? `/api/libraries/${id}/cover?v=${cacheBust}` : `/api/libraries/${id}/cover`;

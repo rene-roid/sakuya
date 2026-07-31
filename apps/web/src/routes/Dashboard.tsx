@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import type { Media } from '@sakuya/shared';
-import { api, thumbUrl } from '../lib/api';
+import { api, thumbUrl, libraryCoverUrl } from '../lib/api';
 import { WideCard } from '../components/MediaCard';
 import { MediaViewer } from '../components/MediaViewer';
 
@@ -15,10 +15,38 @@ export function Dashboard() {
     <div className="fade-in mx-auto max-w-[1400px] px-8 pb-16 pt-7">
       <SectionHeader title="Your Libraries" />
       <div className="mb-9 flex gap-4 overflow-x-auto pb-2">
+        <div className="w-[220px] flex-none cursor-pointer" onClick={() => navigate('/board?liked=1')}>
+          <div className="relative h-[130px] w-[220px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+            {data?.likedSampleId ? (
+              <img src={thumbUrl(data.likedSampleId)} alt="Likes" className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-3xl text-rose-500/70">
+                  <svg
+                  xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
+                </svg>
+              </div>
+            )}
+              <div className="absolute left-2 top-2 flex items-center gap-1 rounded-md bg-rose-500/80 px-[7px] py-0.5 text-[10px] font-bold tracking-[0.4px] text-white backdrop-blur">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
+                </svg>
+                LIKES
+              </div>
+              <div
+                  className="absolute right-2 top-2 rounded-md bg-black/60 px-[7px] py-0.5 text-[10px] font-semibold tracking-[0.4px] text-zinc-200 backdrop-blur">
+                  {data?.likedCount ?? 0} ITEMS
+              </div>
+          </div>
+            <div className="mt-2 text-[13px] font-semibold text-zinc-100">Likes</div>
+            <div className="mt-px text-[11px] text-zinc-500">Media you hearted</div>
+        </div>
         {(data?.libraries ?? []).map((lib) => (
           <div key={lib.id} className="w-[220px] flex-none cursor-pointer" onClick={() => navigate(`/library/${lib.id}`)}>
             <div className="relative h-[130px] w-[220px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
-              {lib.thumbMediaId ? (
+              {lib.customImagePath ? (
+                <img src={libraryCoverUrl(lib.id)} alt={lib.name} className="h-full w-full object-cover" />
+              ) : lib.thumbMediaId ? (
                 <img src={thumbUrl(lib.thumbMediaId)} alt={lib.name} className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-2xl text-zinc-700">◌</div>
@@ -56,6 +84,21 @@ export function Dashboard() {
         ))}
         {data && data.continueWatching.length === 0 && (
           <div className="py-6 text-[12.5px] text-zinc-600">Videos you start watching will show up here.</div>
+        )}
+      </div>
+
+      <SectionHeader title="Recently Viewed" onSeeAll={() => navigate('/board')} />
+      <div className="mb-9 flex gap-3.5 overflow-x-auto pb-2">
+        {(data?.recentlyViewed ?? []).map((item, i) => (
+          <WideCard
+            key={item.id}
+            item={item}
+            showProgress={item.type === 'video'}
+            onClick={() => setViewer({ items: data!.recentlyViewed, index: i })}
+          />
+        ))}
+        {data && data.recentlyViewed.length === 0 && (
+          <div className="py-6 text-[12.5px] text-zinc-600">Images and videos you open will show up here.</div>
         )}
       </div>
 

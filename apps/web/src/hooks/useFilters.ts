@@ -14,6 +14,7 @@ export interface FilterActions {
   removeTag(tag: string): void;
   setLibrary(id: number | undefined): void;
   setQ(q: string): void;
+  toggleLiked(): void;
 }
 
 export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions] {
@@ -31,6 +32,7 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
       dir,
       seed: Number(params.get('seed') ?? 1) || 1,
       tags: (params.get('tags') ?? '').split(',').filter(Boolean),
+      liked: params.get('liked') === '1',
       q: params.get('q') ?? undefined,
       libraryId: fixedLibraryId ?? (libParam ? Number(libParam) : undefined),
     };
@@ -84,6 +86,7 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
         }),
       setLibrary: (id) => update((p) => (id ? p.set('library', String(id)) : p.delete('library'))),
       setQ: (q) => update((p) => (q ? p.set('q', q) : p.delete('q'))),
+      toggleLiked: () => update((p) => (p.get('liked') === '1' ? p.delete('liked') : p.set('liked', '1'))),
     }),
     [update],
   );

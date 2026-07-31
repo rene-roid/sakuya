@@ -1,6 +1,7 @@
 import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
+import { HeartButton } from './HeartButton';
 
 export function TypeBadge({ type }: { type: 'image' | 'video' }) {
   return (
@@ -37,6 +38,13 @@ export function MediaCard({ item, onClick }: { item: Media; onClick: () => void 
         />
         <TypeBadge type={item.type} />
         <DurationBadge seconds={item.durationSeconds} />
+        <div
+          className={`absolute right-1.5 top-1.5 transition-opacity ${
+            item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          <HeartButton mediaId={item.id} liked={item.liked} />
+        </div>
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
           <div className="truncate text-xs font-bold text-white">{item.filename}</div>
           <div className="mt-0.5 text-[10.5px] text-zinc-300">
@@ -59,7 +67,7 @@ export function WideCard({
   showProgress?: boolean;
 }) {
   return (
-    <div className="w-[200px] flex-none cursor-pointer" onClick={onClick}>
+    <div className="group w-[200px] flex-none cursor-pointer" onClick={onClick}>
       <div className="relative h-[112px] w-[200px] overflow-hidden rounded-[10px] border border-zinc-800 bg-zinc-900">
         <img src={thumbUrl(item.id)} alt={item.filename} loading="lazy" className="h-full w-full object-cover" />
         {showProgress && (
@@ -69,6 +77,13 @@ export function WideCard({
         )}
         <TypeBadge type={item.type} />
         <DurationBadge seconds={item.durationSeconds} />
+        <div
+          className={`absolute right-1.5 top-1.5 transition-opacity ${
+            item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          }`}
+        >
+          <HeartButton mediaId={item.id} liked={item.liked} size="sm" />
+        </div>
       </div>
       <div className="mt-[7px] truncate text-[12.5px] font-semibold text-zinc-200">{item.filename}</div>
       <div className="mt-px text-[11px] text-zinc-500">{item.libraryName}</div>

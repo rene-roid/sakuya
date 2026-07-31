@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS libraries (
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'mixed',
   thumbnail_media_id INTEGER,
+  custom_image_path TEXT,
   created_at INTEGER NOT NULL,
   last_visited_at INTEGER,
   auto_scan_interval INTEGER NOT NULL DEFAULT 0
@@ -42,7 +43,10 @@ CREATE TABLE IF NOT EXISTS media (
   indexed_at INTEGER,
   tagged_at INTEGER,
   last_viewed_at INTEGER,
-  view_progress REAL NOT NULL DEFAULT 0
+  view_progress REAL NOT NULL DEFAULT 0,
+  liked INTEGER NOT NULL DEFAULT 0,
+  liked_at INTEGER,
+  perceptual_hash TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
 CREATE INDEX IF NOT EXISTS media_library_idx ON media(library_id);
@@ -85,6 +89,11 @@ CREATE TABLE IF NOT EXISTS settings (
 
 // Migrate existing databases: add columns that may not exist yet.
 try { sqlite.exec('ALTER TABLE libraries ADD COLUMN auto_scan_interval INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { sqlite.exec('ALTER TABLE libraries ADD COLUMN custom_image_path TEXT'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN liked INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN liked_at INTEGER'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN perceptual_hash TEXT'); } catch {}
+try { sqlite.exec('CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)'); } catch {}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(

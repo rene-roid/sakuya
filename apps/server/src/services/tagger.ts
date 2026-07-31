@@ -3,8 +3,8 @@ import fsp from 'node:fs/promises';
 import sharp from 'sharp';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
-import { MODEL_PATH, MODEL_TAGS_PATH, MODEL_REPO_BASE } from '../lib/config';
-import { confidenceThreshold, setSetting } from '../lib/settings';
+import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, DEFAULT_MODEL_ID, MODEL_REGISTRY } from '../lib/config';
+import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
@@ -33,16 +33,45 @@ export function untaggedMediaIds(): number[] {
     .map((r) => r.id);
 }
 
+export function selectedModelId(): string {
+  return getSetting('tagger_model') || DEFAULT_MODEL_ID;
+}
+
+function unhashedImageCount(): number {
+  const row = sqlite
+    .query(`SELECT COUNT(*) AS c FROM media WHERE type = 'image' AND perceptual_hash IS NULL`)
+    .get() as { c: number };
+  return row.c;
+}
+
 export function taggerStatus(): TaggerStatus {
   const untaggedCount = untaggedMediaIds().length;
-  if (downloading) return { status: 'downloading', modelSizeBytes: null, tagCount: null, untaggedCount };
-  if (!modelReady()) return { status: 'absent', modelSizeBytes: null, tagCount: null, untaggedCount };
+  const unhashedCount = unhashedImageCount();
+  const model = selectedModelId();
+  if (downloading) return { status: 'downloading', model, modelSizeBytes: null, tagCount: null, untaggedCount, unhashedCount };
+  if (!modelReady()) return { status: 'absent', model, modelSizeBytes: null, tagCount: null, untaggedCount, unhashedCount };
   return {
     status: 'ready',
+    model,
     modelSizeBytes: fs.statSync(MODEL_PATH).size,
     tagCount: loadLabels().length,
     untaggedCount,
+    unhashedCount,
   };
+}
+
+/** Switch the active tagger model. Clears cached model files/session so the new one must be downloaded. */
+export function selectModel(modelId: string): void {
+  if (downloading) throw new Error('Cannot switch models while a download is in progress');
+  if (!MODEL_REGISTRY.some((m) => m.id === modelId)) throw new Error(`Unknown model: ${modelId}`);
+  if (selectedModelId() === modelId) return;
+  setSetting('tagger_model', modelId);
+  // Model files are shared paths; a switch invalidates the currently-downloaded model.
+  session = null;
+  labels = null;
+  fs.rmSync(MODEL_PATH, { force: true });
+  fs.rmSync(MODEL_TAGS_PATH, { force: true });
+  setSetting('model_status', 'absent');
 }
 
 function loadLabels(): LabelEntry[] {
@@ -209,6 +238,40 @@ export function enqueueTagJob(mediaIds: number[], label: string, libraryId: numb
   );
 }
 
+export function unhashedImageIds(): number[] {
+  return (
+    sqlite
+      .query(`SELECT id FROM media WHERE type = 'image' AND perceptual_hash IS NULL`)
+      .all() as { id: number }[]
+  ).map((r) => r.id);
+}
+
+export function enqueueHashJob(mediaIds: number[]) {
+  return enqueueJob('hash', `Compute image hashes (${mediaIds.length} files)`, async (job: JobHandle) => {
+    const { computeDHash } = await import('./perceptualHash');
+    job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
+    let hashed = 0;
+    let errors = 0;
+    for (let i = 0; i < mediaIds.length; i++) {
+      try {
+        const row = db.select().from(schema.media).where(eq(schema.media.id, mediaIds[i])).get();
+        if (row && row.type === 'image' && fs.existsSync(row.path)) {
+          const hash = await computeDHash(row.path);
+          db.update(schema.media).set({ perceptualHash: hash }).where(eq(schema.media.id, mediaIds[i])).run();
+          hashed++;
+        }
+      } catch (err) {
+        errors++;
+        console.error(`hashing failed for media ${mediaIds[i]}:`, err);
+      }
+      if (i % 5 === 0 || i === mediaIds.length - 1) {
+        job.update({ progress: i + 1, log: `Hashed ${i + 1}/${mediaIds.length} images…` });
+      }
+    }
+    return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
+  });
+}
+
 async function downloadFile(url: string, dest: string, onProgress: (received: number, total: number) => void) {
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
@@ -235,13 +298,15 @@ export function enqueueModelDownload() {
   if (downloading) throw new Error('Model download already in progress');
   downloading = true;
   setSetting('model_status', 'downloading');
-  return enqueueJob('model-download', 'Download tagger model (wd-swinv2-tagger-v3)', async (job: JobHandle) => {
+  const modelId = selectedModelId();
+  const repoBase = modelRepoBase(modelId);
+  return enqueueJob('model-download', `Download tagger model (${modelId})`, async (job: JobHandle) => {
     try {
       job.update({ total: 100, log: 'Downloading selected_tags.csv…' });
-      await downloadFile(`${MODEL_REPO_BASE}/selected_tags.csv`, MODEL_TAGS_PATH, () => {});
+      await downloadFile(`${repoBase}/selected_tags.csv`, MODEL_TAGS_PATH, () => {});
       job.update({ progress: 2, log: 'Downloading model.onnx (~430 MB)…' });
       let lastPct = 0;
-      await downloadFile(`${MODEL_REPO_BASE}/model.onnx`, MODEL_PATH, (received, total) => {
+      await downloadFile(`${repoBase}/model.onnx`, MODEL_PATH, (received, total) => {
         if (!total) return;
         const pct = 2 + Math.round((received / total) * 97);
         if (pct !== lastPct) {
