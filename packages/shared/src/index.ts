@@ -120,6 +120,7 @@ export interface TaggerStatus {
   status: ModelStatus;
   modelSizeBytes: number | null;
   tagCount: number | null;
+  untaggedCount: number;
 }
 
 export interface SystemInfo {

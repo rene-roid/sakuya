@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import sharp from 'sharp';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { MODEL_PATH, MODEL_TAGS_PATH, MODEL_REPO_BASE } from '../lib/config';
 import { confidenceThreshold, setSetting } from '../lib/settings';
@@ -24,13 +24,24 @@ export function modelReady(): boolean {
   return fs.existsSync(MODEL_PATH) && fs.existsSync(MODEL_TAGS_PATH);
 }
 
+export function untaggedMediaIds(): number[] {
+  return db
+    .select({ id: schema.media.id })
+    .from(schema.media)
+    .where(isNull(schema.media.taggedAt))
+    .all()
+    .map((r) => r.id);
+}
+
 export function taggerStatus(): TaggerStatus {
-  if (downloading) return { status: 'downloading', modelSizeBytes: null, tagCount: null };
-  if (!modelReady()) return { status: 'absent', modelSizeBytes: null, tagCount: null };
+  const untaggedCount = untaggedMediaIds().length;
+  if (downloading) return { status: 'downloading', modelSizeBytes: null, tagCount: null, untaggedCount };
+  if (!modelReady()) return { status: 'absent', modelSizeBytes: null, tagCount: null, untaggedCount };
   return {
     status: 'ready',
     modelSizeBytes: fs.statSync(MODEL_PATH).size,
     tagCount: loadLabels().length,
+    untaggedCount,
   };
 }
 

@@ -97,6 +97,7 @@ export const api = {
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
+  taggerTagAll: () => request<{ job: Job }>('/api/tagger/tag-all', { method: 'POST' }),
 };
 
 export const fileUrl = (id: number) => `/api/media/${id}/file`;

@@ -41,8 +41,10 @@ export function JobsProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries({ queryKey: ['dashboard'] });
         queryClient.invalidateQueries({ queryKey: ['libraries'] });
         queryClient.invalidateQueries({ queryKey: ['tags'] });
-        if (job.type === 'model-download') {
+        if (job.type === 'model-download' || job.type === 'tag') {
           queryClient.invalidateQueries({ queryKey: ['tagger'] });
+        }
+        if (job.type === 'model-download') {
           queryClient.invalidateQueries({ queryKey: ['settings'] });
         }
       }
