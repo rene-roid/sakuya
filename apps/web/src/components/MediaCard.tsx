@@ -36,7 +36,7 @@ export function MediaCard({ item, onClick }: { item: Media; onClick: () => void 
           loading="lazy"
           className="h-full w-full object-cover"
         />
-        <TypeBadge type={item.type} />
+        {item.type === 'video' && <TypeBadge type={item.type} />}
         <DurationBadge seconds={item.durationSeconds} />
         <div
           className={`absolute right-1.5 top-1.5 transition-opacity ${
@@ -75,7 +75,7 @@ export function WideCard({
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />
           </div>
         )}
-        <TypeBadge type={item.type} />
+        {item.type === 'video' && <TypeBadge type={item.type} />}
         <DurationBadge seconds={item.durationSeconds} />
         <div
           className={`absolute right-1.5 top-1.5 transition-opacity ${

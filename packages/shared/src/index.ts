@@ -113,6 +113,7 @@ export interface Settings {
   accent_color: string;
   model_status: ModelStatus;
   remember_mute_state: string;
+  remember_volume_level: string;
   autosearch_first_tag: string;
   continue_where_left: string;
   thumbnail_cache_enabled: string;

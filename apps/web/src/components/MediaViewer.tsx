@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import type { Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
@@ -8,6 +9,7 @@ import { useToast } from './Toast';
 import { HeartButton } from './HeartButton';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
+const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
 
 interface MediaViewerProps {
   items: Media[];
@@ -44,6 +46,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
   const rememberMute = settings?.remember_mute_state === '1';
+  const rememberVolume = settings?.remember_volume_level !== '0';
   const resumeEnabled = settings?.continue_where_left !== '0';
 
   const { data: similar } = useQuery({
@@ -60,10 +63,10 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   const handleVolumeChange = useCallback(
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
-      if (!rememberMute) return;
-      localStorage.setItem(MUTE_STORAGE_KEY, e.currentTarget.muted ? '1' : '0');
+      if (rememberMute) localStorage.setItem(MUTE_STORAGE_KEY, e.currentTarget.muted ? '1' : '0');
+      if (rememberVolume) localStorage.setItem(VOLUME_STORAGE_KEY, String(e.currentTarget.volume));
     },
-    [rememberMute],
+    [rememberMute, rememberVolume],
   );
 
   const saveProgress = useCallback(() => {
@@ -123,14 +126,21 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   const onLoadedMetadata = useCallback(
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
-      if (!resumeEnabled || !item) return;
       const video = e.currentTarget;
+      if (rememberVolume) {
+        const saved = localStorage.getItem(VOLUME_STORAGE_KEY);
+        if (saved !== null) {
+          const vol = Number(saved);
+          if (Number.isFinite(vol)) video.volume = Math.min(Math.max(vol, 0), 1);
+        }
+      }
+      if (!resumeEnabled || !item) return;
       const p = item.viewProgress;
       if (p > 0.01 && p < 0.98 && video.duration) {
         video.currentTime = p * video.duration;
       }
     },
-    [resumeEnabled, item],
+    [resumeEnabled, rememberVolume, item],
   );
 
   const tagMutation = useMutation({
@@ -168,25 +178,25 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       <div className="relative flex min-w-0 flex-1 items-center justify-center p-10">
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
           <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
-          <div
-            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-base text-zinc-100 hover:bg-white/10"
+          <button
+            className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-zinc-100 hover:bg-white/10"
             onClick={handleClose}
           >
-            ✕
-          </div>
+            <X size={20} />
+          </button>
         </div>
-        <div
-          className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/5 text-lg text-zinc-100 hover:bg-white/10"
+        <button
+          className="absolute left-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/5 text-zinc-100 hover:bg-white/10"
           onClick={() => step(-1)}
         >
-          ‹
-        </div>
-        <div
-          className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/5 text-lg text-zinc-100 hover:bg-white/10"
+          <ChevronLeft size={24} />
+        </button>
+        <button
+          className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/5 text-zinc-100 hover:bg-white/10"
           onClick={() => step(1)}
         >
-          ›
-        </div>
+          <ChevronRight size={24} />
+        </button>
         {item.type === 'video' ? (
           <video
             key={item.id}
@@ -233,12 +243,13 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
         </div>
         <div className="mb-2 flex items-center justify-between">
           <div className="text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
-          <div
-            className="cursor-pointer text-[11.5px] font-semibold text-accent hover:opacity-80"
+          <button
+            className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-accent hover:opacity-80"
             onClick={() => retagMutation.mutate()}
           >
-            ↻ AI re-tag
-          </div>
+            <RotateCw size={13} />
+            AI re-tag
+          </button>
         </div>
         <div className="mb-3 flex flex-wrap gap-1.5">
           {(detail?.tags ?? []).map((tag) => (
@@ -310,19 +321,19 @@ function TagPill({
       <span className="cursor-pointer hover:underline" onClick={onOpen}>
         {tag.name}
       </span>
-      <span
-        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 text-[9px] hover:bg-white/20"
+      <button
+        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={() => setMenuOpen((v) => !v)}
         title="Change category"
       >
-        ▾
-      </span>
-      <span
+        <ChevronDown size={11} />
+      </button>
+      <button
         className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={onRemove}
       >
-        ×
-      </span>
+        <X size={11} />
+      </button>
       {menuOpen && (
         <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl">
           {(['general', 'character', 'rating', 'user'] as TagCategory[]).map((c) => (
@@ -352,15 +363,15 @@ function SimilarPanel({
   similar: Media[];
   onPick: (m: Media) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   return (
-    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-zinc-800 bg-zinc-950/85 p-3 backdrop-blur">
-      <div className="mb-2 flex cursor-pointer items-center justify-between" onClick={() => setCollapsed((c) => !c)}>
+    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-zinc-800 bg-zinc-950/85 backdrop-blur">
+      <button className={`w-full flex cursor-pointer items-center justify-between ${collapsed ? 'px-3 py-2' : 'px-3 py-3 mb-2'}`} onClick={() => setCollapsed((c) => !c)}>
         <span className="text-[11px] font-bold tracking-[0.4px] text-zinc-400">SIMILAR & DUPLICATES</span>
-        <span className="text-zinc-500">{collapsed ? '▸' : '▾'}</span>
-      </div>
+        <ChevronRight size={16} className={`text-zinc-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
+      </button>
       {!collapsed && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 px-3 pb-3">
           {duplicates.length > 0 && (
             <Section title={`Duplicates (${duplicates.length})`} items={duplicates} onPick={onPick} />
           )}

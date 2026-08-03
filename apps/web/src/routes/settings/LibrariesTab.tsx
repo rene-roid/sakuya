@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Pencil, X, Upload, RotateCw } from 'lucide-react';
 import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { TabHeader } from './index';
@@ -164,8 +165,8 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
                 <img src={thumbUrl(lib.thumbMediaId, thumbBust)} alt="" className="h-full w-full object-cover" />
               )
             )}
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-[11px] text-zinc-100 opacity-0 transition-opacity group-hover:opacity-100">
-              ✎
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-zinc-100 opacity-0 transition-opacity group-hover:opacity-100">
+              <Pencil size={12} />
             </div>
           </div>
           <div>
@@ -190,7 +191,7 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
             }
           }}
         >
-          ✕
+          <X size={15} />
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
@@ -210,7 +211,7 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
                 className="cursor-pointer text-zinc-500 hover:text-red-400"
                 onClick={() => removeFolderMutation.mutate(folder.id)}
               >
-                ✕
+                <X size={14} />
               </span>
             </div>
           </div>
@@ -346,7 +347,7 @@ function ThumbnailPickerModal({
         <div className="mb-1 flex items-center justify-between">
           <div className="text-[15px] font-bold">Library thumbnail</div>
           <div className="cursor-pointer text-zinc-500 hover:text-zinc-200" onClick={onClose}>
-            ✕
+            <X size={16} />
           </div>
         </div>
         <div className="mb-3.5 text-[12.5px] text-zinc-500">
@@ -369,9 +370,9 @@ function ThumbnailPickerModal({
           <button
             disabled={uploadCoverMutation.isPending}
             onClick={() => fileInputRef.current?.click()}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="flex items-center gap-1.5 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
-            ⬆ Upload custom image
+            <Upload size={13} /> Upload custom image
           </button>
           {lib.customImagePath && (
             <button
@@ -385,9 +386,9 @@ function ThumbnailPickerModal({
           <button
             disabled={!currentThumbId || regenerateMutation.isPending}
             onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="flex items-center gap-1.5 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
-            ↻ Regenerate current thumbnail
+            <RotateCw size={13} /> Regenerate current thumbnail
           </button>
           <button
             disabled={lib.thumbnailMediaId === null || setThumbMutation.isPending}

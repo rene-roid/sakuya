@@ -1,0 +1,58 @@
+fix the ai tagging n progress so the tagged and progrss bar occupy full width until the button right before
+
+in the dashboard add a new section of recently viewed and it should be videos and images
+
+in the continue watching it should update in real time, on clos ethe video it should update, also on press on a started video from that view it should continue the video where it was left at
+
+add a way to change the tagger model and download newones (defaulkt model is SmilingWolf/wd-swinv2-tagger-v3)
+
+when viewing a image make it so on click on a tag it closes the image and applies that filter
+
+when searching on the topbar, if a tag add a way to search by tag instead of by name, make the dropdwon appear
+
+when searching on both searchbars (all) make it so you can use arrow keys to select options below and if typing something and press enter, autosearch by the first tag (make this a setting, default on)
+
+when adding manual tags add a way to update the tag to be the rating, character or general like right now
+
+add option in settings or libraries idk, to disable thumnbnail cache and it will use the image instead, default on (to create thumbnail) on attempt to disable add a popup warning the user that this will affect performance and load times
+
+in the dashbaord on the libraries add a way to regenerate the image when there is already one and a way to upload a cusotm image to the library (upon upload custom it will not autoupdate unless user has removed it)
+
+if the user watches the full video and it autoloops (expected behavour) dont add that to continue watching, user must leave and reenter the video to trigger that
+
+add a setting in the behaviour to "continue where left of (video)" and default on
+
+
+add a new library "likes", there will appear media that the user has liked, user can like the media by pressing the heart that appears on hover on a thumbnail default heart is only outline on press it turns red filled inside, and appears red on thumbnail if hearted, also on view media on press / detail user can press the ehart somewhere there, in the likes it should act as a library normalluy, on the boeard in the images and videos next to it add a new section that its a heart and it will act as a filter to filter only liked media
+
+on the searchbar instead of putting tags outside of the searchbar, make it so the tags appear inside the searchbar and text converts to a tag and user can keep typing and use the delete to delete tags (user can keep pressing the x button)
+
+in the board view remember the filters / tags or whatever that the user left of (add a setting in the behaviour to autoreset on leave and dont remmeber)
+
+
+duplicate iamge detection / similar image detection, on duplicate  or similar detection, make it so the images appear when viewing the media on a corner the similar images and duplicates appear (one section for duplicate and the orther for similar)
+
+===========
+ALL UP DONE
+
+==========
+
+remember audio volume level (settings to enable feature default on)
+
+change like library  thumbnail
+
+remove image tag from images
+
+updates icons to use lucide icons
+
+in the side where the tags appear, make 3 sections, rating, characters and tags
+
+make the similar and duplicates section appear closed by default, make it less tall when closed
+
+==== TO CHECK PRETTY MUCH DONE
+
+----
+
+gallery-dl section, a way to import stuff tbd
+
+----

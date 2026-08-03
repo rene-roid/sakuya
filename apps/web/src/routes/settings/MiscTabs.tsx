@@ -171,6 +171,12 @@ export function BehaviorTab() {
       desc: 'Muting or unmuting a video carries over to the next video you play.',
     },
     {
+      key: 'remember_volume_level',
+      label: 'Remember volume level',
+      desc: 'The volume you set on a video carries over to the next video you play.',
+      defaultOn: true,
+    },
+    {
       key: 'continue_where_left',
       label: 'Continue where you left off (video)',
       desc: 'Resume videos at the position you last stopped watching.',

@@ -15,6 +15,7 @@ const EDITABLE_KEYS = new Set([
   'confidence_threshold',
   'accent_color',
   'remember_mute_state',
+  'remember_volume_level',
   'autosearch_first_tag',
   'continue_where_left',
   'thumbnail_cache_enabled',

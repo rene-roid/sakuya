@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Upload, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { TabHeader } from './index';
@@ -106,7 +107,7 @@ export function UploadsTab() {
           dragOver ? 'border-accent bg-accent/5' : 'border-zinc-800 bg-[#111113] hover:border-zinc-700'
         }`}
       >
-        <div className="mb-2 text-[26px]">⇪</div>
+        <Upload className="mb-2 text-zinc-400" size={26} />
         <div className="text-[13.5px] font-semibold text-zinc-200">Drag and drop files here</div>
         <div className="mt-0.5 text-xs text-zinc-500">or click to browse — bulk upload supported</div>
         <input
@@ -137,10 +138,10 @@ export function UploadsTab() {
               {row.status}
             </span>
             <span
-              className="cursor-pointer text-[13px] text-zinc-500 hover:text-zinc-300"
+              className="cursor-pointer text-zinc-500 hover:text-zinc-300"
               onClick={() => setRows((prev) => prev.filter((r) => r.id !== row.id))}
             >
-              ✕
+              <X size={14} />
             </span>
           </div>
         ))}

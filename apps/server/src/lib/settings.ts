@@ -7,6 +7,7 @@ const DEFAULTS: Record<string, string> = {
   accent_color: '#8b5cf6',
   model_status: 'absent',
   remember_mute_state: '0',
+  remember_volume_level: '1',
   autosearch_first_tag: '1',
   continue_where_left: '1',
   thumbnail_cache_enabled: '1',

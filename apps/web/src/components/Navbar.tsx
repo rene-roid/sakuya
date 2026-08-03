@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Activity, Settings } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
 import { TagSearchInput } from './TagSearchInput';
 
@@ -32,23 +33,18 @@ function JobsButton() {
 
   return (
     <div ref={rootRef} className="relative">
-        <div
+        <button
             title="Jobs"
             onClick={() => setOpen((v) => !v)}
-            className={`relative flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
+            className={`relative flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-400 ${
                 open ? 'bg-zinc-800' : 'hover:bg-zinc-900'
             }`}
         >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                 className="lucide lucide-activity-icon lucide-activity">
-                <path
-                    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>
-            </svg>
+            <Activity size={16} />
             {activeJobs.length > 0 && (
                 <span className="absolute right-1 top-1 h-[7px] w-[7px] rounded-full bg-accent"/>
             )}
-        </div>
+        </button>
         {open && (
             <div
                 className="absolute right-0 top-[42px] z-50 w-[280px] rounded-[10px] border border-zinc-800 bg-[#111113] p-3 shadow-xl">
@@ -130,32 +126,15 @@ export function Navbar() {
       </div>
       <div className="flex-1" />
       <JobsButton />
-        <div
+        <button
             title="Settings"
             onClick={() => navigate('/settings')}
-            className={`flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-base text-zinc-400 ${
+            className={`flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-400 ${
                 location.pathname.startsWith('/settings') ? 'bg-zinc-800' : 'hover:bg-zinc-900'
             }`}
         >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                 className="lucide lucide-cog-icon lucide-cog">
-                <path d="M11 10.27 7 3.34"/>
-                <path d="m11 13.73-4 6.93"/>
-                <path d="M12 22v-2"/>
-                <path d="M12 2v2"/>
-                <path d="M14 12h8"/>
-                <path d="m17 20.66-1-1.73"/>
-                <path d="m17 3.34-1 1.73"/>
-                <path d="M2 12h2"/>
-                <path d="m20.66 17-1.73-1"/>
-                <path d="m20.66 7-1.73 1"/>
-                <path d="m3.34 17 1.73-1"/>
-                <path d="m3.34 7 1.73 1"/>
-                <circle cx="12" cy="12" r="2"/>
-                <circle cx="12" cy="12" r="8"/>
-            </svg>
-        </div>
+            <Settings size={16} />
+        </button>
     </div>
   );
 }

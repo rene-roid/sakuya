@@ -1,3 +1,4 @@
+import { Shuffle, ArrowUp, ArrowDown, Heart, X } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
@@ -8,7 +9,7 @@ function segStyle(active: boolean): string {
 }
 
 export function FilterToolbar({ filters, actions }: { filters: FilterState; actions: FilterActions }) {
-  const dirArrow = filters.dir === 'asc' ? '↑' : '↓';
+  const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
 
   return (
     <div className="flex flex-wrap items-center gap-4">
@@ -25,17 +26,21 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
           }`}
           onClick={actions.toggleLiked}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5" />
-          </svg>
+          <Heart size={13} fill={filters.liked ? 'currentColor' : 'none'} />
         </div>
       </div>
       <div className="flex rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
         <div className={segStyle(filters.sort === 'recent')} onClick={() => actions.setSort('recent')}>
-          Recent{filters.sort === 'recent' ? ` ${dirArrow}` : ''}
+          <span className="flex items-center gap-1">
+            Recent
+            {filters.sort === 'recent' && <DirIcon size={13} />}
+          </span>
         </div>
         <div className={segStyle(filters.sort === 'name')} onClick={() => actions.setSort('name')}>
-          Name{filters.sort === 'name' ? ` ${dirArrow}` : ''}
+          <span className="flex items-center gap-1">
+            Name
+            {filters.sort === 'name' && <DirIcon size={13} />}
+          </span>
         </div>
       </div>
       <div
@@ -44,13 +49,7 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
         }`}
         onClick={actions.randomize}
       >
-        <span>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                 className="lucide lucide-shuffle-icon lucide-shuffle"><path d="m18 14 4 4-4 4"/><path
-                d="m18 2 4 4-4 4"/><path d="M2 18h1.973a4 4 0 0 0 3.3-1.7l5.454-8.6a4 4 0 0 1 3.3-1.7H22"/><path
-                d="M2 6h1.972a4 4 0 0 1 3.6 2.2"/><path d="M22 18h-6.041a4 4 0 0 1-3.3-1.8l-.359-.45"/></svg>
-        </span>
+        <Shuffle size={16} />
           <span>Randomize</span>
       </div>
         <div className="relative min-w-[220px] flex-1">
@@ -71,7 +70,7 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
             className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-zinc-700"
             onClick={() => actions.setQ('')}
           >
-            ×
+            <X size={11} />
           </span>
         </div>
       )}
