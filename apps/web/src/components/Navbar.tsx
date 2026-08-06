@@ -92,8 +92,8 @@ export function Navbar() {
   return (
     <div className="sticky top-0 z-40 flex h-[60px] items-center gap-6 border-b border-zinc-800 bg-zinc-950/75 px-5 backdrop-blur-xl">
       <div className="flex shrink-0 cursor-pointer items-center gap-2" onClick={() => navigate('/')}>
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-accent to-violet-800 text-sm font-extrabold text-white">
-          柵
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg text-sm font-extrabold text-white">
+          <img src="/icon.png" alt="Sakuya" className="h-full w-full" />
         </div>
         <div className="text-[15px] font-bold tracking-tight">
           Sakuya<span className="text-accent">.</span>
