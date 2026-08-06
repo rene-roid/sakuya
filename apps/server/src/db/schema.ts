@@ -82,7 +82,7 @@ export const mediaTags = sqliteTable(
 
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  type: text('type', { enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash'] }).notNull(),
+  type: text('type', { enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup'] }).notNull(),
   libraryId: integer('library_id'),
   label: text('label').notNull().default(''),
   status: text('status', { enum: ['queued', 'running', 'done', 'error'] }).notNull().default('queued'),
@@ -101,7 +101,7 @@ export const settings = sqliteTable('settings', {
 export const jobSchedules = sqliteTable(
   'job_schedules',
   {
-    jobType: text('job_type', { enum: ['scan', 'tag', 'hash'] }).notNull(),
+    jobType: text('job_type', { enum: ['scan', 'tag', 'hash', 'cleanup'] }).notNull(),
     libraryId: integer('library_id'),
     mode: text('mode', { enum: ['off', 'interval', 'after-scan'] }).notNull(),
     intervalMinutes: integer('interval_minutes').notNull().default(0),

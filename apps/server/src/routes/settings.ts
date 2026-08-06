@@ -9,6 +9,7 @@ import { getAllSettings, setSetting } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION } from '../lib/config';
 import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
 import { scheduleAll } from '../services/jobScheduler';
+import { performCleanup } from '../services/cleanup';
 import type { SystemInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
 
 export const settingsRouter = Router();
@@ -121,7 +122,7 @@ settingsRouter.get(
 );
 
 const scheduleBody = z.object({
-  jobType: z.enum(['scan', 'tag', 'hash']),
+  jobType: z.enum(['scan', 'tag', 'hash', 'cleanup']),
   libraryId: z.number().int().positive().nullable().optional(),
   mode: z.enum(['off', 'interval', 'after-scan']).optional(),
   intervalMinutes: z.number().int().min(0).optional(),
@@ -189,39 +190,7 @@ settingsRouter.post(
 settingsRouter.post(
   '/api/system/cleanup',
   wrap(async (_req, res) => {
-    // Find thumbnail files whose media no longer exists
-    let removedThumbs = 0;
-    if (fs.existsSync(THUMBS_DIR)) {
-      for (const entry of fs.readdirSync(THUMBS_DIR)) {
-        const match = entry.match(/^(\d+)\.webp$/);
-        if (match) {
-          const mediaId = Number(match[1]);
-          const exists = db
-            .select({ id: schema.media.id })
-            .from(schema.media)
-            .where(eq(schema.media.id, mediaId))
-            .get();
-          if (!exists) {
-            fs.rmSync(thumbPathFor(mediaId), { force: true });
-            removedThumbs++;
-          }
-        }
-      }
-    }
-
-    // Recompute usage counts for all tags
-    const allTagIds = db.select({ id: schema.tags.id }).from(schema.tags).all().map((r) => r.id);
-    let resetTagCounts = 0;
-    if (allTagIds.length > 0) {
-      const placeholders = allTagIds.map(() => '?').join(',');
-      sqlite
-        .query(
-          `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
-        )
-        .run(...allTagIds);
-      resetTagCounts = allTagIds.length;
-    }
-
-    res.json({ removedThumbs, resetTagCounts });
+    const result = performCleanup();
+    res.json(result);
   }),
 );

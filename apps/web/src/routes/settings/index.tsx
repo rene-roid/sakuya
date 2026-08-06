@@ -28,7 +28,7 @@ export function Settings() {
   const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'libraries');
 
   return (
-    <div className="fade-in mx-auto flex max-w-[1200px] gap-8 px-8 pb-16 pt-7">
+    <div className="fade-in mx-auto flex h-[calc(100vh-60px)] max-w-[1200px] gap-8 overflow-hidden px-8 py-7">
       <div className="flex w-[200px] flex-none flex-col gap-0.5">
         {TABS.map((t) => (
           <div
@@ -44,7 +44,7 @@ export function Settings() {
           </div>
         ))}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="scrollbar-hide min-w-0 flex-1 overflow-y-auto pb-16">
         {tab === 'libraries' && <LibrariesTab />}
         {tab === 'jobs' && <JobsTab />}
         {tab === 'tagging' && <TaggingTab />}

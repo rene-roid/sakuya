@@ -40,7 +40,7 @@ jobsRouter.post(
     const body = z
       .object({
         scope: z.union([z.literal('global'), z.object({ libraryId: z.number() })]),
-        jobType: z.enum(['scan', 'tag', 'hash']).optional(),
+        jobType: z.enum(['scan', 'tag', 'hash', 'cleanup']).optional(),
       })
       .parse(req.body);
 

@@ -120,6 +120,7 @@ if (globalCount.c === 0) {
   insertGlobal.run('scan', 'off');
   insertGlobal.run('tag', 'after-scan');
   insertGlobal.run('hash', 'after-scan');
+  insertGlobal.run('cleanup', 'off');
 }
 
 // Migrate legacy per-library autoScanInterval values into job_schedules once.

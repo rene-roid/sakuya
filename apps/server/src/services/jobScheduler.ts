@@ -2,9 +2,10 @@ import { eq, and, inArray, isNull } from 'drizzle-orm';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
 import { enqueueTagJob, enqueueHashJob, modelReady } from './tagger';
+import { enqueueCleanupJob } from './cleanup';
 import { aiTaggingEnabled } from '../lib/settings';
 
-type ScheduleJobType = 'scan' | 'tag' | 'hash';
+type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
 type ScheduleMode = 'off' | 'interval' | 'after-scan';
 
 interface Schedule {
@@ -14,13 +15,13 @@ interface Schedule {
 
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 
-function activeJobForLibrary(libraryId: number, jobType: ScheduleJobType): boolean {
+function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType): boolean {
   const active = db
     .select({ id: schema.jobs.id })
     .from(schema.jobs)
     .where(
       and(
-        eq(schema.jobs.libraryId, libraryId),
+        libraryId === null ? isNull(schema.jobs.libraryId) : eq(schema.jobs.libraryId, libraryId),
         eq(schema.jobs.type, jobType),
         inArray(schema.jobs.status, ['queued', 'running']),
       ),
@@ -91,11 +92,12 @@ function dispatchHashForLibrary(libraryId: number): void {
 }
 
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
-  if (activeJobForLibrary(libraryId, jobType)) return;
+  if (activeJobForLibrary(jobType === 'cleanup' ? null : libraryId, jobType)) return;
   try {
     if (jobType === 'scan') enqueueScanJob(libraryId);
     else if (jobType === 'tag') dispatchTagForLibrary(libraryId);
     else if (jobType === 'hash') dispatchHashForLibrary(libraryId);
+    else if (jobType === 'cleanup') enqueueCleanupJob();
   } catch (err) {
     console.error(`[job-scheduler] failed to dispatch ${jobType} for library ${libraryId}:`, err);
   }
@@ -137,7 +139,6 @@ export function runAllNow(scope: 'global' | number, jobType?: ScheduleJobType): 
     }
     if (!jobType || jobType === 'tag') {
       const tagSchedule = resolveSchedule('tag', libraryId);
-      // Explicit trigger: always run. Aggregate trigger: only if not chained after scan.
       if (jobType === 'tag' || tagSchedule.mode === 'interval') {
         dispatchForLibrary('tag', libraryId);
       }
@@ -149,10 +150,17 @@ export function runAllNow(scope: 'global' | number, jobType?: ScheduleJobType): 
       }
     }
   }
+
+  if (scope === 'global' && (!jobType || jobType === 'cleanup')) {
+    const cleanupSchedule = resolveSchedule('cleanup', null);
+    if (jobType === 'cleanup' || cleanupSchedule.mode === 'interval') {
+      dispatchForLibrary('cleanup', 0);
+    }
+  }
 }
 
-function setTimer(jobType: ScheduleJobType, libraryId: number, schedule: Schedule): void {
-  const key = `${jobType}:${libraryId}`;
+function setTimer(jobType: ScheduleJobType, libraryId: number | null, schedule: Schedule): void {
+  const key = `${jobType}:${libraryId ?? 0}`;
   const existing = timers.get(key);
   if (existing) clearInterval(existing);
 
@@ -162,7 +170,13 @@ function setTimer(jobType: ScheduleJobType, libraryId: number, schedule: Schedul
   }
 
   const ms = schedule.intervalMinutes * 60 * 1000;
-  const timer = setInterval(() => dispatchForLibrary(jobType, libraryId), ms);
+  const timer = setInterval(() => {
+    if (libraryId !== null) {
+      dispatchForLibrary(jobType, libraryId);
+    } else {
+      dispatchForLibrary(jobType, 0);
+    }
+  }, ms);
   timers.set(key, timer);
 }
 
@@ -175,14 +189,17 @@ export function scheduleAll(): void {
   timers.clear();
 
   const libs = db.select({ id: schema.libraries.id }).from(schema.libraries).all();
-  const jobTypes: ScheduleJobType[] = ['scan', 'tag', 'hash'];
+  const perLibraryTypes: ScheduleJobType[] = ['scan', 'tag', 'hash'];
 
-  for (const jobType of jobTypes) {
+  for (const jobType of perLibraryTypes) {
     for (const lib of libs) {
       const schedule = resolveSchedule(jobType, lib.id);
       setTimer(jobType, lib.id, schedule);
     }
   }
+
+  const cleanupSchedule = resolveSchedule('cleanup', null);
+  setTimer('cleanup', null, cleanupSchedule);
 
   console.log(`[job-scheduler] initialized ${timers.size} interval timers`);
 }

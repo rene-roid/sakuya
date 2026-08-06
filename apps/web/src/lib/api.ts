@@ -15,7 +15,7 @@ import type {
   JobSchedulesPayload,
 } from '@sakuya/shared';
 
-export type ScheduleJobType = 'scan' | 'tag' | 'hash';
+export type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
 
 export interface UpdateJobScheduleBody {
   jobType: ScheduleJobType;

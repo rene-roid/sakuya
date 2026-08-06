@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JobSchedule, LibraryWithStats, ScheduleMode } from '@sakuya/shared';
 import { api, libraryCoverUrl, thumbUrl, type ScheduleJobType, type UpdateJobScheduleBody } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { Search, Tag, Fingerprint, ChevronDown } from 'lucide-react';
+import { Search, Tag, Fingerprint, Trash2, ChevronDown } from 'lucide-react';
 
 type IntervalOption = { label: string; minutes: number };
 
@@ -21,6 +21,7 @@ const JOB_TYPES: { key: ScheduleJobType; label: string; recommended?: string }[]
   { key: 'scan', label: 'Library scan' },
   { key: 'tag', label: 'AI tagging', recommended: 'Recommended: After every scan' },
   { key: 'hash', label: 'Duplicate detection', recommended: 'Recommended: After every scan' },
+  { key: 'cleanup', label: 'Cleanup orphan data' },
 ];
 
 /** All possible <select> values as a discriminated string set. */
@@ -131,7 +132,7 @@ export function JobsConfigureTab() {
                     disabled={updateMutation.isPending}
                     onChange={(next) => updateMutation.mutate(valueToPatch(next, jt.key))}
                     showInherit={false}
-                    showAfterScan={jt.key !== 'scan'}
+                    showAfterScan={jt.key !== 'scan' && jt.key !== 'cleanup'}
                   />
                   <button
                     disabled={runNowMutation.isPending}
@@ -202,7 +203,8 @@ function LibraryScheduleCard({
   pending: boolean;
   runPending: boolean;
 }) {
-  const customJobs = JOB_TYPES.filter((jt) => {
+  const perLibraryTypes = JOB_TYPES.filter((jt) => jt.key !== 'cleanup');
+  const customJobs = perLibraryTypes.filter((jt) => {
     const s = schedules?.[jt.key];
     return s && !s.useGlobal && s.mode !== 'off';
   });
@@ -248,7 +250,7 @@ function LibraryScheduleCard({
       {expanded && (
         <>
           <div className="mt-3 flex flex-col gap-0.5">
-            {JOB_TYPES.map((jt) => {
+            {perLibraryTypes.map((jt) => {
               const schedule = schedules?.[jt.key];
               const value = scheduleToValue(schedule, 'per-library');
               const isCustom = value !== 'inherit';
@@ -303,5 +305,7 @@ function JobIcon({ type }: { type: ScheduleJobType }) {
       return <Tag size={14} className={cls} />;
     case 'hash':
       return <Fingerprint size={14} className={cls} />;
+    case 'cleanup':
+      return <Trash2 size={14} className={cls} />;
   }
 }

@@ -117,24 +117,47 @@ export function SystemTab() {
         <Row label="Media stored" value={info ? `${info.mediaCount} files · ${formatBytes(info.mediaBytes)}` : '—'} />
         <Row label="Database size" value={info ? formatBytes(info.dbBytes) : '—'} />
         <Row label="Thumbnail cache" value={info ? formatBytes(info.thumbBytes) : '—'} />
-        <div className="mt-1.5 flex flex-col gap-1.5">
-          <div
-            className="cursor-pointer text-[12.5px] font-semibold text-rose-500 hover:text-rose-400"
-            onClick={() => clearMutation.mutate()}
-          >
-            Clear thumbnail cache
+        <div className="mt-1.5 flex flex-col gap-2.5">
+          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+            <div>
+              <div className="text-[13px] font-semibold text-zinc-200">Thumbnail cache</div>
+              <div className="text-[11px] text-zinc-500">Delete all cached thumbnails to free up disk space</div>
+            </div>
+            <button
+              disabled={clearMutation.isPending}
+              onClick={() => clearMutation.mutate()}
+              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
+            >
+              Clear cache
+            </button>
           </div>
-          <div
-            className="cursor-pointer text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
-            onClick={() => setShowRegenerateWarning(true)}
-          >
-            Regenerate all thumbnails
+
+          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+            <div>
+              <div className="text-[13px] font-semibold text-zinc-200">Regenerate thumbnails</div>
+              <div className="text-[11px] text-zinc-500">Re-process all media files and overwrite existing thumbnails</div>
+            </div>
+            <button
+              disabled={regenerateMutation.isPending}
+              onClick={() => setShowRegenerateWarning(true)}
+              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+            >
+              Regenerate all
+            </button>
           </div>
-          <div
-            className="cursor-pointer text-[12.5px] font-semibold text-rose-500 hover:text-rose-400"
-            onClick={() => setShowCleanupWarning(true)}
-          >
-            Clean up orphan data
+
+          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+            <div>
+              <div className="text-[13px] font-semibold text-zinc-200">Clean up orphan data</div>
+              <div className="text-[11px] text-zinc-500">Remove thumbnail files and tag counts with no matching media</div>
+            </div>
+            <button
+              disabled={cleanupMutation.isPending}
+              onClick={() => setShowCleanupWarning(true)}
+              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
+            >
+              Clean up
+            </button>
           </div>
         </div>
       </div>
