@@ -246,30 +246,41 @@ export function unhashedImageIds(): number[] {
   ).map((r) => r.id);
 }
 
-export function enqueueHashJob(mediaIds: number[]) {
-  return enqueueJob('hash', `Compute image hashes (${mediaIds.length} files)`, async (job: JobHandle) => {
-    const { computeDHash } = await import('./perceptualHash');
-    job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
-    let hashed = 0;
-    let errors = 0;
-    for (let i = 0; i < mediaIds.length; i++) {
-      try {
-        const row = db.select().from(schema.media).where(eq(schema.media.id, mediaIds[i])).get();
-        if (row && row.type === 'image' && fs.existsSync(row.path)) {
-          const hash = await computeDHash(row.path);
-          db.update(schema.media).set({ perceptualHash: hash }).where(eq(schema.media.id, mediaIds[i])).run();
-          hashed++;
+export function enqueueHashJob(mediaIds: number[], libraryId: number | null = null) {
+  const lib = libraryId
+    ? db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get()
+    : null;
+  const label = lib
+    ? `Compute image hashes: ${lib.name} (${mediaIds.length} files)`
+    : `Compute image hashes (${mediaIds.length} files)`;
+  return enqueueJob(
+    'hash',
+    label,
+    async (job: JobHandle) => {
+      const { computeDHash } = await import('./perceptualHash');
+      job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
+      let hashed = 0;
+      let errors = 0;
+      for (let i = 0; i < mediaIds.length; i++) {
+        try {
+          const row = db.select().from(schema.media).where(eq(schema.media.id, mediaIds[i])).get();
+          if (row && row.type === 'image' && fs.existsSync(row.path)) {
+            const hash = await computeDHash(row.path);
+            db.update(schema.media).set({ perceptualHash: hash }).where(eq(schema.media.id, mediaIds[i])).run();
+            hashed++;
+          }
+        } catch (err) {
+          errors++;
+          console.error(`hashing failed for media ${mediaIds[i]}:`, err);
         }
-      } catch (err) {
-        errors++;
-        console.error(`hashing failed for media ${mediaIds[i]}:`, err);
+        if (i % 5 === 0 || i === mediaIds.length - 1) {
+          job.update({ progress: i + 1, log: `Hashed ${i + 1}/${mediaIds.length} images…` });
+        }
       }
-      if (i % 5 === 0 || i === mediaIds.length - 1) {
-        job.update({ progress: i + 1, log: `Hashed ${i + 1}/${mediaIds.length} images…` });
-      }
-    }
-    return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
-  });
+      return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
+    },
+    libraryId,
+  );
 }
 
 async function downloadFile(url: string, dest: string, onProgress: (received: number, total: number) => void) {

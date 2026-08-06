@@ -85,6 +85,14 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS job_schedules (
+  job_type TEXT NOT NULL,
+  library_id INTEGER,
+  mode TEXT NOT NULL,
+  interval_minutes INTEGER NOT NULL DEFAULT 0,
+  use_global INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (job_type, library_id)
+);
 `);
 
 // Migrate existing databases: add columns that may not exist yet.
@@ -102,3 +110,25 @@ sqlite.exec(
 
 export const db = drizzle(sqlite, { schema });
 export { schema };
+
+// Seed global defaults for job schedules if none exist yet.
+const globalCount = sqlite.query('SELECT COUNT(*) AS c FROM job_schedules WHERE library_id IS NULL').get() as { c: number };
+if (globalCount.c === 0) {
+  const insertGlobal = sqlite.prepare(
+    'INSERT OR IGNORE INTO job_schedules (job_type, library_id, mode, interval_minutes, use_global) VALUES (?, NULL, ?, 0, 0)',
+  );
+  insertGlobal.run('scan', 'off');
+  insertGlobal.run('tag', 'after-scan');
+  insertGlobal.run('hash', 'after-scan');
+}
+
+// Migrate legacy per-library autoScanInterval values into job_schedules once.
+const libRows = sqlite
+  .query('SELECT id, auto_scan_interval FROM libraries WHERE auto_scan_interval > 0')
+  .all() as { id: number; auto_scan_interval: number }[];
+if (libRows.length > 0) {
+  const insertLib = sqlite.prepare(
+    "INSERT OR IGNORE INTO job_schedules (job_type, library_id, mode, interval_minutes, use_global) VALUES ('scan', ?, 'interval', ?, 0)",
+  );
+  for (const lib of libRows) insertLib.run(lib.id, lib.auto_scan_interval);
+}

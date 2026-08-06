@@ -9,7 +9,7 @@ import { jobsRouter } from './routes/jobs';
 import { settingsRouter } from './routes/settings';
 import { taggerRouter } from './routes/tagger';
 import { dashboardRouter } from './routes/dashboard';
-import { initAutoScans } from './services/autoScan';
+import { initScheduler } from './services/jobScheduler';
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -33,5 +33,5 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(PORT, () => {
   console.log(`Sakuya server listening on http://localhost:${PORT}`);
-  initAutoScans();
+  initScheduler();
 });

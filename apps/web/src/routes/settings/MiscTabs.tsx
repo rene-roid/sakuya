@@ -51,6 +51,8 @@ export function SystemTab() {
   const { data: info } = useQuery({ queryKey: ['system'], queryFn: api.system });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const [showCacheWarning, setShowCacheWarning] = useState(false);
+  const [showRegenerateWarning, setShowRegenerateWarning] = useState(false);
+  const [showCleanupWarning, setShowCleanupWarning] = useState(false);
 
   const cacheEnabled = settings?.thumbnail_cache_enabled !== '0';
 
@@ -68,6 +70,22 @@ export function SystemTab() {
     onSuccess: (data) => {
       queryClient.setQueryData(['settings'], data);
       showToast('Thumbnail cache setting updated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: api.regenerateAllThumbnails,
+    onSuccess: () => showToast('Thumbnail regeneration started'),
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const cleanupMutation = useMutation({
+    mutationFn: api.cleanupData,
+    onSuccess: (res) => {
+      showToast(`Removed ${res.removedThumbs} orphan thumbnails · reset ${res.resetTagCounts} tag counts`);
+      queryClient.invalidateQueries({ queryKey: ['system'] });
+      queryClient.invalidateQueries({ queryKey: ['tags'] });
     },
     onError: (err: Error) => showToast(err.message),
   });
@@ -99,11 +117,25 @@ export function SystemTab() {
         <Row label="Media stored" value={info ? `${info.mediaCount} files · ${formatBytes(info.mediaBytes)}` : '—'} />
         <Row label="Database size" value={info ? formatBytes(info.dbBytes) : '—'} />
         <Row label="Thumbnail cache" value={info ? formatBytes(info.thumbBytes) : '—'} />
-        <div
-          className="mt-1.5 cursor-pointer text-[12.5px] font-semibold text-rose-500 hover:text-rose-400"
-          onClick={() => clearMutation.mutate()}
-        >
-          Clear thumbnail cache
+        <div className="mt-1.5 flex flex-col gap-1.5">
+          <div
+            className="cursor-pointer text-[12.5px] font-semibold text-rose-500 hover:text-rose-400"
+            onClick={() => clearMutation.mutate()}
+          >
+            Clear thumbnail cache
+          </div>
+          <div
+            className="cursor-pointer text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+            onClick={() => setShowRegenerateWarning(true)}
+          >
+            Regenerate all thumbnails
+          </div>
+          <div
+            className="cursor-pointer text-[12.5px] font-semibold text-rose-500 hover:text-rose-400"
+            onClick={() => setShowCleanupWarning(true)}
+          >
+            Clean up orphan data
+          </div>
         </div>
       </div>
       {showCacheWarning && (
@@ -116,6 +148,31 @@ export function SystemTab() {
           onConfirm={() => {
             setShowCacheWarning(false);
             cacheMutation.mutate(false);
+          }}
+        />
+      )}
+      {showRegenerateWarning && (
+        <ConfirmDialog
+          title="Regenerate all thumbnails?"
+          confirmLabel="Regenerate"
+          body="This may take a long time on large libraries. Existing thumbnails will be overwritten as each file is re-processed."
+          onCancel={() => setShowRegenerateWarning(false)}
+          onConfirm={() => {
+            setShowRegenerateWarning(false);
+            regenerateMutation.mutate();
+          }}
+        />
+      )}
+      {showCleanupWarning && (
+        <ConfirmDialog
+          title="Clean up orphan data?"
+          danger
+          confirmLabel="Clean up"
+          body="Removes thumbnail files whose media rows no longer exist and recomputes usage counts for every tag. Safe to run any time — nothing referenced by current media is touched."
+          onCancel={() => setShowCleanupWarning(false)}
+          onConfirm={() => {
+            setShowCleanupWarning(false);
+            cleanupMutation.mutate();
           }}
         />
       )}

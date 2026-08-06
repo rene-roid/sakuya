@@ -4,13 +4,12 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 import ffprobeStatic from 'ffprobe-static';
-import { eq, and, isNull, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { db, schema } from '../db';
 import { IMAGE_EXTS, VIDEO_EXTS } from '../lib/config';
-import { aiTaggingEnabled } from '../lib/settings';
 import { generateThumbnail, thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
-import { enqueueTagJob, modelReady } from './tagger';
+import { dispatchAfterScan } from './jobScheduler';
 
 const ffprobePath: string = ffprobeStatic.path;
 
@@ -228,16 +227,7 @@ export function enqueueScanJob(libraryId: number) {
           .run();
       }
 
-      if (aiTaggingEnabled() && modelReady()) {
-        const untagged = db
-          .select({ id: schema.media.id })
-          .from(schema.media)
-          .where(and(eq(schema.media.libraryId, libraryId), isNull(schema.media.taggedAt)))
-          .all();
-        if (untagged.length) {
-          enqueueTagJob(untagged.map((r) => r.id), `AI tag: ${lib.name}`, libraryId);
-        }
-      }
+      dispatchAfterScan(libraryId);
 
       return `Completed. ${indexed} indexed, ${skipped} unchanged, ${pruned} removed${errors ? `, ${errors} errors` : ''}.`;
     },

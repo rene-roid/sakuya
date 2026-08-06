@@ -8,7 +8,7 @@ import { eq, and } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
-import { scheduleLibrary } from '../services/autoScan';
+import { scheduleAll } from '../services/jobScheduler';
 import { thumbPathFor } from '../services/thumbnailer';
 import { UPLOADS_DIR } from '../lib/config';
 import type { LibraryWithStats } from '@sakuya/shared';
@@ -72,7 +72,7 @@ librariesRouter.post(
       .values({ name: body.name, type: body.type, autoScanInterval: body.autoScanInterval, createdAt: Date.now() })
       .returning()
       .get();
-    scheduleLibrary(row.id, row.autoScanInterval);
+    scheduleAll();
     res.status(201).json(libraryWithStats(row));
   }),
 );
@@ -84,9 +84,6 @@ librariesRouter.patch(
     const body = libraryBodySchema.partial().extend({ thumbnailMediaId: z.number().nullable().optional() }).parse(req.body);
     const row = db.update(schema.libraries).set(body).where(eq(schema.libraries.id, id)).returning().get();
     if (!row) return res.status(404).json({ error: 'Not found' });
-    if (body.autoScanInterval !== undefined) {
-      scheduleLibrary(id, row.autoScanInterval);
-    }
     res.json(libraryWithStats(row));
   }),
 );

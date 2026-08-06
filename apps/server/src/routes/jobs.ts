@@ -1,6 +1,8 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { wrap } from '../lib/http';
 import { listJobs, jobEvents } from '../services/jobQueue';
+import { runAllNow } from '../services/jobScheduler';
 import type { Job } from '@sakuya/shared';
 
 export const jobsRouter = Router();
@@ -31,3 +33,18 @@ jobsRouter.get('/api/jobs/stream', (req, res) => {
     jobEvents.off('job', onJob);
   });
 });
+
+jobsRouter.post(
+  '/api/jobs/run-now',
+  wrap(async (req, res) => {
+    const body = z
+      .object({
+        scope: z.union([z.literal('global'), z.object({ libraryId: z.number() })]),
+        jobType: z.enum(['scan', 'tag', 'hash']).optional(),
+      })
+      .parse(req.body);
+
+    runAllNow(body.scope === 'global' ? 'global' : body.scope.libraryId, body.jobType);
+    res.json({ ok: true });
+  }),
+);

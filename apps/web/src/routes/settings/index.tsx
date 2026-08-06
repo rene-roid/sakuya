@@ -8,7 +8,7 @@ import { AppearanceTab, BehaviorTab, SystemTab } from './MiscTabs';
 
 const TABS = [
   { key: 'libraries', label: 'Libraries' },
-  { key: 'jobs', label: 'Import / Jobs' },
+  { key: 'jobs', label: 'Jobs' },
   { key: 'tagging', label: 'AI Tagging' },
   { key: 'uploads', label: 'Uploads' },
   { key: 'appearance', label: 'Appearance' },

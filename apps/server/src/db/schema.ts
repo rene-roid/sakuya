@@ -97,3 +97,15 @@ export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
 });
+
+export const jobSchedules = sqliteTable(
+  'job_schedules',
+  {
+    jobType: text('job_type', { enum: ['scan', 'tag', 'hash'] }).notNull(),
+    libraryId: integer('library_id'),
+    mode: text('mode', { enum: ['off', 'interval', 'after-scan'] }).notNull(),
+    intervalMinutes: integer('interval_minutes').notNull().default(0),
+    useGlobal: integer('use_global').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.jobType, t.libraryId] })],
+);

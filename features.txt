@@ -56,3 +56,6 @@ make the similar and duplicates section appear closed by default, make it less t
 gallery-dl section, a way to import stuff tbd
 
 ----
+
+
+do cleanups of data / cache thumnails and stuff

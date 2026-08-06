@@ -4,6 +4,7 @@ import type {
   LibraryWithStats,
   MediaDetail,
   MediaListResponse,
+  ScheduleMode,
   Settings,
   SimilarResponse,
   SystemInfo,
@@ -11,7 +12,18 @@ import type {
   TagCount,
   TaggerModel,
   TaggerStatus,
+  JobSchedulesPayload,
 } from '@sakuya/shared';
+
+export type ScheduleJobType = 'scan' | 'tag' | 'hash';
+
+export interface UpdateJobScheduleBody {
+  jobType: ScheduleJobType;
+  libraryId?: number | null;
+  mode?: ScheduleMode;
+  intervalMinutes?: number;
+  useGlobal?: boolean;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -107,6 +119,16 @@ export const api = {
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
   system: () => request<SystemInfo>('/api/system'),
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
+  jobSchedules: () => request<JobSchedulesPayload>('/api/job-schedules'),
+  updateJobSchedule: (body: UpdateJobScheduleBody) =>
+    request<{ ok: true }>('/api/job-schedules', { method: 'PATCH', body: JSON.stringify(body) }),
+  runJobsNow: (scope: 'global' | { libraryId: number }, jobType?: ScheduleJobType) =>
+    request<{ ok: true }>('/api/jobs/run-now', {
+      method: 'POST',
+      body: JSON.stringify(jobType ? { scope, jobType } : { scope }),
+    }),
+  regenerateAllThumbnails: () => request<{ ok: true }>('/api/system/regenerate-thumbnails', { method: 'POST' }),
+  cleanupData: () => request<{ removedThumbs: number; resetTagCounts: number }>('/api/system/cleanup', { method: 'POST' }),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
   taggerTagAll: () => request<{ job: Job }>('/api/tagger/tag-all', { method: 'POST' }),

@@ -2,11 +2,14 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { sqlite } from '../db';
+import { eq, isNotNull, isNull } from 'drizzle-orm';
+import { sqlite, db, schema } from '../db';
 import { wrap } from '../lib/http';
 import { getAllSettings, setSetting } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION } from '../lib/config';
-import type { SystemInfo } from '@sakuya/shared';
+import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
+import { scheduleAll } from '../services/jobScheduler';
+import type { SystemInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
 
 export const settingsRouter = Router();
 
@@ -80,5 +83,145 @@ settingsRouter.post(
       removed++;
     }
     res.json({ removed });
+  }),
+);
+
+settingsRouter.get(
+  '/api/job-schedules',
+  wrap(async (_req, res) => {
+    const globalRows = db
+      .select()
+      .from(schema.jobSchedules)
+      .where(isNull(schema.jobSchedules.libraryId))
+      .all();
+    const perLibRows = db
+      .select()
+      .from(schema.jobSchedules)
+      .where(isNotNull(schema.jobSchedules.libraryId))
+      .all();
+
+    const globals: Record<string, JobSchedule> = {};
+    for (const r of globalRows) {
+      globals[r.jobType] = { mode: r.mode, intervalMinutes: r.intervalMinutes };
+    }
+    const perLibrary: Record<number, Record<string, JobSchedule>> = {};
+    for (const row of perLibRows) {
+      if (row.libraryId === null) continue;
+      if (!perLibrary[row.libraryId]) perLibrary[row.libraryId] = {};
+      perLibrary[row.libraryId][row.jobType] = {
+        mode: row.mode,
+        intervalMinutes: row.intervalMinutes,
+        useGlobal: row.useGlobal === 1,
+      };
+    }
+
+    const payload: JobSchedulesPayload = { globals, perLibrary };
+    res.json(payload);
+  }),
+);
+
+const scheduleBody = z.object({
+  jobType: z.enum(['scan', 'tag', 'hash']),
+  libraryId: z.number().int().positive().nullable().optional(),
+  mode: z.enum(['off', 'interval', 'after-scan']).optional(),
+  intervalMinutes: z.number().int().min(0).optional(),
+  useGlobal: z.boolean().optional(),
+});
+
+settingsRouter.patch(
+  '/api/job-schedules',
+  wrap(async (req, res) => {
+    const body = scheduleBody.parse(req.body);
+    const libraryId = body.libraryId ?? null;
+
+    // SQLite treats NULLs as distinct in unique indexes, so composite-PK upsert on (job_type, NULL)
+    // can't be relied on. Read → decide → update-or-insert explicitly.
+    const existing = db
+      .select()
+      .from(schema.jobSchedules)
+      .where(
+        libraryId === null
+          ? isNull(schema.jobSchedules.libraryId)
+          : eq(schema.jobSchedules.libraryId, libraryId),
+      )
+      .all()
+      .find((r) => r.jobType === body.jobType);
+
+    const merged = {
+      jobType: body.jobType,
+      libraryId,
+      mode: (body.mode ?? existing?.mode ?? 'off') as 'off' | 'interval' | 'after-scan',
+      intervalMinutes: body.intervalMinutes ?? existing?.intervalMinutes ?? 0,
+      useGlobal: body.useGlobal !== undefined ? (body.useGlobal ? 1 : 0) : (existing?.useGlobal ?? 0),
+    };
+
+    if (existing) {
+      sqlite
+        .prepare(
+          libraryId === null
+            ? 'UPDATE job_schedules SET mode = ?, interval_minutes = ?, use_global = ? WHERE job_type = ? AND library_id IS NULL'
+            : 'UPDATE job_schedules SET mode = ?, interval_minutes = ?, use_global = ? WHERE job_type = ? AND library_id = ?',
+        )
+        .run(
+          merged.mode,
+          merged.intervalMinutes,
+          merged.useGlobal,
+          merged.jobType,
+          ...(libraryId === null ? [] : [libraryId]),
+        );
+    } else {
+      db.insert(schema.jobSchedules).values(merged).run();
+    }
+
+    scheduleAll();
+    res.json({ ok: true });
+  }),
+);
+
+settingsRouter.post(
+  '/api/system/regenerate-thumbnails',
+  wrap(async (_req, res) => {
+    enqueueBulkThumbnailRegenerate();
+    res.json({ ok: true });
+  }),
+);
+
+settingsRouter.post(
+  '/api/system/cleanup',
+  wrap(async (_req, res) => {
+    // Find thumbnail files whose media no longer exists
+    let removedThumbs = 0;
+    if (fs.existsSync(THUMBS_DIR)) {
+      for (const entry of fs.readdirSync(THUMBS_DIR)) {
+        const match = entry.match(/^(\d+)\.webp$/);
+        if (match) {
+          const mediaId = Number(match[1]);
+          const exists = db
+            .select({ id: schema.media.id })
+            .from(schema.media)
+            .where(eq(schema.media.id, mediaId))
+            .get();
+          if (!exists) {
+            fs.rmSync(thumbPathFor(mediaId), { force: true });
+            removedThumbs++;
+          }
+        }
+      }
+    }
+
+    // Recompute usage counts for all tags
+    const allTagIds = db.select({ id: schema.tags.id }).from(schema.tags).all().map((r) => r.id);
+    let resetTagCounts = 0;
+    if (allTagIds.length > 0) {
+      const placeholders = allTagIds.map(() => '?').join(',');
+      sqlite
+        .query(
+          `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
+        )
+        .run(...allTagIds);
+      resetTagCounts = allTagIds.length;
+    }
+
+    res.json({ removedThumbs, resetTagCounts });
   }),
 );

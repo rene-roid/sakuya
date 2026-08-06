@@ -104,10 +104,17 @@ const AUTO_SCAN_OPTIONS = [
 
 function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () => void }) {
   const showToast = useToast();
+  const queryClient = useQueryClient();
   const [folderInput, setFolderInput] = useState('');
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [showThumbPicker, setShowThumbPicker] = useState(false);
   const [thumbBust, setThumbBust] = useState(0);
+  const { data: schedules } = useQuery({ queryKey: ['job-schedules'], queryFn: api.jobSchedules });
+
+  // Effective scan interval: per-library scan row if not inheriting, otherwise global.
+  const perLib = schedules?.perLibrary[lib.id]?.scan;
+  const effectiveScan = perLib && !perLib.useGlobal ? perLib : schedules?.globals.scan;
+  const scanInterval = effectiveScan?.mode === 'interval' ? effectiveScan.intervalMinutes : 0;
 
   const scanMutation = useMutation({
     mutationFn: () => api.scanLibrary(lib.id),
@@ -115,8 +122,16 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
     onError: (err: Error) => showToast(err.message),
   });
   const autoScanMutation = useMutation({
-    mutationFn: (intervalMinutes: number) => api.updateLibrary(lib.id, { autoScanInterval: intervalMinutes }),
+    mutationFn: (intervalMinutes: number) =>
+      api.updateJobSchedule({
+        jobType: 'scan',
+        libraryId: lib.id,
+        mode: intervalMinutes > 0 ? 'interval' : 'off',
+        intervalMinutes,
+        useGlobal: false,
+      }),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['job-schedules'] });
       onChanged();
       showToast('Auto-scan updated');
     },
@@ -246,7 +261,7 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
       <div className="mt-3 flex items-center gap-2.5 border-t border-zinc-800 pt-3">
         <span className="text-[12px] text-zinc-500">Auto-scan</span>
         <select
-          value={lib.autoScanInterval}
+          value={scanInterval}
           disabled={autoScanMutation.isPending}
           onChange={(e) => autoScanMutation.mutate(Number(e.target.value))}
           className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
@@ -257,9 +272,9 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
             </option>
           ))}
         </select>
-        {lib.autoScanInterval > 0 && (
+        {scanInterval > 0 && (
           <span className="text-[11px] text-zinc-600">
-            Next scan in ~{lib.autoScanInterval >= 60 ? `${lib.autoScanInterval / 60}h` : `${lib.autoScanInterval}m`}
+            Next scan in ~{scanInterval >= 60 ? `${scanInterval / 60}h` : `${scanInterval}m`}
           </span>
         )}
       </div>

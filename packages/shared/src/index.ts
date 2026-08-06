@@ -9,6 +9,7 @@ export type TagSource = 'ai' | 'user';
 export type SortMode = 'recent' | 'name' | 'random';
 export type SortDir = 'asc' | 'desc';
 export type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
+export type ScheduleMode = 'off' | 'interval' | 'after-scan';
 
 export interface Library {
   id: number;
@@ -156,4 +157,15 @@ export interface SystemInfo {
   mediaBytes: number;
   dbBytes: number;
   thumbBytes: number;
+}
+
+export interface JobSchedule {
+  mode: ScheduleMode;
+  intervalMinutes: number;
+  useGlobal?: boolean;
+}
+
+export interface JobSchedulesPayload {
+  globals: Record<string, JobSchedule>;
+  perLibrary: Record<number, Record<string, JobSchedule>>;
 }
