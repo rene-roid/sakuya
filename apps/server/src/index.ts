@@ -9,6 +9,7 @@ import { jobsRouter } from './routes/jobs';
 import { settingsRouter } from './routes/settings';
 import { taggerRouter } from './routes/tagger';
 import { dashboardRouter } from './routes/dashboard';
+import { downloaderRouter } from './routes/downloader';
 import { initScheduler } from './services/jobScheduler';
 
 const app = express();
@@ -22,6 +23,7 @@ app.use(jobsRouter);
 app.use(settingsRouter);
 app.use(taggerRouter);
 app.use(dashboardRouter);
+app.use(downloaderRouter);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 

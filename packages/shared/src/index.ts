@@ -2,7 +2,7 @@ export type LibraryType = 'image' | 'video' | 'mixed';
 export type MediaType = 'image' | 'video';
 export type MediaSource = 'folder' | 'upload';
 export type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
-export type JobType = 'scan' | 'tag' | 'thumbnail' | 'model-download' | 'hash' | 'cleanup';
+export type JobType = 'scan' | 'tag' | 'thumbnail' | 'model-download' | 'hash' | 'cleanup' | 'downloader-install';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
 export type TagSource = 'ai' | 'user';
@@ -120,6 +120,7 @@ export interface Settings {
   thumbnail_cache_enabled: string;
   board_remember_filters: string;
   tagger_model: string;
+  downloader_concurrency: string;
 }
 
 export interface DashboardResponse {
@@ -168,4 +169,50 @@ export interface JobSchedule {
 export interface JobSchedulesPayload {
   globals: Record<string, JobSchedule>;
   perLibrary: Record<number, Record<string, JobSchedule>>;
+}
+
+export type DownloadItemStatus = 'queued' | 'running' | 'paused' | 'done' | 'error' | 'skipped';
+
+export interface DownloadBatch {
+  id: number;
+  libraryId: number;
+  folderPath: string;
+  extraArgs: string | null;
+  cookieFileId: number | null;
+  createdAt: number;
+}
+
+export interface DownloadItem {
+  id: number;
+  batchId: number;
+  url: string;
+  status: DownloadItemStatus;
+  filesDownloaded: number;
+  pid: number | null;
+  errorMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DownloadBatchWithItems extends DownloadBatch {
+  items: DownloadItem[];
+}
+
+export interface DownloadCookie {
+  id: number;
+  filename: string;
+  uploadedAt: number;
+}
+
+export interface DownloaderStatus {
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+}
+
+export interface DownloadLogLine {
+  id: number;
+  itemId: number;
+  line: string;
+  createdAt: number;
 }

@@ -82,7 +82,9 @@ export const mediaTags = sqliteTable(
 
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
-  type: text('type', { enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup'] }).notNull(),
+  type: text('type', {
+    enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup', 'downloader-install'],
+  }).notNull(),
   libraryId: integer('library_id'),
   label: text('label').notNull().default(''),
   status: text('status', { enum: ['queued', 'running', 'done', 'error'] }).notNull().default('queued'),
@@ -96,6 +98,63 @@ export const jobs = sqliteTable('jobs', {
 export const settings = sqliteTable('settings', {
   key: text('key').primaryKey(),
   value: text('value').notNull(),
+});
+
+export const downloadBatches = sqliteTable('download_batches', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  libraryId: integer('library_id').notNull(),
+  folderPath: text('folder_path').notNull(),
+  extraArgs: text('extra_args'),
+  cookieFileId: integer('cookie_file_id'),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const downloadItems = sqliteTable(
+  'download_items',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    batchId: integer('batch_id').notNull(),
+    url: text('url').notNull(),
+    status: text('status', {
+      enum: ['queued', 'running', 'paused', 'done', 'error', 'skipped'],
+    })
+      .notNull()
+      .default('queued'),
+    filesDownloaded: integer('files_downloaded').notNull().default(0),
+    pid: integer('pid'),
+    errorMessage: text('error_message'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (t) => [index('download_items_batch_idx').on(t.batchId)],
+);
+
+export const downloadLogs = sqliteTable(
+  'download_logs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    itemId: integer('item_id').notNull(),
+    line: text('line').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [index('download_logs_item_idx').on(t.itemId)],
+);
+
+export const downloadFiles = sqliteTable(
+  'download_files',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    itemId: integer('item_id').notNull(),
+    path: text('path').notNull(),
+  },
+  (t) => [index('download_files_item_idx').on(t.itemId)],
+);
+
+export const downloadCookies = sqliteTable('download_cookies', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  filename: text('filename').notNull(),
+  storedPath: text('stored_path').notNull(),
+  uploadedAt: integer('uploaded_at').notNull(),
 });
 
 export const jobSchedules = sqliteTable(

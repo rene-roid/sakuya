@@ -106,6 +106,9 @@ export function Navbar() {
         <NavLink to="/board" className={({ isActive }) => navPill(isActive)}>
           Board
         </NavLink>
+        <NavLink to="/downloader" className={({ isActive }) => navPill(isActive)}>
+          Downloader
+        </NavLink>
       </div>
       <div className="ml-2 max-w-[420px] flex-1">
         <TagSearchInput

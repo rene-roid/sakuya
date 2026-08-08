@@ -108,6 +108,21 @@ librariesRouter.delete(
 
 const folderBodySchema = z.object({ path: z.string().min(1) });
 
+/** Attach a folder to a library, reusing an already-attached row if one exists at that exact path. */
+export function attachFolder(libraryId: number, folderPath: string): typeof schema.folders.$inferSelect {
+  const existing = db
+    .select()
+    .from(schema.folders)
+    .where(and(eq(schema.folders.libraryId, libraryId), eq(schema.folders.path, folderPath)))
+    .get();
+  if (existing) return existing;
+  return db
+    .insert(schema.folders)
+    .values({ libraryId, path: folderPath, status: 'pending', createdAt: Date.now() })
+    .returning()
+    .get();
+}
+
 librariesRouter.post(
   '/api/libraries/:id/folders',
   wrap(async (req, res) => {
@@ -124,11 +139,7 @@ librariesRouter.post(
       .where(and(eq(schema.folders.libraryId, libraryId), eq(schema.folders.path, folderPath)))
       .get();
     if (dup) return res.status(409).json({ error: 'Folder already attached' });
-    const row = db
-      .insert(schema.folders)
-      .values({ libraryId, path: folderPath, status: 'pending', createdAt: Date.now() })
-      .returning()
-      .get();
+    const row = attachFolder(libraryId, folderPath);
     res.status(201).json(row);
   }),
 );

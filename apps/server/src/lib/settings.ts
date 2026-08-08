@@ -13,6 +13,7 @@ const DEFAULTS: Record<string, string> = {
   thumbnail_cache_enabled: '1',
   board_remember_filters: '1',
   tagger_model: 'wd-swinv2-tagger-v3',
+  downloader_concurrency: '2',
 };
 
 export function getSetting(key: string): string {
@@ -45,4 +46,9 @@ export function confidenceThreshold(): number {
 
 export function thumbnailCacheEnabled(): boolean {
   return getSetting('thumbnail_cache_enabled') !== '0';
+}
+
+export function downloaderConcurrency(): number {
+  const n = Number(getSetting('downloader_concurrency'));
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 8) : 2;
 }

@@ -24,6 +24,7 @@ const EDITABLE_KEYS = new Set([
   'continue_where_left',
   'thumbnail_cache_enabled',
   'board_remember_filters',
+  'downloader_concurrency',
 ]);
 
 settingsRouter.get(

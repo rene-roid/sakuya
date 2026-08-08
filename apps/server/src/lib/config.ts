@@ -10,6 +10,9 @@ export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 export const MODELS_DIR = path.join(DATA_DIR, 'models');
 export const MODEL_PATH = path.join(MODELS_DIR, 'model.onnx');
 export const MODEL_TAGS_PATH = path.join(MODELS_DIR, 'selected_tags.csv');
+export const DOWNLOADER_DIR = path.join(DATA_DIR, 'downloader');
+export const DOWNLOADER_BIN_DIR = path.join(DOWNLOADER_DIR, 'bin');
+export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
 
 export const PORT = Number(process.env.PORT ?? 3777);
 export const APP_VERSION = '0.1.0';
@@ -40,6 +43,6 @@ export function modelRepoBase(id: string): string {
 export const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tiff']);
 export const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v', '.ts', '.wmv']);
 
-for (const dir of [DATA_DIR, THUMBS_DIR, UPLOADS_DIR, MODELS_DIR]) {
+for (const dir of [DATA_DIR, THUMBS_DIR, UPLOADS_DIR, MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }

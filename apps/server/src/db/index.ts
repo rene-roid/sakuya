@@ -7,6 +7,16 @@ export const sqlite = new Database(DB_PATH, { create: true });
 sqlite.exec('PRAGMA journal_mode = WAL;');
 sqlite.exec('PRAGMA foreign_keys = ON;');
 
+// A discarded downloader prototype used group_id-based download_groups/download_items tables.
+// The current schema is batch_id-based (download_batches/download_items); drop the legacy pair
+// so the tables below can be (re)created cleanly. Nothing salvageable was left in them: their
+// one row pointed at an already-deleted library and a downloads/ folder that no longer exists on disk.
+const legacyItemColumns = sqlite.query(`PRAGMA table_info(download_items)`).all() as { name: string }[];
+if (legacyItemColumns.some((c) => c.name === 'group_id')) {
+  sqlite.exec('DROP TABLE IF EXISTS download_items');
+  sqlite.exec('DROP TABLE IF EXISTS download_groups');
+}
+
 sqlite.exec(`
 CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,6 +103,45 @@ CREATE TABLE IF NOT EXISTS job_schedules (
   use_global INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (job_type, library_id)
 );
+CREATE TABLE IF NOT EXISTS download_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  library_id INTEGER NOT NULL,
+  folder_path TEXT NOT NULL,
+  extra_args TEXT,
+  cookie_file_id INTEGER,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS download_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  batch_id INTEGER NOT NULL,
+  url TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued',
+  files_downloaded INTEGER NOT NULL DEFAULT 0,
+  pid INTEGER,
+  error_message TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS download_items_batch_idx ON download_items(batch_id);
+CREATE TABLE IF NOT EXISTS download_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  line TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS download_logs_item_idx ON download_logs(item_id);
+CREATE TABLE IF NOT EXISTS download_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  item_id INTEGER NOT NULL,
+  path TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS download_files_item_idx ON download_files(item_id);
+CREATE TABLE IF NOT EXISTS download_cookies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename TEXT NOT NULL,
+  stored_path TEXT NOT NULL,
+  uploaded_at INTEGER NOT NULL
+);
 `);
 
 // Migrate existing databases: add columns that may not exist yet.
@@ -107,6 +156,10 @@ try { sqlite.exec('CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)');
 sqlite.exec(
   `UPDATE jobs SET status = 'error', log = log || ' (interrupted by restart)' WHERE status IN ('queued', 'running')`,
 );
+
+// Download items interrupted by a server restart lose their tracked process — mark running as queued
+// (gallery-dl resumes safely on re-run) and clear stale pids.
+sqlite.exec(`UPDATE download_items SET status = 'queued', pid = NULL WHERE status IN ('running', 'queued')`);
 
 export const db = drizzle(sqlite, { schema });
 export { schema };

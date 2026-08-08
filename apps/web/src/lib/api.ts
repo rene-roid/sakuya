@@ -1,5 +1,9 @@
 import type {
   DashboardResponse,
+  DownloadBatchWithItems,
+  DownloadCookie,
+  DownloadLogLine,
+  DownloaderStatus,
   Job,
   LibraryWithStats,
   MediaDetail,
@@ -144,6 +148,32 @@ export const api = {
   },
   removeLibraryCover: (id: number) =>
     request<LibraryWithStats>(`/api/libraries/${id}/cover`, { method: 'DELETE' }),
+  downloaderStatus: () => request<DownloaderStatus>('/api/downloader/status'),
+  installDownloader: () => request<{ job: Job }>('/api/downloader/install', { method: 'POST' }),
+  resolveDownloaderPath: (path: string) =>
+    request<{ library: LibraryWithStats | null }>(`/api/downloader/resolve-path?path=${encodeURIComponent(path)}`),
+  listCookies: () => request<DownloadCookie[]>('/api/downloader/cookies'),
+  uploadCookies: (files: File[]) => {
+    const form = new FormData();
+    for (const file of files) form.append('files', file);
+    return request<DownloadCookie[]>('/api/downloader/cookies', { method: 'POST', body: form });
+  },
+  deleteCookie: (id: number) => request<{ ok: true }>(`/api/downloader/cookies/${id}`, { method: 'DELETE' }),
+  createDownloadBatch: (body: {
+    libraryId: number;
+    folderPath: string;
+    urls: string[];
+    extraArgs?: string;
+    cookieFileId?: number | null;
+  }) => request<DownloadBatchWithItems>('/api/downloader/batches', { method: 'POST', body: JSON.stringify(body) }),
+  listDownloadBatches: () => request<DownloadBatchWithItems[]>('/api/downloader/batches'),
+  downloadItemLogs: (id: number, after?: number) =>
+    request<DownloadLogLine[]>(`/api/downloader/items/${id}/logs${after ? `?after=${after}` : ''}`),
+  pauseDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/pause`, { method: 'POST' }),
+  resumeDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/resume`, { method: 'POST' }),
+  skipDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/skip`, { method: 'POST' }),
+  removeDownloadItem: (id: number, deleteFiles: boolean) =>
+    request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
 };
 
 export const fileUrl = (id: number) => `/api/media/${id}/file`;
