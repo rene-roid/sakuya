@@ -106,11 +106,12 @@ export const api = {
   regenerateThumbnail: (id: number) => request<{ ok: true }>(`/api/media/${id}/thumbnail/regenerate`, { method: 'POST' }),
   saveProgress: (id: number, progress: number) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress }) }),
-  tags: (opts: { q?: string; libraryId?: number; limit?: number }) => {
+  tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
     const params = new URLSearchParams();
     if (opts.q) params.set('q', opts.q);
     if (opts.libraryId) params.set('libraryId', String(opts.libraryId));
     if (opts.limit) params.set('limit', String(opts.limit));
+    if (opts.category) params.set('category', ([] as TagCategory[]).concat(opts.category).join(','));
     return request<TagCount[]>(`/api/tags?${params}`);
   },
   jobs: () => request<Job[]>('/api/jobs'),

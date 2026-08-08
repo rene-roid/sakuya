@@ -21,9 +21,19 @@ export function TagSidebar({
   onToggle: () => void;
 }) {
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, staleTime: 30_000 });
-  const { data: sidebarTags } = useQuery({
-    queryKey: ['tags', 'sidebar', filters.libraryId],
-    queryFn: () => api.tags({ libraryId: filters.libraryId, limit: 100 }),
+  const { data: ratingTags } = useQuery({
+    queryKey: ['tags', 'sidebar', 'rating', filters.libraryId],
+    queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'rating' }),
+    staleTime: 30_000,
+  });
+  const { data: characterTags } = useQuery({
+    queryKey: ['tags', 'sidebar', 'character', filters.libraryId],
+    queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'character', limit: 7 }),
+    staleTime: 30_000,
+  });
+  const { data: generalTags } = useQuery({
+    queryKey: ['tags', 'sidebar', 'general', filters.libraryId],
+    queryFn: () => api.tags({ libraryId: filters.libraryId, category: ['general', 'user'], limit: 100 }),
     staleTime: 30_000,
   });
 
@@ -61,10 +71,9 @@ export function TagSidebar({
         ))}
       </div>
       {(() => {
-        const tags = sidebarTags ?? [];
-        const ratings = tags.filter((t) => t.category === 'rating');
-        const characters = tags.filter((t) => t.category === 'character');
-        const general = tags.filter((t) => t.category === 'general' || t.category === 'user');
+        const ratings = ratingTags ?? [];
+        const characters = characterTags ?? [];
+        const general = generalTags ?? [];
 
         return (
           <>
@@ -128,7 +137,7 @@ export function TagSidebar({
                 </div>
               </>
             )}
-            {tags.length === 0 && (
+            {ratings.length === 0 && characters.length === 0 && general.length === 0 && (
               <div className="px-2.5 py-1 text-[11.5px] text-zinc-600">No tags yet</div>
             )}
           </>
