@@ -21,7 +21,7 @@ import {
   downloaderEvents,
 } from '../services/downloader';
 import { attachFolder, libraryWithStats } from './libraries';
-import type { DownloadItem, DownloadCookie, DownloadLogLine } from '@sakuya/shared';
+import type { DownloadBatchWithItems, DownloadItem, DownloadCookie, DownloadLogLine } from '@sakuya/shared';
 
 export const downloaderRouter = Router();
 
@@ -208,10 +208,12 @@ downloaderRouter.get('/api/downloader/stream', (req, res) => {
   });
   res.write(`data: ${JSON.stringify({ type: 'snapshot', batches: listBatches() })}\n\n`);
 
+  const onBatch = (batch: DownloadBatchWithItems) => res.write(`data: ${JSON.stringify({ type: 'batch', batch })}\n\n`);
   const onItem = (item: DownloadItem) => res.write(`data: ${JSON.stringify({ type: 'item', item })}\n\n`);
   const onLog = (log: DownloadLogLine) => res.write(`data: ${JSON.stringify({ type: 'log', log })}\n\n`);
   const onRemoved = (payload: { id: number; batchId: number }) =>
     res.write(`data: ${JSON.stringify({ type: 'removed', ...payload })}\n\n`);
+  downloaderEvents.on('batch', onBatch);
   downloaderEvents.on('item', onItem);
   downloaderEvents.on('log', onLog);
   downloaderEvents.on('removed', onRemoved);
@@ -219,6 +221,7 @@ downloaderRouter.get('/api/downloader/stream', (req, res) => {
 
   req.on('close', () => {
     clearInterval(heartbeat);
+    downloaderEvents.off('batch', onBatch);
     downloaderEvents.off('item', onItem);
     downloaderEvents.off('log', onLog);
     downloaderEvents.off('removed', onRemoved);

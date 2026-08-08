@@ -251,7 +251,9 @@ export function enqueueBatch(opts: {
   for (const row of itemRows) queue.push(row.id);
   queueMicrotask(pump);
 
-  return { ...rowToBatch(batchRow), items: itemRows.map(rowToItem) };
+  const batch: DownloadBatchWithItems = { ...rowToBatch(batchRow), items: itemRows.map(rowToItem) };
+  downloaderEvents.emit('batch', batch);
+  return batch;
 }
 
 export function listBatches(): DownloadBatchWithItems[] {

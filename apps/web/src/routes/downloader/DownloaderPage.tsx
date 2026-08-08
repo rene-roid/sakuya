@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Download, Pause, Play, SkipForward, Trash2, Upload as UploadIcon } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Pause, Play, SkipForward, Trash2, Upload as UploadIcon, X } from 'lucide-react';
 import type { DownloadBatchWithItems, DownloadItem, DownloadItemStatus } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -70,6 +70,16 @@ export function DownloaderPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['downloader-cookies'] });
       showToast('Cookie file(s) uploaded');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const deleteCookieMutation = useMutation({
+    mutationFn: (id: number) => api.deleteCookie(id),
+    onSuccess: () => {
+      setCookieFileId('');
+      queryClient.invalidateQueries({ queryKey: ['downloader-cookies'] });
+      showToast('Cookie file removed');
     },
     onError: (err: Error) => showToast(err.message),
   });
@@ -163,7 +173,12 @@ export function DownloaderPage() {
             <select
               value={libraryId}
               disabled={lockedLibraryName !== null}
-              onChange={(e) => setLibraryId(e.target.value ? Number(e.target.value) : '')}
+              onChange={(e) => {
+                const id = e.target.value ? Number(e.target.value) : '';
+                setLibraryId(id);
+                const lib = libraries?.find((l) => l.id === id);
+                if (lib?.folders[0]) setFolderPath(lib.folders[0].path);
+              }}
               className="w-full rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] text-[13px] text-zinc-100 outline-none disabled:opacity-60"
             >
               <option value="">Select a library…</option>
@@ -223,6 +238,14 @@ export function DownloaderPage() {
                 className="cursor-pointer rounded-[7px] border border-zinc-800 px-2.5 py-[7px] text-zinc-400 hover:text-zinc-200"
               >
                 <UploadIcon size={14} />
+              </button>
+              <button
+                disabled={cookieFileId === '' || deleteCookieMutation.isPending}
+                onClick={() => cookieFileId !== '' && deleteCookieMutation.mutate(Number(cookieFileId))}
+                title="Delete selected cookie file"
+                className="cursor-pointer rounded-[7px] border border-zinc-800 px-2.5 py-[7px] text-zinc-400 hover:text-red-400 disabled:opacity-40"
+              >
+                <X size={14} />
               </button>
             </div>
           </div>

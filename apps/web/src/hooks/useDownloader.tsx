@@ -36,6 +36,17 @@ export function DownloaderProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      if (data.type === 'batch') {
+        const batch: DownloadBatchWithItems = data.batch;
+        for (const item of batch.items) knownStatus.current.set(item.id, item.status);
+        setBatches((prev) =>
+          prev.some((b) => b.id === batch.id)
+            ? prev.map((b) => (b.id === batch.id ? batch : b))
+            : [batch, ...prev],
+        );
+        return;
+      }
+
       if (data.type === 'item') {
         const item: DownloadItem = data.item;
         setBatches((prev) =>
