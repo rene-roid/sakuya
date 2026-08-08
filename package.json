@@ -15,5 +15,9 @@
   },
   "devDependencies": {
     "typescript": "^5.5.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "form-data": "^4.0.6"
   }
 }

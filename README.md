@@ -1,15 +1,16 @@
-# Sakuya (tbge)
+# Sakuya
 
-A self-hosted media library manager. Point it at folders of images/videos and it scans, thumbnails, and auto-tags your collection using an AI tagger model (WD SwinV2, ONNX), with support for manual tags, libraries, and background job tracking.
+A self-hosted media library manager. Point it at folders of images/videos and it scans, thumbnails, and auto-tags your collection using an AI tagger model (WD SwinV2, ONNX) — with manual tags, a batch downloader, and background job tracking.
 
 ## Features
 
 - **Library Management** — organize media into libraries backed by watched folders
-- **Auto-Scan** — periodically rescan libraries for new/changed files
+- **Auto-Scan** — periodically rescan libraries for new/changed files, cleaning up missing files and thumbnails
 - **AI Tagging** — auto-tag images with a booru-style ONNX tagger model (downloaded on first use)
 - **Manual Tags** — add/edit your own tags alongside AI-generated ones
 - **Thumbnails** — automatic thumbnail generation for images and videos (via Sharp/FFmpeg)
-- **Job Tracking** — monitor scan/tag/thumbnail/model-download jobs in the background
+- **Downloader** — batch-download media with gallery-dl (auto-installed), with cookie file support and live progress via SSE
+- **Job Tracking** — monitor scan/tag/thumbnail/download/model-download jobs in the background
 - **Dashboard** — stats and insights across your libraries
 
 ## Tech Stack
@@ -18,6 +19,7 @@ A self-hosted media library manager. Point it at folders of images/videos and it
 - **Frontend**: React 18 + Vite, React Router, Tailwind CSS
 - **ML**: ONNX Runtime (onnxruntime-node)
 - **Media Processing**: Sharp (images), FFmpeg/FFprobe (video)
+- **Downloads**: gallery-dl
 
 ## Prerequisites
 
@@ -37,6 +39,14 @@ bun dev
 - Frontend (Vite dev server, proxies `/api` to the backend): `http://localhost:5173`
 
 Open `http://localhost:5173` in your browser once both are running.
+
+Alternatively, use the bundled setup scripts (`setup.sh`/`setup.bat`), which install Bun for you if it's missing:
+
+```bash
+./setup.sh   # installs Bun (if needed) + dependencies
+./run.sh     # starts the dev server
+./update.sh  # git pull + reinstall dependencies
+```
 
 ### Other useful commands
 
@@ -67,12 +77,12 @@ The AI tagger model (`wd-swinv2-tagger-v3`) is downloaded automatically as a bac
 ## Project Structure
 
 ```
-tbge/
+sakuya/
 ├── apps/
 │   ├── server/          # Bun + Express backend
 │   │   └── src/
-│   │       ├── routes/    # API endpoints (libraries, media, tags, jobs, tagger, ...)
-│   │       ├── services/  # Scanning, thumbnailing, tagging, job queue
+│   │       ├── routes/    # API endpoints (libraries, media, tags, jobs, tagger, downloader, ...)
+│   │       ├── services/  # Scanning, thumbnailing, tagging, downloading, job queue
 │   │       └── db/        # Drizzle schema + SQLite connection
 │   └── web/              # React frontend
 │       └── src/
@@ -93,6 +103,7 @@ tbge/
 - `/api/jobs` — job status tracking
 - `/api/settings` — user settings
 - `/api/tagger` — AI tagging service
+- `/api/downloader` — batch downloads via gallery-dl
 - `/api/dashboard` — dashboard data
 - `/api/uploads` — file uploads
 - `/api/health` — health check
