@@ -58,7 +58,7 @@ function releaseAssetName(): string {
 export function installGalleryDl() {
   return enqueueJob('downloader-install', 'Install gallery-dl', async (job: JobHandle) => {
     const asset = releaseAssetName();
-    const url = `https://github.com/mikf/gallery-dl/releases/latest/download/${asset}`;
+    const url = `https://codeberg.org/mikf/gallery-dl/releases/download/latest/${asset}`;
     job.update({ total: 100, log: `Downloading ${asset}…` });
 
     const res = await fetch(url, { redirect: 'follow' });
