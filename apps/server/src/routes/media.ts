@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
@@ -145,6 +147,24 @@ mediaRouter.get(
     if (!row || !fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
     // res.sendFile handles Range requests, ETag and conditional GETs.
     res.sendFile(row.path, { acceptRanges: true, cacheControl: true, maxAge: '1h' });
+  }),
+);
+
+mediaRouter.post(
+  '/api/media/:id/reveal',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row || !fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
+    const proc =
+      process.platform === 'win32'
+        ? spawn('explorer.exe', [`/select,${row.path}`], { detached: true, stdio: 'ignore' })
+        : process.platform === 'darwin'
+          ? spawn('open', ['-R', row.path], { detached: true, stdio: 'ignore' })
+          : spawn('xdg-open', [path.dirname(row.path)], { detached: true, stdio: 'ignore' });
+    proc.on('error', () => {});
+    proc.unref();
+    res.json({ ok: true });
   }),
 );
 

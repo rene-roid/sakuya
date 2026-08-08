@@ -108,6 +108,7 @@ export const api = {
   similar: (id: number) => request<SimilarResponse>(`/api/media/${id}/similar`),
   retag: (id: number) => request<{ job: Job }>(`/api/media/${id}/retag`, { method: 'POST' }),
   regenerateThumbnail: (id: number) => request<{ ok: true }>(`/api/media/${id}/thumbnail/regenerate`, { method: 'POST' }),
+  revealMedia: (id: number) => request<{ ok: true }>(`/api/media/${id}/reveal`, { method: 'POST' }),
   saveProgress: (id: number, progress: number) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {

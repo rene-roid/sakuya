@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen } from 'lucide-react';
 import type { Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
@@ -161,6 +161,11 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     onError: (err: Error) => showToast(err.message),
   });
 
+  const revealMutation = useMutation({
+    mutationFn: () => api.revealMedia(item.id),
+    onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
   const openTag = useCallback(
     (tag: string) => {
       handleClose();
@@ -232,7 +237,21 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
         <div className="mb-0.5 break-all text-base font-bold">{item.filename}</div>
         <div className="mb-[18px] text-xs text-zinc-500">{item.libraryName}</div>
         <div className="mb-[22px] flex flex-col gap-[9px]">
-          <MetaRow label="Path" value={item.path} mono />
+          <div className="flex justify-between gap-3 text-[12.5px]">
+            <span className="flex-none text-zinc-500">Path</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-right font-mono text-[11.5px] text-zinc-300" title={item.path}>
+                {item.path}
+              </span>
+              <button
+                className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+                onClick={() => revealMutation.mutate()}
+                title="Show in file explorer"
+              >
+                <FolderOpen size={13} />
+              </button>
+            </span>
+          </div>
           <MetaRow label="Size" value={formatBytes(item.sizeBytes)} />
           <MetaRow
             label="Dimensions"
