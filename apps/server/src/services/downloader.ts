@@ -354,6 +354,10 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
     }
     if (batch) {
       for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
+      // The batch-completion scan already indexed these into `media` with thumbnails;
+      // a rescan prunes the now-missing files and their thumbnails the same way any
+      // other externally-deleted file would be cleaned up.
+      if (files.length > 0) enqueueScanJob(batch.libraryId);
     }
   }
 
