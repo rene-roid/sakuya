@@ -1,0 +1,35 @@
+services:
+  server:
+    build:
+      context: .
+      target: server
+    restart: unless-stopped
+    environment:
+      PORT: "3777"
+      SAKUYA_DATA_DIR: /data
+    volumes:
+      # Reuses the existing apps/server/data folder, so the DB, downloaded tagger
+      # model, thumbnails, and uploads already on disk carry straight over.
+      - ./apps/server/data:/data
+      # Library folders must be mounted at the SAME absolute path the DB already
+      # references (visible via GET /api/libraries), otherwise scanning/original
+      # file serving can't find them. The existing libraries in tbge.db point at
+      # folders under these two paths:
+      - /home/yuuki/Pictures:/home/yuuki/Pictures
+      - /home/yuuki/Videos:/home/yuuki/Videos
+    ports:
+      - "3777:3777"
+
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "8080:80"
+    volumes:
+      # Read-only so nginx serves thumbnails (/data/thumbnails) straight from
+      # disk, bypassing the proxy for grid loading.
+      - ./apps/server/data:/data:ro

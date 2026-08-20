@@ -1,0 +1,16 @@
+**/node_modules
+apps/web/dist
+apps/server/data
+.git
+.idea
+.junie
+tray
+*.log
+.env
+run.sh
+run.bat
+run-hoyovault-upload.sh
+setup.sh
+setup.bat
+update.sh
+update.bat
