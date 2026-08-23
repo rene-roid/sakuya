@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Activity, Settings } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
+import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
 import { TagSearchInput } from './TagSearchInput';
 import { api } from '../lib/api';
-import { useToast } from './Toast';
 
 function navPill(active: boolean): string {
   return `cursor-pointer rounded-[7px] px-3.5 py-[7px] text-[13.5px] font-semibold ${
@@ -20,22 +20,13 @@ const STATUS_COLOR: Record<string, string> = {
 
 function JobsButton() {
   const navigate = useNavigate();
-  const showToast = useToast();
   const jobs = useJobs();
   const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'queued');
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, enabled: open });
 
-  const scanAllMutation = useMutation({
-    mutationFn: async () => {
-      for (const lib of libraries ?? []) {
-        await api.scanLibrary(lib.id);
-      }
-    },
-    onSuccess: () => showToast('Scan started for all libraries'),
-    onError: (err: Error) => showToast(err.message),
-  });
+  const scanAllMutation = useScanAllLibraries(libraries);
 
   useEffect(() => {
     if (!open) return;

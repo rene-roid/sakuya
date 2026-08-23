@@ -14,8 +14,6 @@ export type JobType =
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
 export type TagSource = 'ai' | 'user';
-export type SortMode = 'recent' | 'name' | 'random';
-export type SortDir = 'asc' | 'desc';
 export type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
 export type ScheduleMode = 'off' | 'interval' | 'after-scan';
 
@@ -95,19 +93,6 @@ export interface Job {
   log: string;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface MediaListQuery {
-  libraryId?: number;
-  type?: MediaType;
-  tags?: string[];
-  liked?: boolean;
-  q?: string;
-  sort?: SortMode;
-  dir?: SortDir;
-  seed?: number;
-  cursor?: string;
-  limit?: number;
 }
 
 export interface MediaListResponse {

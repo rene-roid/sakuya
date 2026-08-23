@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, X, Upload, RotateCw } from 'lucide-react';
 import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
 import { useToast } from '../../components/Toast';
+import { useScanAllLibraries } from '../../hooks/useScanAllLibraries';
 import { TabHeader } from './index';
 import type { LibraryWithStats } from '@sakuya/shared';
 
@@ -35,15 +36,7 @@ export function LibrariesTab() {
     onError: (err: Error) => showToast(err.message),
   });
 
-  const scanAllMutation = useMutation({
-    mutationFn: async () => {
-      for (const lib of libraries ?? []) {
-        await api.scanLibrary(lib.id);
-      }
-    },
-    onSuccess: () => showToast('Scan started for all libraries'),
-    onError: (err: Error) => showToast(err.message),
-  });
+  const scanAllMutation = useScanAllLibraries(libraries);
 
   return (
     <div>

@@ -5,6 +5,7 @@ import { formatBytes } from '../../lib/format';
 import { useToast } from '../../components/Toast';
 import { useJobs } from '../../hooks/useJobs';
 import { TabHeader } from './index';
+import { ToggleSwitch } from './MiscTabs';
 
 export function TaggingTab() {
   const queryClient = useQueryClient();
@@ -195,14 +196,11 @@ export function TaggingTab() {
               Runs the tagger automatically on newly scanned or uploaded files.
             </div>
           </div>
-          <div
-            className={`h-[22px] w-10 flex-none cursor-pointer rounded-full p-[3px] transition-colors ${enabled ? 'bg-accent' : 'bg-zinc-700'}`}
-            onClick={() => patchMutation.mutate({ ai_tagging_enabled: enabled ? '0' : '1' })}
-          >
-            <div
-              className={`h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-[18px]' : ''}`}
-            />
-          </div>
+          <ToggleSwitch
+            checked={enabled}
+            onChange={(value) => patchMutation.mutate({ ai_tagging_enabled: value ? '1' : '0' })}
+            pending={patchMutation.isPending}
+          />
         </div>
       </div>
 
