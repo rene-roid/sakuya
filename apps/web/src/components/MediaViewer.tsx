@@ -220,6 +220,9 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   if (!item) return null;
 
   const hasSimilar = (similar?.duplicates.length ?? 0) > 0 || (similar?.similar.length ?? 0) > 0;
+  // detail may reflect a rename that hasn't propagated back into the parent's items list yet.
+  const displayName = detail?.id === item.id ? detail.filename : item.filename;
+  const displayPath = detail?.id === item.id ? detail.path : item.path;
 
   return (
     <div className="fade-in fixed inset-0 z-[80] flex bg-zinc-950/92 backdrop-blur">
@@ -263,7 +266,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           <img
             key={item.id}
             src={fileUrl(item.id)}
-            alt={item.filename}
+            alt={displayName}
             className="max-h-[85%] max-w-[92%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
           />
         )}
@@ -296,14 +299,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
               className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-base font-bold text-zinc-100 outline-none focus:border-accent"
             />
           ) : (
-            <span className="min-w-0 flex-1 truncate break-all text-base font-bold" title={item.filename}>
-              {item.filename}
+            <span className="min-w-0 flex-1 truncate break-all text-base font-bold" title={displayName}>
+              {displayName}
             </span>
           )}
           <button
             className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
             onClick={() => {
-              setRenameValue(item.filename);
+              setRenameValue(displayName);
               setRenaming(true);
             }}
             title="Rename file"
@@ -323,13 +326,13 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           <div className="flex justify-between gap-3 text-[12.5px]">
             <span className="flex-none text-zinc-500">Path</span>
             <span className="flex min-w-0 items-center gap-1.5">
-              <span className="truncate text-right font-mono text-[11.5px] text-zinc-300" title={item.path}>
-                {item.path}
+              <span className="truncate text-right font-mono text-[11.5px] text-zinc-300" title={displayPath}>
+                {displayPath}
               </span>
               <button
                 className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
                 onClick={() => {
-                  navigator.clipboard.writeText(item.path);
+                  navigator.clipboard.writeText(displayPath);
                   showToast('Path copied');
                 }}
                 title="Copy path"
@@ -406,7 +409,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           title="Delete this file?"
           danger
           confirmLabel="Delete"
-          body={`"${item.filename}" will be permanently removed from disk and the library. This cannot be undone.`}
+          body={`"${displayName}" will be permanently removed from disk and the library. This cannot be undone.`}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteMutation.mutate()}
         />

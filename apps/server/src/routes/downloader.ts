@@ -21,8 +21,16 @@ import {
   resolveLibraryForPath,
   downloaderEvents,
 } from '../services/downloader';
+import {
+  startConsoleSession,
+  stopConsoleSession,
+  writeConsoleInput,
+  getConsoleStatus,
+  getConsoleBuffer,
+  consoleEvents,
+} from '../services/consoleSession';
 import { attachFolder, libraryWithStats } from './libraries';
-import type { DownloadBatchWithItems, DownloadItem, DownloadCookie, DownloadLogLine } from '@sakuya/shared';
+import type { DownloadBatchWithItems, DownloadItem, DownloadCookie, DownloadLogLine, ConsoleSessionStatus } from '@sakuya/shared';
 
 export const downloaderRouter = Router();
 
@@ -208,6 +216,70 @@ downloaderRouter.delete(
     res.json({ ok: true });
   }),
 );
+
+downloaderRouter.get(
+  '/api/downloader/console/status',
+  wrap(async (_req, res) => {
+    res.json(getConsoleStatus());
+  }),
+);
+
+const consoleStartSchema = z.object({ command: z.string().min(1) });
+
+downloaderRouter.post(
+  '/api/downloader/console/start',
+  wrap(async (req, res) => {
+    const body = consoleStartSchema.parse(req.body);
+    if (getConsoleStatus().running) return res.status(409).json({ error: 'A console session is already running' });
+    try {
+      await startConsoleSession(body.command.trim());
+    } catch (err: any) {
+      return res.status(400).json({ error: err.message });
+    }
+    res.json(getConsoleStatus());
+  }),
+);
+
+const consoleInputSchema = z.object({ text: z.string() });
+
+downloaderRouter.post(
+  '/api/downloader/console/input',
+  wrap(async (req, res) => {
+    const body = consoleInputSchema.parse(req.body);
+    if (!getConsoleStatus().running) return res.status(409).json({ error: 'No console session is running' });
+    writeConsoleInput(body.text);
+    res.json({ ok: true });
+  }),
+);
+
+downloaderRouter.post(
+  '/api/downloader/console/stop',
+  wrap(async (_req, res) => {
+    stopConsoleSession();
+    res.json({ ok: true });
+  }),
+);
+
+downloaderRouter.get('/api/downloader/console/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+  });
+  res.write(`data: ${JSON.stringify({ type: 'snapshot', buffer: getConsoleBuffer(), status: getConsoleStatus() })}\n\n`);
+
+  const onData = (chunk: string) => res.write(`data: ${JSON.stringify({ type: 'data', chunk })}\n\n`);
+  const onStatus = (status: ConsoleSessionStatus) => res.write(`data: ${JSON.stringify({ type: 'status', status })}\n\n`);
+  consoleEvents.on('data', onData);
+  consoleEvents.on('status', onStatus);
+  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    consoleEvents.off('data', onData);
+    consoleEvents.off('status', onStatus);
+  });
+});
 
 downloaderRouter.get('/api/downloader/stream', (req, res) => {
   res.writeHead(200, {

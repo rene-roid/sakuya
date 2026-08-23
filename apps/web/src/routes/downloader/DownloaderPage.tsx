@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { useJobs } from '../../hooks/useJobs';
 import { useDownloader } from '../../hooks/useDownloader';
+import { DownloaderConsole } from './DownloaderConsole';
 
 const STATUS_COLOR: Record<DownloadItemStatus, string> = {
   queued: 'text-zinc-500',
@@ -36,6 +37,7 @@ export function DownloaderPage() {
     onError: (err: Error) => showToast(err.message),
   });
 
+  const [tab, setTab] = useState<'downloads' | 'console'>('downloads');
   const [urlsText, setUrlsText] = useState('');
   const [libraryId, setLibraryId] = useState<number | ''>('');
   const [folderPath, setFolderPath] = useState('');
@@ -158,6 +160,24 @@ export function DownloaderPage() {
         </div>
       )}
 
+      <div className="mb-6 flex gap-1 rounded-[9px] border border-zinc-800 bg-zinc-900 p-1">
+        {(['downloads', 'console'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 cursor-pointer rounded-[7px] py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
+              tab === t ? 'bg-accent text-white' : 'text-zinc-500 hover:text-zinc-300'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'console' && <DownloaderConsole />}
+
+      {tab === 'downloads' && (
+        <>
       <div className="mb-6 rounded-xl border border-zinc-800 bg-[#111113] p-4">
         <div className="mb-3 text-[13.5px] font-bold">New download</div>
         <textarea
@@ -280,6 +300,8 @@ export function DownloaderPage() {
           <BatchCard key={batch.id} batch={batch} />
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 }

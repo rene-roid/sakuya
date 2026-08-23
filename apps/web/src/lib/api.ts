@@ -1,4 +1,5 @@
 import type {
+  ConsoleSessionStatus,
   DashboardResponse,
   DownloadBatchWithItems,
   DownloadCookie,
@@ -183,6 +184,12 @@ export const api = {
   redoDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/redo`, { method: 'POST' }),
   removeDownloadItem: (id: number, deleteFiles: boolean) =>
     request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
+  consoleStatus: () => request<ConsoleSessionStatus>('/api/downloader/console/status'),
+  startConsole: (command: string) =>
+    request<ConsoleSessionStatus>('/api/downloader/console/start', { method: 'POST', body: JSON.stringify({ command }) }),
+  sendConsoleInput: (text: string) =>
+    request<{ ok: true }>('/api/downloader/console/input', { method: 'POST', body: JSON.stringify({ text }) }),
+  stopConsole: () => request<{ ok: true }>('/api/downloader/console/stop', { method: 'POST' }),
 };
 
 export const fileUrl = (id: number) => `/api/media/${id}/file`;

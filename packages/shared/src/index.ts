@@ -229,3 +229,10 @@ export interface DownloadLogLine {
   line: string;
   createdAt: number;
 }
+
+export interface ConsoleSessionStatus {
+  running: boolean;
+  pid: number | null;
+  command: string | null;
+  startedAt: number | null;
+}

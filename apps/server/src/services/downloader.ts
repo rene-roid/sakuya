@@ -7,6 +7,7 @@ import { db, schema } from '../db';
 import { downloaderConcurrency } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
+import { parseShellArgs } from '../lib/shellArgs';
 import type { DownloadBatchWithItems, DownloadBatch, DownloadItem, DownloadLogLine } from '@sakuya/shared';
 
 export const downloaderEvents = new EventEmitter();
@@ -99,17 +100,6 @@ function maybeCompleteBatch(batchId: number) {
   if (allTerminal) enqueueScanJob(batch.libraryId);
 }
 
-/** Minimal shell-style word splitter (quotes supported, no shell expansion). */
-function parseArgs(input: string): string[] {
-  const args: string[] = [];
-  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(input))) {
-    args.push(match[1] ?? match[2] ?? match[3]);
-  }
-  return args;
-}
-
 function removeEmptyDirsUpTo(startDir: string, stopAt: string) {
   const stopResolved = path.resolve(stopAt);
   let dir = path.resolve(startDir);
@@ -158,7 +148,7 @@ async function runOne(itemId: number): Promise<void> {
       .get();
     cookiePath = cookie?.storedPath ?? null;
   }
-  const extraArgs = batch.extraArgs ? parseArgs(batch.extraArgs) : [];
+  const extraArgs = batch.extraArgs ? parseShellArgs(batch.extraArgs) : [];
   const args = [item.url, '-d', batch.folderPath, ...(cookiePath ? ['--cookies', cookiePath] : []), ...extraArgs];
 
   patchItem(itemId, { status: 'running' });
