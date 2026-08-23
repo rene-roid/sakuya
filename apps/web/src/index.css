@@ -60,3 +60,58 @@ input[type='range'] {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+.release-notes h1 {
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 17px;
+  font-weight: 800;
+  color: #f4f4f5;
+}
+.release-notes h2,
+.release-notes h3 {
+  margin: 16px 0 8px;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+}
+.release-notes h2:first-of-type,
+.release-notes h3:first-of-type {
+  margin-top: 0;
+}
+.release-notes p {
+  margin: 0 0 8px;
+  color: #d4d4d8;
+}
+.release-notes ul {
+  margin: 0 0 8px;
+  padding-left: 4px;
+  list-style: none;
+}
+.release-notes li {
+  position: relative;
+  margin-bottom: 7px;
+  padding-left: 16px;
+  color: #d4d4d8;
+  line-height: 1.55;
+}
+.release-notes li::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 8px;
+  height: 5px;
+  width: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+.release-notes strong {
+  color: #f4f4f5;
+  font-weight: 700;
+}
+.release-notes-tab h1 {
+  display: none;
+}

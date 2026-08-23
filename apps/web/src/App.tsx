@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from './lib/api';
 import { Navbar } from './components/Navbar';
+import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
 import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
@@ -24,6 +25,7 @@ export function App() {
     <JobsProvider>
       <DownloaderProvider>
         <div className="relative min-h-screen bg-zinc-950 text-zinc-100">
+          <ReleaseNotesDialog />
           <Navbar />
           <Routes>
             <Route path="/" element={<Dashboard />} />

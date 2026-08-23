@@ -6,6 +6,7 @@ import { TaggingTab } from './TaggingTab';
 import { UploadsTab } from './UploadsTab';
 import { DuplicatesTab } from './DuplicatesTab';
 import { AppearanceTab, BehaviorTab, SystemTab } from './MiscTabs';
+import { ReleasesTab } from './ReleasesTab';
 
 const TABS = [
   { key: 'libraries', label: 'Libraries' },
@@ -16,6 +17,7 @@ const TABS = [
   { key: 'appearance', label: 'Appearance' },
   { key: 'behavior', label: 'Behaviour' },
   { key: 'system', label: 'System' },
+  { key: 'releases', label: 'Releases' },
 ] as const;
 
 type TabKey = (typeof TABS)[number]['key'];
@@ -55,6 +57,7 @@ export function Settings() {
         {tab === 'appearance' && <AppearanceTab />}
         {tab === 'behavior' && <BehaviorTab />}
         {tab === 'system' && <SystemTab />}
+        {tab === 'releases' && <ReleasesTab />}
       </div>
     </div>
   );
