@@ -180,6 +180,7 @@ export const api = {
   pauseDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/pause`, { method: 'POST' }),
   resumeDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/resume`, { method: 'POST' }),
   skipDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/skip`, { method: 'POST' }),
+  redoDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/redo`, { method: 'POST' }),
   removeDownloadItem: (id: number, deleteFiles: boolean) =>
     request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
 };

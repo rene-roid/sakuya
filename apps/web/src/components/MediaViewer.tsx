@@ -34,6 +34,9 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const [addCategory, setAddCategory] = useState<TagCategory>('general');
   // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
   const [jumpItem, setJumpItem] = useState<Media | null>(null);
+  // Tracks the item we jumped from via the similar/duplicates panel, so it can be
+  // highlighted and pinned first in that panel for the newly viewed item.
+  const [previousPanelId, setPreviousPanelId] = useState<number | null>(null);
   const item = jumpItem ?? items[index];
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
@@ -114,6 +117,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     (dir: number) => {
       if (!items.length) return;
       setJumpItem(null);
+      setPreviousPanelId(null);
       let next = index + dir;
       if (next < 0) next = items.length - 1;
       if (next >= items.length) next = 0;
@@ -268,7 +272,11 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           <SimilarPanel
             duplicates={similar?.duplicates ?? []}
             similar={similar?.similar ?? []}
-            onPick={(m) => setJumpItem(m)}
+            previousId={previousPanelId}
+            onPick={(m) => {
+              setPreviousPanelId(item.id);
+              setJumpItem(m);
+            }}
           />
         )}
       </div>
@@ -471,10 +479,12 @@ function TagPill({
 function SimilarPanel({
   duplicates,
   similar,
+  previousId,
   onPick,
 }: {
   duplicates: Media[];
   similar: Media[];
+  previousId: number | null;
   onPick: (m: Media) => void;
 }) {
   const [collapsed, setCollapsed] = useState(true);
@@ -487,28 +497,45 @@ function SimilarPanel({
       {!collapsed && (
         <div className="flex flex-col gap-2 px-3 pb-3">
           {duplicates.length > 0 && (
-            <Section title={`Duplicates (${duplicates.length})`} items={duplicates} onPick={onPick} />
+            <Section title={`Duplicates (${duplicates.length})`} items={duplicates} previousId={previousId} onPick={onPick} />
           )}
-          {similar.length > 0 && <Section title={`Similar (${similar.length})`} items={similar} onPick={onPick} />}
+          {similar.length > 0 && (
+            <Section title={`Similar (${similar.length})`} items={similar} previousId={previousId} onPick={onPick} />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Section({ title, items, onPick }: { title: string; items: Media[]; onPick: (m: Media) => void }) {
+function Section({
+  title,
+  items,
+  previousId,
+  onPick,
+}: {
+  title: string;
+  items: Media[];
+  previousId: number | null;
+  onPick: (m: Media) => void;
+}) {
+  const ordered = previousId
+    ? [...items].sort((a, b) => (a.id === previousId ? -1 : b.id === previousId ? 1 : 0))
+    : items;
   return (
     <div>
       <div className="mb-1 text-[10.5px] font-semibold text-zinc-500">{title}</div>
       <div className="flex gap-1.5 overflow-x-auto pb-1">
-        {items.map((m) => (
+        {ordered.map((m) => (
           <img
             key={m.id}
             src={thumbUrl(m.id)}
             alt={m.filename}
             title={m.filename}
             onClick={() => onPick(m)}
-            className="h-12 w-12 flex-none cursor-pointer rounded-md border border-zinc-800 object-cover hover:border-accent"
+            className={`h-12 w-12 flex-none cursor-pointer rounded-md border object-cover hover:border-accent ${
+              m.id === previousId ? 'border-2 border-accent' : 'border border-zinc-800'
+            }`}
           />
         ))}
       </div>

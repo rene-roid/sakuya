@@ -308,6 +308,16 @@ export function resumeItem(id: number): void {
   pump();
 }
 
+export function redoItem(id: number): void {
+  const item = getItem(id);
+  if (!item) throw new Error('Item not found');
+  if (item.status === 'running' || item.status === 'queued') return;
+  db.delete(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).run();
+  patchItem(id, { status: 'queued', errorMessage: null, filesDownloaded: 0 });
+  queue.push(id);
+  pump();
+}
+
 export function skipItem(id: number): void {
   const item = getItem(id);
   if (!item) throw new Error('Item not found');

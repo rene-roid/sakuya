@@ -16,6 +16,7 @@ import {
   pauseItem,
   resumeItem,
   skipItem,
+  redoItem,
   removeItem,
   resolveLibraryForPath,
   downloaderEvents,
@@ -185,6 +186,14 @@ downloaderRouter.post(
   '/api/downloader/items/:id/skip',
   wrap(async (req, res) => {
     skipItem(intParam(req.params.id));
+    res.json({ ok: true });
+  }),
+);
+
+downloaderRouter.post(
+  '/api/downloader/items/:id/redo',
+  wrap(async (req, res) => {
+    redoItem(intParam(req.params.id));
     res.json({ ok: true });
   }),
 );

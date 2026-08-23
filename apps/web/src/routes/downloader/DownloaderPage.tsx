@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, ChevronRight, Download, Pause, Play, SkipForward, Trash2, Upload as UploadIcon, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Pause, Play, RotateCcw, SkipForward, Trash2, Upload as UploadIcon, X } from 'lucide-react';
 import type { DownloadBatchWithItems, DownloadItem, DownloadItemStatus } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -340,6 +340,10 @@ function ItemRow({ item }: { item: DownloadItem }) {
     },
     onError: (err: Error) => showToast(err.message),
   });
+  const redoMutation = useMutation({
+    mutationFn: () => api.redoDownloadItem(item.id),
+    onError: (err: Error) => showToast(err.message),
+  });
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900">
@@ -373,6 +377,11 @@ function ItemRow({ item }: { item: DownloadItem }) {
           {(item.status === 'queued' || item.status === 'running') && (
             <IconButton title="Skip" onClick={() => skipMutation.mutate()}>
               <SkipForward size={13} />
+            </IconButton>
+          )}
+          {item.status === 'done' && (
+            <IconButton title="Redo download" onClick={() => redoMutation.mutate()}>
+              <RotateCcw size={13} />
             </IconButton>
           )}
           <IconButton title="Remove" onClick={() => setRemoving(true)}>
