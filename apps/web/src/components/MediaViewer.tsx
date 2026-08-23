@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen } from 'lucide-react';
+import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
 import type { Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { useToast } from './Toast';
 import { HeartButton } from './HeartButton';
+import { ConfirmDialog } from './ConfirmDialog';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
@@ -34,6 +35,9 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
   const [jumpItem, setJumpItem] = useState<Media | null>(null);
   const item = jumpItem ?? items[index];
+  const [renaming, setRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const lastSavedProgress = useRef(0);
   const completedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -95,6 +99,11 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     api.saveProgress(item.id, item.viewProgress ?? 0).catch(() => {});
   }, [item?.id]);
 
+  useEffect(() => {
+    setRenaming(false);
+    setShowDeleteConfirm(false);
+  }, [item?.id]);
+
   const handleClose = useCallback(() => {
     saveProgress();
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
@@ -116,13 +125,18 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
-      else if (e.key === 'ArrowRight') step(1);
-      else if (e.key === 'ArrowLeft') step(-1);
+      const target = e.target as HTMLElement | null;
+      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+      if (e.key === 'Escape') {
+        if (renaming) setRenaming(false);
+        else if (showDeleteConfirm) setShowDeleteConfirm(false);
+        else handleClose();
+      } else if (!isTextInput && e.key === 'ArrowRight') step(1);
+      else if (!isTextInput && e.key === 'ArrowLeft') step(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleClose, step]);
+  }, [handleClose, step, renaming, showDeleteConfirm]);
 
   const onLoadedMetadata = useCallback(
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -164,6 +178,31 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const revealMutation = useMutation({
     mutationFn: () => api.revealMedia(item.id),
     onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: (filename: string) => api.renameMedia(item.id, filename),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['media-detail', item.id], updated);
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      setRenaming(false);
+      showToast('Renamed');
+    },
+    onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => api.deleteMedia(item.id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      showToast('File deleted');
+      onClose();
+    },
+    onError: (err: Error) => {
+      setShowDeleteConfirm(false);
+      showToast(`Failed: ${err.message}`);
+    },
   });
 
   const openTag = useCallback(
@@ -234,7 +273,43 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
         )}
       </div>
       <div className="w-[340px] flex-none overflow-y-auto border-l border-zinc-800 bg-[#111113] p-[22px]">
-        <div className="mb-0.5 break-all text-base font-bold">{item.filename}</div>
+        <div className="mb-0.5 flex items-center gap-1.5">
+          {renaming ? (
+            <input
+              autoFocus
+              value={renameValue}
+              disabled={renameMutation.isPending}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && renameValue.trim()) renameMutation.mutate(renameValue.trim());
+                else if (e.key === 'Escape') setRenaming(false);
+              }}
+              onBlur={() => setRenaming(false)}
+              className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-base font-bold text-zinc-100 outline-none focus:border-accent"
+            />
+          ) : (
+            <span className="min-w-0 flex-1 truncate break-all text-base font-bold" title={item.filename}>
+              {item.filename}
+            </span>
+          )}
+          <button
+            className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+            onClick={() => {
+              setRenameValue(item.filename);
+              setRenaming(true);
+            }}
+            title="Rename file"
+          >
+            <Pencil size={12} />
+          </button>
+          <button
+            className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-rose-500/20 hover:text-rose-400"
+            onClick={() => setShowDeleteConfirm(true)}
+            title="Delete file"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
         <div className="mb-[18px] text-xs text-zinc-500">{item.libraryName}</div>
         <div className="mb-[22px] flex flex-col gap-[9px]">
           <div className="flex justify-between gap-3 text-[12.5px]">
@@ -243,6 +318,16 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
               <span className="truncate text-right font-mono text-[11.5px] text-zinc-300" title={item.path}>
                 {item.path}
               </span>
+              <button
+                className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+                onClick={() => {
+                  navigator.clipboard.writeText(item.path);
+                  showToast('Path copied');
+                }}
+                title="Copy path"
+              >
+                <Copy size={13} />
+              </button>
               <button
                 className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
                 onClick={() => revealMutation.mutate()}
@@ -308,6 +393,16 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
         />
       </div>
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete this file?"
+          danger
+          confirmLabel="Delete"
+          body={`"${item.filename}" will be permanently removed from disk and the library. This cannot be undone.`}
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={() => deleteMutation.mutate()}
+        />
+      )}
     </div>
   );
 }

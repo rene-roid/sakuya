@@ -150,6 +150,43 @@ mediaRouter.get(
   }),
 );
 
+const renameSchema = z.object({ filename: z.string().min(1) });
+
+mediaRouter.patch(
+  '/api/media/:id/rename',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    const { filename } = renameSchema.parse(req.body);
+    const safeName = path.basename(filename.trim());
+    if (!safeName || safeName === '.' || safeName === '..') {
+      return res.status(400).json({ error: 'Invalid filename' });
+    }
+    if (safeName === row.filename) return res.json(getDetail(id));
+    const newPath = path.join(path.dirname(row.path), safeName);
+    if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
+    if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source file missing' });
+    fs.renameSync(row.path, newPath);
+    db.update(schema.media).set({ path: newPath, filename: safeName }).where(eq(schema.media.id, id)).run();
+    res.json(getDetail(id));
+  }),
+);
+
+mediaRouter.delete(
+  '/api/media/:id',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, id)).run();
+    db.delete(schema.media).where(eq(schema.media.id, id)).run();
+    fs.unlink(row.path, () => {});
+    fs.unlink(thumbPathFor(id), () => {});
+    res.json({ ok: true });
+  }),
+);
+
 mediaRouter.post(
   '/api/media/:id/reveal',
   wrap(async (req, res) => {
