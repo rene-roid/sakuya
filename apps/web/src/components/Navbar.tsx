@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Activity, Settings } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
 import { TagSearchInput } from './TagSearchInput';
+import { api } from '../lib/api';
+import { useToast } from './Toast';
 
 function navPill(active: boolean): string {
   return `cursor-pointer rounded-[7px] px-3.5 py-[7px] text-[13.5px] font-semibold ${
@@ -17,10 +20,22 @@ const STATUS_COLOR: Record<string, string> = {
 
 function JobsButton() {
   const navigate = useNavigate();
+  const showToast = useToast();
   const jobs = useJobs();
   const activeJobs = jobs.filter((j) => j.status === 'running' || j.status === 'queued');
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, enabled: open });
+
+  const scanAllMutation = useMutation({
+    mutationFn: async () => {
+      for (const lib of libraries ?? []) {
+        await api.scanLibrary(lib.id);
+      }
+    },
+    onSuccess: () => showToast('Scan started for all libraries'),
+    onError: (err: Error) => showToast(err.message),
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -49,7 +64,18 @@ function JobsButton() {
             <div
                 className="absolute right-0 top-[42px] z-50 w-[280px] rounded-[10px] border border-zinc-800 bg-[#111113] p-3 shadow-xl">
                 <div className="mb-2 text-[12px] font-bold uppercase tracking-[0.3px] text-zinc-500">Running jobs</div>
-                {activeJobs.length === 0 && <div className="mb-3 text-[12.5px] text-zinc-600">None</div>}
+                {activeJobs.length === 0 && (
+                  <div className="mb-3 flex flex-col gap-2">
+                    <div className="text-[12.5px] text-zinc-600">No running jobs</div>
+                    <button
+                      disabled={!libraries?.length || scanAllMutation.isPending}
+                      onClick={() => scanAllMutation.mutate()}
+                      className="w-full cursor-pointer rounded-lg border border-zinc-800 py-[7px] text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+                    >
+                      Scan all now
+                    </button>
+                  </div>
+                )}
                 {activeJobs.length > 0 && (
             <div className="mb-3 flex flex-col gap-2">
               {activeJobs.map((job) => (
