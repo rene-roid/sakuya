@@ -7,6 +7,7 @@ import ffprobeStatic from 'ffprobe-static';
 import { eq, and, inArray } from 'drizzle-orm';
 import { db, schema } from '../db';
 import { IMAGE_EXTS, VIDEO_EXTS } from '../lib/config';
+import { gifsAsVideos } from '../lib/settings';
 import { generateThumbnail, thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { dispatchAfterScan } from './jobScheduler';
@@ -71,6 +72,7 @@ async function hashFile(filePath: string, size: number): Promise<string> {
 
 export function mediaTypeForExt(ext: string): 'image' | 'video' | null {
   const lower = ext.toLowerCase();
+  if (lower === '.gif' && gifsAsVideos()) return 'video';
   if (IMAGE_EXTS.has(lower)) return 'image';
   if (VIDEO_EXTS.has(lower)) return 'video';
   return null;
@@ -112,7 +114,16 @@ export async function indexFile(
 ): Promise<number | null> {
   const type = mediaTypeForExt(path.extname(filePath));
   if (!type) return null;
-  const stat = await fs.stat(filePath);
+  let stat;
+  try {
+    stat = await fs.stat(filePath);
+  } catch (err: any) {
+    // Benign race: the file was present when the scan listed the folder but has since been
+    // removed/renamed — most commonly by an in-progress download writing into the same
+    // folder. Treat it as "nothing to index" instead of a scan error.
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
   const existing = db.select().from(schema.media).where(eq(schema.media.path, filePath)).get();
   if (existing && existing.mtime === Math.round(stat.mtimeMs) && existing.sizeBytes === stat.size) {
     return null; // unchanged
@@ -193,6 +204,60 @@ async function pruneMissing(libraryId: number, rootPath: string): Promise<number
     }
   }
   return gone.length;
+}
+
+/**
+ * Existing media rows keep whatever type they were indexed with; flipping the "GIFs as
+ * videos" setting only changes classification for files indexed afterwards. This job
+ * retroactively reclassifies already-indexed .gif files to match the new setting.
+ */
+export function enqueueGifReclassifyJob(toVideo: boolean) {
+  return enqueueJob(
+    'reclassify-gifs',
+    toVideo ? 'Reclassify GIFs as videos' : 'Reclassify GIFs as images',
+    async (job: JobHandle) => {
+      const fromType = toVideo ? 'image' : 'video';
+      const rows = db
+        .select()
+        .from(schema.media)
+        .where(eq(schema.media.type, fromType))
+        .all()
+        .filter((r) => r.path.toLowerCase().endsWith('.gif'));
+
+      job.update({ total: rows.length, log: `Reclassifying ${rows.length} GIFs…` });
+      let done = 0;
+      let errors = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        try {
+          if (toVideo) {
+            const probe = await probeVideo(row.path);
+            db.update(schema.media)
+              .set({ type: 'video', durationSeconds: probe.durationSeconds, perceptualHash: null })
+              .where(eq(schema.media.id, row.id))
+              .run();
+          } else {
+            const { computeDHash } = await import('./perceptualHash');
+            const phash = await computeDHash(row.path).catch(() => null);
+            db.update(schema.media)
+              .set({ type: 'image', durationSeconds: null, perceptualHash: phash })
+              .where(eq(schema.media.id, row.id))
+              .run();
+          }
+          done++;
+        } catch (err) {
+          errors++;
+          console.error(`gif reclassify failed for ${row.path}:`, err);
+        }
+        if (i % 5 === 0 || i === rows.length - 1) {
+          job.update({ progress: i + 1, log: `Reclassified ${i + 1}/${rows.length}…` });
+        }
+      }
+
+      return `Completed. ${done} reclassified${errors ? `, ${errors} errors` : ''}.`;
+    },
+  );
 }
 
 export function enqueueScanJob(libraryId: number) {

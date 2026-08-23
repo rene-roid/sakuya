@@ -2,7 +2,15 @@ export type LibraryType = 'image' | 'video' | 'mixed';
 export type MediaType = 'image' | 'video';
 export type MediaSource = 'folder' | 'upload';
 export type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
-export type JobType = 'scan' | 'tag' | 'thumbnail' | 'model-download' | 'hash' | 'cleanup' | 'downloader-install';
+export type JobType =
+  | 'scan'
+  | 'tag'
+  | 'thumbnail'
+  | 'model-download'
+  | 'hash'
+  | 'cleanup'
+  | 'downloader-install'
+  | 'reclassify-gifs';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
 export type TagSource = 'ai' | 'user';
@@ -121,6 +129,7 @@ export interface Settings {
   board_remember_filters: string;
   tagger_model: string;
   downloader_concurrency: string;
+  gifs_as_videos: string;
 }
 
 export interface DashboardResponse {

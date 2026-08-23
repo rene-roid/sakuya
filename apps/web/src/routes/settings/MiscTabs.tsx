@@ -274,7 +274,18 @@ export function BehaviorTab() {
       desc: 'Restore your last Board filters when you return. Turn off to reset the board each time you leave.',
       defaultOn: true,
     },
+    {
+      key: 'gifs_as_videos',
+      label: 'Detect GIFs as videos',
+      desc: 'Classify .gif files as videos instead of images (filters, badges, duration). New scans pick this up automatically; already-indexed GIFs need the button below.',
+    },
   ];
+
+  const reclassifyMutation = useMutation({
+    mutationFn: api.reclassifyGifs,
+    onSuccess: () => showToast('Reclassifying existing GIFs…'),
+    onError: (err: Error) => showToast(err.message),
+  });
 
   return (
     <div>
@@ -296,6 +307,15 @@ export function BehaviorTab() {
                   onChange={(value) => patchMutation.mutate({ [row.key]: value ? '1' : '0' })}
                 />
               </div>
+              {row.key === 'gifs_as_videos' && (
+                <button
+                  disabled={reclassifyMutation.isPending}
+                  onClick={() => reclassifyMutation.mutate()}
+                  className="mt-3 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                >
+                  Reclassify existing GIFs now
+                </button>
+              )}
             </div>
           );
         })}

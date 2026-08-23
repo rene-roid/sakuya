@@ -53,7 +53,7 @@ mediaRouter.get(
     }
     if (query.q) {
       conds.push(
-        `(m.filename LIKE ? OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))`,
+        `(m.path LIKE ? OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))`,
       );
       params.push(`%${query.q}%`, `%${query.q}%`);
     }

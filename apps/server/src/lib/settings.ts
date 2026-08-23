@@ -14,6 +14,7 @@ const DEFAULTS: Record<string, string> = {
   board_remember_filters: '1',
   tagger_model: 'wd-swinv2-tagger-v3',
   downloader_concurrency: '2',
+  gifs_as_videos: '0',
 };
 
 export function getSetting(key: string): string {
@@ -51,4 +52,8 @@ export function thumbnailCacheEnabled(): boolean {
 export function downloaderConcurrency(): number {
   const n = Number(getSetting('downloader_concurrency'));
   return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), 8) : 2;
+}
+
+export function gifsAsVideos(): boolean {
+  return getSetting('gifs_as_videos') === '1';
 }

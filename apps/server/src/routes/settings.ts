@@ -5,9 +5,10 @@ import { z } from 'zod';
 import { eq, isNotNull, isNull } from 'drizzle-orm';
 import { sqlite, db, schema } from '../db';
 import { wrap } from '../lib/http';
-import { getAllSettings, setSetting } from '../lib/settings';
+import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION } from '../lib/config';
 import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
+import { enqueueGifReclassifyJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { performCleanup } from '../services/cleanup';
 import type { SystemInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
@@ -25,6 +26,7 @@ const EDITABLE_KEYS = new Set([
   'thumbnail_cache_enabled',
   'board_remember_filters',
   'downloader_concurrency',
+  'gifs_as_videos',
 ]);
 
 settingsRouter.get(
@@ -40,6 +42,9 @@ settingsRouter.patch(
     const body = z.record(z.string()).parse(req.body);
     for (const [key, value] of Object.entries(body)) {
       if (!EDITABLE_KEYS.has(key)) return res.status(400).json({ error: `Setting not editable: ${key}` });
+      if (key === 'gifs_as_videos' && value !== getSetting(key)) {
+        enqueueGifReclassifyJob(value === '1');
+      }
       setSetting(key, value);
     }
     res.json(getAllSettings());
@@ -177,6 +182,14 @@ settingsRouter.patch(
 
     scheduleAll();
     res.json({ ok: true });
+  }),
+);
+
+settingsRouter.post(
+  '/api/system/reclassify-gifs',
+  wrap(async (_req, res) => {
+    const job = enqueueGifReclassifyJob(gifsAsVideos());
+    res.json(job);
   }),
 );
 

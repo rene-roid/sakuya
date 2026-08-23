@@ -142,6 +142,7 @@ export const api = {
       body: JSON.stringify(jobType ? { scope, jobType } : { scope }),
     }),
   regenerateAllThumbnails: () => request<{ ok: true }>('/api/system/regenerate-thumbnails', { method: 'POST' }),
+  reclassifyGifs: () => request<Job>('/api/system/reclassify-gifs', { method: 'POST' }),
   cleanupData: () => request<{ removedThumbs: number; resetTagCounts: number }>('/api/system/cleanup', { method: 'POST' }),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),

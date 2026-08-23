@@ -223,6 +223,9 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   // detail may reflect a rename that hasn't propagated back into the parent's items list yet.
   const displayName = detail?.id === item.id ? detail.filename : item.filename;
   const displayPath = detail?.id === item.id ? detail.path : item.path;
+  // Actual .gif files can't be decoded by an HTML5 <video> element even when classified
+  // as a video (see the "Detect GIFs as videos" setting), so always render them as an <img>.
+  const isGif = item.filename.toLowerCase().endsWith('.gif');
 
   return (
     <div className="fade-in fixed inset-0 z-[80] flex bg-zinc-950/92 backdrop-blur">
@@ -248,7 +251,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
         >
           <ChevronRight size={24} />
         </button>
-        {item.type === 'video' ? (
+        {item.type === 'video' && !isGif ? (
           <video
             key={item.id}
             ref={videoRef}

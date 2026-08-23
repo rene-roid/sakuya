@@ -83,7 +83,7 @@ export const mediaTags = sqliteTable(
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type', {
-    enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup', 'downloader-install'],
+    enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup', 'downloader-install', 'reclassify-gifs'],
   }).notNull(),
   libraryId: integer('library_id'),
   label: text('label').notNull().default(''),

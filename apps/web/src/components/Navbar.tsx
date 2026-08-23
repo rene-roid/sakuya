@@ -124,7 +124,7 @@ export function Navbar() {
             goToBoard(next);
           }}
           onFreeText={(q) => navigate(`/board?q=${encodeURIComponent(q)}`)}
-          placeholder="Search tags, titles..."
+          placeholder="Search tags, filenames, folders..."
         />
       </div>
       <div className="flex-1" />
