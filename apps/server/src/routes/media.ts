@@ -11,7 +11,7 @@ import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../ser
 import { rowToMedia } from '../lib/rowToMedia';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
-import type { MediaDetail, MediaListResponse, SimilarResponse } from '@sakuya/shared';
+import type { DuplicatesResponse, MediaDetail, MediaListResponse, SimilarResponse } from '@sakuya/shared';
 
 export const mediaRouter = Router();
 
@@ -107,6 +107,63 @@ mediaRouter.get(
     }
     const body: MediaListResponse = { items: rows.map(rowToMedia), nextCursor, total: countRow.c };
     res.json(body);
+  }),
+);
+
+mediaRouter.get(
+  '/api/media/duplicates',
+  wrap(async (req, res) => {
+    const hashRows = sqlite
+      .query(
+        `SELECT content_hash AS hash, COUNT(*) AS c FROM media
+         WHERE content_hash IS NOT NULL
+         GROUP BY content_hash HAVING COUNT(*) > 1`,
+      )
+      .all() as { hash: string; c: number }[];
+
+    const groups: DuplicatesResponse['groups'] = [];
+    let fileCount = 0;
+    let wastedBytes = 0;
+    for (const { hash } of hashRows) {
+      const rows = sqlite
+        .query(
+          `SELECT m.*, l.name AS library_name,
+                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+           FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+           WHERE m.content_hash = ?
+           ORDER BY m.created_at ASC`,
+        )
+        .all(hash) as any[];
+      const items = rows.map(rowToMedia);
+      const groupWasted = items.slice(1).reduce((sum, m) => sum + m.sizeBytes, 0);
+      groups.push({ contentHash: hash, items, wastedBytes: groupWasted });
+      fileCount += items.length;
+      wastedBytes += groupWasted;
+    }
+    groups.sort((a, b) => b.wastedBytes - a.wastedBytes);
+
+    const body: DuplicatesResponse = { groups, groupCount: groups.length, fileCount, wastedBytes };
+    res.json(body);
+  }),
+);
+
+const deleteBatchSchema = z.object({ ids: z.array(z.number().int()).min(1) });
+
+mediaRouter.post(
+  '/api/media/delete-batch',
+  wrap(async (req, res) => {
+    const { ids } = deleteBatchSchema.parse(req.body);
+    let deleted = 0;
+    for (const id of ids) {
+      const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+      if (!row) continue;
+      db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, id)).run();
+      db.delete(schema.media).where(eq(schema.media.id, id)).run();
+      fs.unlink(row.path, () => {});
+      fs.unlink(thumbPathFor(id), () => {});
+      deleted++;
+    }
+    res.json({ ok: true, deleted });
   }),
 );
 

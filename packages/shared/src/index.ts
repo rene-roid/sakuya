@@ -152,6 +152,19 @@ export interface SimilarResponse {
   similar: Media[];
 }
 
+export interface DuplicateGroup {
+  contentHash: string;
+  items: Media[];
+  wastedBytes: number;
+}
+
+export interface DuplicatesResponse {
+  groups: DuplicateGroup[];
+  groupCount: number;
+  fileCount: number;
+  wastedBytes: number;
+}
+
 export interface SystemInfo {
   version: string;
   mediaCount: number;

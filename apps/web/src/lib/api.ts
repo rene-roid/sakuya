@@ -4,6 +4,7 @@ import type {
   DownloadCookie,
   DownloadLogLine,
   DownloaderStatus,
+  DuplicatesResponse,
   Job,
   LibraryWithStats,
   MediaDetail,
@@ -112,6 +113,9 @@ export const api = {
   renameMedia: (id: number, filename: string) =>
     request<MediaDetail>(`/api/media/${id}/rename`, { method: 'PATCH', body: JSON.stringify({ filename }) }),
   deleteMedia: (id: number) => request<{ ok: true }>(`/api/media/${id}`, { method: 'DELETE' }),
+  duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
+  deleteMediaBatch: (ids: number[]) =>
+    request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
   saveProgress: (id: number, progress: number) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
