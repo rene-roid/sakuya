@@ -14,7 +14,7 @@
     "typecheck": "bun run --cwd apps/server typecheck && bun run --cwd apps/web typecheck"
   },
   "devDependencies": {
-    "typescript": "^5.5.3"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

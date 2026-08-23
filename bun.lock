@@ -9,7 +9,7 @@
         "form-data": "^4.0.6",
       },
       "devDependencies": {
-        "typescript": "^5.5.3",
+        "typescript": "^5.9.3",
       },
     },
     "apps/server": {
