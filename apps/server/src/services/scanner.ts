@@ -10,6 +10,7 @@ import { IMAGE_EXTS, VIDEO_EXTS } from '../lib/config';
 import { generateThumbnail, thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { dispatchAfterScan } from './jobScheduler';
+import { tryConvertUgoiraZip } from './ugoira';
 
 const ffprobePath: string = ffprobeStatic.path;
 
@@ -85,8 +86,18 @@ async function walk(dir: string, out: string[]): Promise<void> {
   for (const entry of entries) {
     if (entry.name.startsWith('.')) continue;
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) await walk(full, out);
-    else if (entry.isFile() && mediaTypeForExt(path.extname(entry.name))) out.push(full);
+    if (entry.isDirectory()) {
+      await walk(full, out);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const ext = path.extname(entry.name);
+    if (ext.toLowerCase() === '.zip') {
+      const gif = await tryConvertUgoiraZip(full);
+      if (gif) out.push(gif);
+      continue;
+    }
+    if (mediaTypeForExt(ext)) out.push(full);
   }
 }
 

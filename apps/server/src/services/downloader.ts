@@ -3,12 +3,18 @@ import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { eq, and, gt } from 'drizzle-orm';
+import ffmpegStatic from 'ffmpeg-static';
 import { db, schema } from '../db';
 import { downloaderConcurrency } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
 import { parseShellArgs } from '../lib/shellArgs';
 import type { DownloadBatchWithItems, DownloadBatch, DownloadItem, DownloadLogLine } from '@sakuya/shared';
+
+// Directory holding the bundled ffmpeg binary, prepended to the gallery-dl subprocess's
+// PATH so its "--ugoira gif" postprocessor (which shells out to "ffmpeg") can find it
+// even when no system ffmpeg is installed.
+const ffmpegDir = typeof ffmpegStatic === 'string' ? path.dirname(ffmpegStatic) : null;
 
 export const downloaderEvents = new EventEmitter();
 downloaderEvents.setMaxListeners(100);
@@ -149,12 +155,19 @@ async function runOne(itemId: number): Promise<void> {
     cookiePath = cookie?.storedPath ?? null;
   }
   const extraArgs = batch.extraArgs ? parseShellArgs(batch.extraArgs) : [];
-  const args = [item.url, '-d', batch.folderPath, ...(cookiePath ? ['--cookies', cookiePath] : []), ...extraArgs];
+  const args = [
+    item.url,
+    '-d', batch.folderPath,
+    ...(cookiePath ? ['--cookies', cookiePath] : []),
+    '--ugoira', 'gif',
+    ...extraArgs,
+  ];
 
   patchItem(itemId, { status: 'running' });
 
   await new Promise<void>((resolve) => {
-    const child = spawn(galleryDl.path!, args, { cwd: batch.folderPath, stdio: ['ignore', 'pipe', 'pipe'] });
+    const env = ffmpegDir ? { ...process.env, PATH: `${ffmpegDir}${path.delimiter}${process.env.PATH ?? ''}` } : process.env;
+    const child = spawn(galleryDl.path!, args, { cwd: batch.folderPath, stdio: ['ignore', 'pipe', 'pipe'], env });
     runningProcs.set(itemId, { child, killIntent: null });
     patchItem(itemId, { pid: child.pid ?? null });
 
