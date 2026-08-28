@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { Activity, Settings } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, Lock, Settings } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
+import { useAuth } from '../hooks/useAuth';
 import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
 import { TagSearchInput } from './TagSearchInput';
 import { api } from '../lib/api';
@@ -97,6 +98,24 @@ function JobsButton() {
   );
 }
 
+function LockButton() {
+  const queryClient = useQueryClient();
+  const { enabled } = useAuth();
+  if (!enabled) return null;
+  return (
+    <button
+      title="Lock"
+      onClick={async () => {
+        await api.logout();
+        queryClient.setQueryData(['auth-status'], { enabled: true, unlocked: false });
+      }}
+      className="flex h-[34px] w-[34px] shrink-0 cursor-pointer items-center justify-center rounded-lg text-zinc-400 hover:bg-zinc-900"
+    >
+      <Lock size={16} />
+    </button>
+  );
+}
+
 export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -146,6 +165,7 @@ export function Navbar() {
       </div>
       <div className="flex-1" />
       <JobsButton />
+      <LockButton />
         <button
             title="Settings"
             onClick={() => navigate('/settings')}

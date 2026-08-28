@@ -167,6 +167,11 @@ export interface SystemInfo {
   thumbBytes: number;
 }
 
+export interface AuthStatus {
+  enabled: boolean;
+  unlocked: boolean;
+}
+
 export interface JobSchedule {
   mode: ScheduleMode;
   intervalMinutes: number;

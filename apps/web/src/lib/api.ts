@@ -1,4 +1,5 @@
 import type {
+  AuthStatus,
   ConsoleSessionStatus,
   DashboardResponse,
   DownloadBatchWithItems,
@@ -39,6 +40,12 @@ export class ApiError extends Error {
   }
 }
 
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // FormData sets its own multipart Content-Type (with boundary); don't override it.
   const isForm = typeof FormData !== 'undefined' && init?.body instanceof FormData;
@@ -47,6 +54,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: init?.body && !isForm ? { 'Content-Type': 'application/json', ...init?.headers } : init?.headers,
   });
   if (!res.ok) {
+    if (res.status === 401 && !path.startsWith('/api/auth/')) onUnauthorized?.();
     let message = res.statusText;
     try {
       const body = await res.json();
@@ -84,6 +92,9 @@ export function mediaQueryString(filters: MediaFilters, cursor?: string): string
 }
 
 export const api = {
+  authStatus: () => request<AuthStatus>('/api/auth/status'),
+  login: (secret: string) => request<{ ok: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ secret }) }),
+  logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<DashboardResponse>('/api/dashboard'),
   libraries: () => request<LibraryWithStats[]>('/api/libraries'),
   library: (id: number) => request<LibraryWithStats>(`/api/libraries/${id}`),

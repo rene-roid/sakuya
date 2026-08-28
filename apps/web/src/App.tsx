@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
+import { LoginGate } from './components/LoginGate';
+import { useAuth } from './hooks/useAuth';
 import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
@@ -13,13 +15,22 @@ import { Settings } from './routes/settings';
 import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
 export function App() {
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const { loading, unlocked } = useAuth();
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: api.settings,
+    staleTime: 60_000,
+    enabled: unlocked,
+  });
 
   useEffect(() => {
     if (settings?.accent_color) {
       document.documentElement.style.setProperty('--accent', settings.accent_color);
     }
   }, [settings?.accent_color]);
+
+  if (loading) return null;
+  if (!unlocked) return <LoginGate />;
 
   return (
     <JobsProvider>

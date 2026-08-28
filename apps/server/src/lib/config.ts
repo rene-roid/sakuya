@@ -17,6 +17,12 @@ export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
 export const PORT = Number(process.env.PORT ?? 3777);
 export const APP_VERSION = '0.1.0';
 
+export const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
+export const AUTH_SECRET = process.env.AUTH_SECRET ?? '';
+if (AUTH_ENABLED && !AUTH_SECRET) {
+  throw new Error('AUTH_SECRET is not set. Set it before enabling AUTH_ENABLED.');
+}
+
 // Curated WD v3 taggers — all share 448px input + the same selected_tags.csv format,
 // so they are drop-in compatible with the existing preprocessing/inference code.
 export interface TaggerModelDef {
