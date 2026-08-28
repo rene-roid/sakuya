@@ -13,7 +13,7 @@ export function Dashboard() {
   const [viewer, setViewer] = useState<{ items: Media[]; index: number } | null>(null);
 
   return (
-    <div className="fade-in mx-auto max-w-[1400px] px-8 pb-16 pt-7">
+    <div className="fade-in mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-7">
       <SectionHeader title="Your Libraries" />
       <div className="mb-9 flex gap-4 overflow-x-auto pb-2">
         <div className="w-[220px] flex-none cursor-pointer" onClick={() => navigate('/board?liked=1')}>

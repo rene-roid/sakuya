@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "text-zinc-500 hover:bg-rose-500/20 hover:text-rose-400",
+        "files": [
+          "src/components/MediaViewer.tsx"
+        ],
+        "createdAt": "2026-08-28T14:46:01.244Z",
+        "reason": "false positive: text color also switches to text-rose-400 on the same hover, so gray text never co-occurs with the rose background; pre-existing code, unrelated to mobile-responsive task"
+      }
+    ]
+  }
+}

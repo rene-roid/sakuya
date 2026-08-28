@@ -23,7 +23,7 @@ export function LibraryView() {
 
   return (
     <div className="fade-in">
-      <div className="mx-auto max-w-[1400px] px-8 pt-6">
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pt-6">
         <div className="mb-1 flex items-baseline gap-3">
           <h1 className="m-0 text-[22px] font-extrabold">{library?.name ?? '…'}</h1>
           <span className="text-[13px] text-zinc-500">
@@ -32,11 +32,11 @@ export function LibraryView() {
         </div>
       </div>
       <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
-        <div className="mx-auto max-w-[1400px] px-8 py-3">
+        <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
           <FilterToolbar filters={filters} actions={actions} />
         </div>
       </div>
-      <div className="mx-auto max-w-[1400px] px-8 pb-16 pt-5">
+      <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-5">
         <MediaGrid
           items={media.items}
           hasNextPage={!!media.hasNextPage}

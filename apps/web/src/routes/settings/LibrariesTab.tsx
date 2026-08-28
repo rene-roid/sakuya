@@ -349,7 +349,7 @@ function ThumbnailPickerModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-[560px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
@@ -406,7 +406,7 @@ function ThumbnailPickerModal({
             Use latest media
           </button>
         </div>
-        <div className="grid flex-1 grid-cols-5 gap-2 overflow-y-auto">
+        <div className="grid flex-1 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-5">
           {(media?.items ?? []).map((m) => (
             <div
               key={m.id}
@@ -420,7 +420,7 @@ function ThumbnailPickerModal({
             </div>
           ))}
           {media && media.items.length === 0 && (
-            <div className="col-span-5 py-6 text-center text-[12.5px] text-zinc-600">No media in this library yet.</div>
+            <div className="col-span-full py-6 text-center text-[12.5px] text-zinc-600">No media in this library yet.</div>
           )}
         </div>
       </div>

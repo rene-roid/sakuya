@@ -49,7 +49,9 @@ export function TagSidebar({
   }
 
   return (
-    <div className="sticky top-[60px] h-[calc(100vh-60px)] w-[230px] flex-none overflow-y-auto border-r border-zinc-800 px-3.5 py-[18px]">
+    <>
+      <div className="fixed inset-0 z-40 bg-black/60 sm:hidden" onClick={onToggle} />
+      <div className="fixed inset-y-0 left-0 z-50 h-full w-[230px] overflow-y-auto border-r border-zinc-800 bg-zinc-950 px-3.5 py-[18px] sm:sticky sm:top-[60px] sm:z-auto sm:h-[calc(100vh-60px)] sm:flex-none sm:bg-transparent">
       <div className="mb-2.5 flex items-center justify-between">
         <div className="text-[11px] font-bold tracking-[0.6px] text-zinc-500">LIBRARIES</div>
         <button className="cursor-pointer text-zinc-500 hover:text-zinc-300" onClick={onToggle}>
@@ -143,6 +145,7 @@ export function TagSidebar({
           </>
         );
       })()}
-    </div>
+      </div>
+    </>
   );
 }

@@ -24,7 +24,7 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className="w-[420px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="w-full max-w-[420px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 text-[15px] font-bold">{title}</div>

@@ -228,8 +228,8 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const isGif = item.filename.toLowerCase().endsWith('.gif');
 
   return (
-    <div className="fade-in fixed inset-0 z-[80] flex bg-zinc-950/92 backdrop-blur">
-      <div className="relative flex min-w-0 flex-1 items-center justify-center p-10">
+    <div className="fade-in fixed inset-0 z-[80] flex flex-col overflow-y-auto bg-zinc-950/92 backdrop-blur sm:flex-row sm:overflow-hidden">
+      <div className="relative flex min-h-[65vh] min-w-0 flex-1 items-center justify-center p-2 sm:min-h-0 sm:p-10">
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
           <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
           <button
@@ -263,14 +263,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={saveProgress}
             onVolumeChange={handleVolumeChange}
-            className="max-h-[85%] max-w-[92%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+            className="max-h-[95%] max-w-[98%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         ) : (
           <img
             key={item.id}
             src={fileUrl(item.id)}
             alt={displayName}
-            className="max-h-[85%] max-w-[92%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)]"
+            className="max-h-[95%] max-w-[98%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         )}
 
@@ -286,7 +286,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           />
         )}
       </div>
-      <div className="w-[340px] flex-none overflow-y-auto border-l border-zinc-800 bg-[#111113] p-[22px]">
+      <div className="w-full flex-none overflow-y-auto border-t border-zinc-800 bg-[#111113] p-[18px] sm:w-[340px] sm:border-l sm:border-t-0 sm:p-[22px]">
         <div className="mb-0.5 flex items-center gap-1.5">
           {renaming ? (
             <input

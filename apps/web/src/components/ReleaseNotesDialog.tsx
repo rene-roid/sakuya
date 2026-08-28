@@ -31,7 +31,7 @@ export function ReleaseNotesDialog() {
         onClick={close}
       >
         <div
-          className="flex max-h-[85vh] w-[760px] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111113] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+          className="flex max-h-[85vh] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111113] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center gap-3.5 border-b border-zinc-800 bg-gradient-to-b from-accent/10 to-transparent px-7 py-6">

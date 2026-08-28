@@ -120,7 +120,7 @@ export function DownloaderPage() {
   const canSubmit = urlCount > 0 && !!folderPath.trim() && libraryId !== '';
 
   return (
-    <div className="fade-in mx-auto max-w-[1000px] px-8 pb-16 pt-7">
+    <div className="fade-in mx-auto max-w-[1000px] px-4 sm:px-8 pb-16 pt-7">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <div className="text-[22px] font-bold">Downloader</div>
@@ -187,7 +187,7 @@ export function DownloaderPage() {
           rows={4}
           className="mb-3 w-full resize-y rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2 font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
         />
-        <div className="mb-3 grid grid-cols-2 gap-2.5">
+        <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           <div>
             <div className="mb-1 text-[11px] font-semibold text-zinc-500">Library</div>
             <select
@@ -225,7 +225,7 @@ export function DownloaderPage() {
             />
           </div>
         </div>
-        <div className="mb-3 grid grid-cols-2 gap-2.5">
+        <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           <div>
             <div className="mb-1 text-[11px] font-semibold text-zinc-500">Cookie file (optional)</div>
             <div className="flex gap-2">
@@ -458,7 +458,7 @@ function RemoveItemModal({
       onClick={onCancel}
     >
       <div
-        className="w-[380px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="w-full max-w-[380px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 text-[15px] font-bold">Remove download</div>

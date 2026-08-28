@@ -32,13 +32,13 @@ export function Settings() {
   const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'libraries');
 
   return (
-    <div className="fade-in mx-auto flex h-[calc(100vh-60px)] max-w-[1200px] gap-8 overflow-hidden px-8 py-7">
-      <div className="flex w-[200px] flex-none flex-col gap-0.5">
+    <div className="fade-in mx-auto flex h-[calc(100vh-60px)] max-w-[1200px] flex-col gap-4 overflow-hidden px-4 py-5 sm:flex-row sm:gap-8 sm:px-8 sm:py-7">
+      <div className="flex flex-none gap-1 overflow-x-auto pb-1 sm:w-[200px] sm:flex-col sm:gap-0.5 sm:overflow-visible sm:pb-0">
         {TABS.map((t) => (
           <div
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`cursor-pointer rounded-lg border px-3 py-[9px] text-[13.5px] font-semibold ${
+            className={`flex-none cursor-pointer whitespace-nowrap rounded-lg border px-3 py-[9px] text-[13.5px] font-semibold ${
               tab === t.key
                 ? 'border-zinc-800 bg-zinc-900 text-zinc-100'
                 : 'border-transparent text-zinc-400 hover:text-zinc-200'
