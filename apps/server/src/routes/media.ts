@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail } from '../services/thumbnailer';
@@ -420,17 +420,21 @@ mediaRouter.post(
   }),
 );
 
-const progressSchema = z.object({ progress: z.number().min(0).max(1) });
+const progressSchema = z.object({
+  progress: z.number().min(0).max(1),
+  view: z.boolean().optional(),
+  watchedDelta: z.number().min(0).max(60).optional(),
+});
 
 mediaRouter.patch(
   '/api/media/:id/progress',
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
     const body = progressSchema.parse(req.body);
-    db.update(schema.media)
-      .set({ viewProgress: body.progress, lastViewedAt: Date.now() })
-      .where(eq(schema.media.id, id))
-      .run();
+    const updates: Record<string, unknown> = { viewProgress: body.progress, lastViewedAt: Date.now() };
+    if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
+    if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
+    db.update(schema.media).set(updates).where(eq(schema.media.id, id)).run();
     res.json({ ok: true });
   }),
 );

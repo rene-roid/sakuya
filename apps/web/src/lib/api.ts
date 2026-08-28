@@ -128,8 +128,8 @@ export const api = {
   duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
   deleteMediaBatch: (ids: number[]) =>
     request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
-  saveProgress: (id: number, progress: number) =>
-    request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress }) }),
+  saveProgress: (id: number, progress: number, opts?: { view?: boolean; watchedDelta?: number }) =>
+    request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress, ...opts }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
     const params = new URLSearchParams();
     if (opts.q) params.set('q', opts.q);

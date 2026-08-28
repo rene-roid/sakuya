@@ -150,6 +150,8 @@ try { sqlite.exec('ALTER TABLE libraries ADD COLUMN custom_image_path TEXT'); } 
 try { sqlite.exec('ALTER TABLE media ADD COLUMN liked INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { sqlite.exec('ALTER TABLE media ADD COLUMN liked_at INTEGER'); } catch {}
 try { sqlite.exec('ALTER TABLE media ADD COLUMN perceptual_hash TEXT'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN watched_seconds REAL NOT NULL DEFAULT 0'); } catch {}
 try { sqlite.exec('CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)'); } catch {}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.

@@ -58,6 +58,8 @@ export interface Media {
   taggedAt: number | null;
   lastViewedAt: number | null;
   viewProgress: number;
+  viewCount: number;
+  watchedSeconds: number;
   liked: boolean;
   likedAt: number | null;
   perceptualHash?: string | null;

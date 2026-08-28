@@ -44,6 +44,9 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const lastSavedProgress = useRef(0);
   const completedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  // Watch-time tracking: accumulates real seconds played between flushes (see saveProgress).
+  const lastPlayedTime = useRef(0);
+  const pendingWatchedSeconds = useRef(0);
 
   const { data: detail } = useQuery({
     queryKey: ['media-detail', item?.id],
@@ -76,30 +79,38 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     [rememberMute, rememberVolume],
   );
 
-  const saveProgress = useCallback(() => {
-    const video = videoRef.current;
-    if (!video || !video.duration || !item) return;
-    // Once the video has been watched to the end, stop tracking for this mount so that
-    // the autoloop restarting at 0 doesn't re-add it to Continue Watching.
-    if (completedRef.current) return;
-    const progress = Math.min(video.currentTime / video.duration, 1);
-    if (progress >= 0.98) {
-      completedRef.current = true;
+  const saveProgress = useCallback(
+    (force = false) => {
+      const video = videoRef.current;
+      if (!video || !video.duration || !item) return;
+      // Only count forward playback as watched; seeks/loops reset the clock instead of adding a jump.
+      const delta = video.currentTime - lastPlayedTime.current;
+      lastPlayedTime.current = video.currentTime;
+      if (delta > 0 && delta < 2) pendingWatchedSeconds.current += delta;
+      // Once the video has been watched to the end, stop tracking for this mount so that
+      // the autoloop restarting at 0 doesn't re-add it to Continue Watching.
+      if (completedRef.current) return;
+      const progress = Math.min(video.currentTime / video.duration, 1);
+      const shouldSend =
+        force || progress >= 0.98 || Math.abs(progress - lastSavedProgress.current) >= 0.03 || pendingWatchedSeconds.current >= 1;
+      if (!shouldSend) return;
+      if (progress >= 0.98) completedRef.current = true;
       lastSavedProgress.current = progress;
-      api.saveProgress(item.id, progress).catch(() => {});
-      return;
-    }
-    if (Math.abs(progress - lastSavedProgress.current) < 0.03) return;
-    lastSavedProgress.current = progress;
-    api.saveProgress(item.id, progress).catch(() => {});
-  }, [item]);
+      const watchedDelta = pendingWatchedSeconds.current;
+      pendingWatchedSeconds.current = 0;
+      api.saveProgress(item.id, progress, { watchedDelta }).catch(() => {});
+    },
+    [item],
+  );
 
-  // Mark viewed (updates lastViewedAt for both images and videos) when a new item opens.
+  // Mark viewed (updates lastViewedAt + viewCount for both images and videos) when a new item opens.
   useEffect(() => {
     if (!item) return;
     completedRef.current = false;
     lastSavedProgress.current = item.viewProgress ?? 0;
-    api.saveProgress(item.id, item.viewProgress ?? 0).catch(() => {});
+    lastPlayedTime.current = 0;
+    pendingWatchedSeconds.current = 0;
+    api.saveProgress(item.id, item.viewProgress ?? 0, { view: true }).catch(() => {});
   }, [item?.id]);
 
   useEffect(() => {
@@ -108,7 +119,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   }, [item?.id]);
 
   const handleClose = useCallback(() => {
-    saveProgress();
+    saveProgress(true);
     queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     onClose();
   }, [saveProgress, queryClient, onClose]);
@@ -156,6 +167,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       const p = item.viewProgress;
       if (p > 0.01 && p < 0.98 && video.duration) {
         video.currentTime = p * video.duration;
+        lastPlayedTime.current = video.currentTime;
       }
     },
     [resumeEnabled, rememberVolume, item],
@@ -261,7 +273,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             loop
             controls
             onLoadedMetadata={onLoadedMetadata}
-            onTimeUpdate={saveProgress}
+            onTimeUpdate={() => saveProgress()}
             onVolumeChange={handleVolumeChange}
             className="max-h-[95%] max-w-[98%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
@@ -358,6 +370,10 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           />
           <MetaRow label="Type" value={item.type === 'video' ? `Video · ${formatDuration(item.durationSeconds) ?? ''}` : 'Image'} />
           <MetaRow label="Added" value={timeAgo(item.createdAt)} />
+          <MetaRow label="Views" value={`${item.viewCount} · last ${timeAgo(item.lastViewedAt)}`} />
+          {item.type === 'video' && item.watchedSeconds > 0 && (
+            <MetaRow label="Watched" value={formatDuration(item.watchedSeconds) ?? '—'} />
+          )}
         </div>
         <div className="mb-2 flex items-center justify-between">
           <div className="text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>

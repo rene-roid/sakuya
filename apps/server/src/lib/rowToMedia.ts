@@ -18,6 +18,8 @@ export function rowToMedia(row: any): Media {
     taggedAt: row.tagged_at,
     lastViewedAt: row.last_viewed_at,
     viewProgress: row.view_progress,
+    viewCount: row.view_count ?? 0,
+    watchedSeconds: row.watched_seconds ?? 0,
     liked: !!row.liked,
     likedAt: row.liked_at ?? null,
     perceptualHash: row.perceptual_hash ?? null,
