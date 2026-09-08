@@ -17,6 +17,8 @@ if (legacyItemColumns.some((c) => c.name === 'group_id')) {
   sqlite.exec('DROP TABLE IF EXISTS download_groups');
 }
 
+const isFreshDb = !sqlite.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'libraries'`).get();
+
 sqlite.exec(`
 CREATE TABLE IF NOT EXISTS libraries (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,16 +147,36 @@ CREATE TABLE IF NOT EXISTS download_cookies (
 );
 `);
 
-// Migrate existing databases: add columns that may not exist yet.
-try { sqlite.exec('ALTER TABLE libraries ADD COLUMN auto_scan_interval INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { sqlite.exec('ALTER TABLE libraries ADD COLUMN custom_image_path TEXT'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN liked INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN liked_at INTEGER'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN perceptual_hash TEXT'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN watched_seconds REAL NOT NULL DEFAULT 0'); } catch {}
-try { sqlite.exec('CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)'); } catch {}
-try { sqlite.exec('ALTER TABLE media ADD COLUMN transcoded_at INTEGER'); } catch {}
+// Versioned migrations, tracked via PRAGMA user_version so each runs exactly once.
+// Add new columns/indexes here (next version number) instead of a bare try/catch —
+// a real failure (locked file, disk full) should crash loudly, not get swallowed
+// alongside "column already exists".
+const MIGRATIONS: { version: number; sql: string }[] = [
+  { version: 1, sql: 'ALTER TABLE libraries ADD COLUMN auto_scan_interval INTEGER NOT NULL DEFAULT 0' },
+  { version: 2, sql: 'ALTER TABLE libraries ADD COLUMN custom_image_path TEXT' },
+  { version: 3, sql: 'ALTER TABLE media ADD COLUMN liked INTEGER NOT NULL DEFAULT 0' },
+  { version: 4, sql: 'ALTER TABLE media ADD COLUMN liked_at INTEGER' },
+  { version: 5, sql: 'ALTER TABLE media ADD COLUMN perceptual_hash TEXT' },
+  { version: 6, sql: 'ALTER TABLE media ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0' },
+  { version: 7, sql: 'ALTER TABLE media ADD COLUMN watched_seconds REAL NOT NULL DEFAULT 0' },
+  { version: 8, sql: 'CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)' },
+  { version: 9, sql: 'ALTER TABLE media ADD COLUMN transcoded_at INTEGER' },
+];
+const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+
+const currentVersion = (sqlite.query('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (isFreshDb || currentVersion === 0) {
+  // Fresh DB: the CREATE TABLE block above already has every column.
+  // Pre-existing DB with no tracked version: these migrations already landed via
+  // the old ad-hoc try/catch mechanism, so just record the baseline.
+  sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
+} else if (currentVersion < LATEST_VERSION) {
+  const pending = MIGRATIONS.filter((m) => m.version > currentVersion);
+  sqlite.transaction(() => {
+    for (const m of pending) sqlite.exec(m.sql);
+  })();
+  sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
+}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(
