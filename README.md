@@ -13,7 +13,7 @@ collection with an AI booru-style tagger, then gets out of your way.
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-18-61dafb?logo=react&logoColor=black)](https://react.dev)
 [![SQLite](https://img.shields.io/badge/db-SQLite-003b57?logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![License](https://img.shields.io/badge/license-Private-lightgrey)](#license)
+[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
 
 </div>
 
@@ -115,4 +115,4 @@ sakuya/
 
 ## License
 
-Private project.
+MIT — see [LICENSE](LICENSE).
