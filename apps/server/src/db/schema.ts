@@ -38,6 +38,7 @@ export const media = sqliteTable(
     createdAt: integer('created_at').notNull(),
     indexedAt: integer('indexed_at'),
     taggedAt: integer('tagged_at'),
+    transcodedAt: integer('transcoded_at'),
     lastViewedAt: integer('last_viewed_at'),
     viewProgress: real('view_progress').notNull().default(0),
     viewCount: integer('view_count').notNull().default(0),
@@ -85,7 +86,17 @@ export const mediaTags = sqliteTable(
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type', {
-    enum: ['scan', 'tag', 'thumbnail', 'model-download', 'hash', 'cleanup', 'downloader-install', 'reclassify-gifs'],
+    enum: [
+      'scan',
+      'tag',
+      'thumbnail',
+      'model-download',
+      'hash',
+      'cleanup',
+      'downloader-install',
+      'reclassify-gifs',
+      'transcode',
+    ],
   }).notNull(),
   libraryId: integer('library_id'),
   label: text('label').notNull().default(''),

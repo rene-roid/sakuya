@@ -8,6 +8,7 @@ import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
+import { playablePathFor, transcodePathFor } from '../services/transcoder';
 import { rowToMedia } from '../lib/rowToMedia';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
@@ -161,6 +162,7 @@ mediaRouter.post(
       db.delete(schema.media).where(eq(schema.media.id, id)).run();
       fs.unlink(row.path, () => {});
       fs.unlink(thumbPathFor(id), () => {});
+      fs.unlink(transcodePathFor(id), () => {});
       deleted++;
     }
     res.json({ ok: true, deleted });
@@ -202,8 +204,9 @@ mediaRouter.get(
     const id = intParam(req.params.id);
     const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
     if (!row || !fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
+    const servePath = row.type === 'video' ? playablePathFor(row.id, row.path) : row.path;
     // res.sendFile handles Range requests, ETag and conditional GETs.
-    res.sendFile(row.path, { acceptRanges: true, cacheControl: true, maxAge: '1h' });
+    res.sendFile(servePath, { acceptRanges: true, cacheControl: true, maxAge: '1h' });
   }),
 );
 
@@ -240,6 +243,7 @@ mediaRouter.delete(
     db.delete(schema.media).where(eq(schema.media.id, id)).run();
     fs.unlink(row.path, () => {});
     fs.unlink(thumbPathFor(id), () => {});
+    fs.unlink(transcodePathFor(id), () => {});
     res.json({ ok: true });
   }),
 );

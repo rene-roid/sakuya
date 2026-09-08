@@ -188,7 +188,19 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
   // Videos are tagged from their extracted thumbnail frame.
   const imagePath = row.type === 'video' ? thumbPathFor(row.id) : row.path;
   if (!fs.existsSync(imagePath)) throw new Error(`no taggable image for media ${mediaId}`);
-  const predicted = await predictTags(imagePath);
+  let predicted: PredictedTag[];
+  try {
+    predicted = await predictTags(imagePath);
+  } catch (err) {
+    // sharp couldn't decode the raw source — retry against the generated thumbnail, which is
+    // always a valid webp regardless of how exotic the original format is.
+    const thumb = thumbPathFor(row.id);
+    if (imagePath === row.path && thumb !== imagePath && fs.existsSync(thumb)) {
+      predicted = await predictTags(thumb);
+    } else {
+      throw err;
+    }
+  }
 
   const oldAi = db
     .select({ tagId: schema.mediaTags.tagId })

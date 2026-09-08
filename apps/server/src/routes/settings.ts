@@ -8,6 +8,7 @@ import { wrap } from '../lib/http';
 import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION } from '../lib/config';
 import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
+import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { performCleanup } from '../services/cleanup';
@@ -27,6 +28,7 @@ const EDITABLE_KEYS = new Set([
   'board_remember_filters',
   'downloader_concurrency',
   'gifs_as_videos',
+  'video_transcode_enabled',
 ]);
 
 settingsRouter.get(
@@ -197,6 +199,14 @@ settingsRouter.post(
   '/api/system/regenerate-thumbnails',
   wrap(async (_req, res) => {
     enqueueBulkThumbnailRegenerate();
+    res.json({ ok: true });
+  }),
+);
+
+settingsRouter.post(
+  '/api/system/transcode-videos',
+  wrap(async (_req, res) => {
+    enqueueBulkTranscodeCheck();
     res.json({ ok: true });
   }),
 );

@@ -14,27 +14,12 @@ export function thumbPathFor(mediaId: number): string {
   return path.join(THUMBS_DIR, `${mediaId}.webp`);
 }
 
-export async function generateImageThumbnail(sourcePath: string, mediaId: number): Promise<string> {
-  const dest = thumbPathFor(mediaId);
-  await sharp(sourcePath, { animated: false })
-    .rotate()
-    .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 80 })
-    .toFile(dest);
-  return dest;
-}
-
-export async function generateVideoThumbnail(
-  sourcePath: string,
-  mediaId: number,
-  durationSeconds: number | null,
-): Promise<string> {
-  const dest = thumbPathFor(mediaId);
-  const seek = durationSeconds && durationSeconds > 1 ? durationSeconds * 0.3 : 0;
+/** Extract a single frame as a webp — used for video thumbnails, and as a fallback for images sharp can't decode. */
+async function ffmpegFrameToWebp(sourcePath: string, dest: string, seekSeconds: number): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const args = [
       '-y',
-      '-ss', seek.toFixed(2),
+      '-ss', seekSeconds.toFixed(2),
       '-i', sourcePath,
       '-frames:v', '1',
       '-vf', 'scale=512:-2',
@@ -50,6 +35,31 @@ export async function generateVideoThumbnail(
       else reject(new Error(`ffmpeg exited with ${code}: ${stderr.slice(-300)}`));
     });
   });
+}
+
+export async function generateImageThumbnail(sourcePath: string, mediaId: number): Promise<string> {
+  const dest = thumbPathFor(mediaId);
+  try {
+    await sharp(sourcePath, { animated: false })
+      .rotate()
+      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toFile(dest);
+  } catch (err) {
+    // sharp/libvips can't decode this format — fall back to ffmpeg, which reads far more formats.
+    await ffmpegFrameToWebp(sourcePath, dest, 0);
+  }
+  return dest;
+}
+
+export async function generateVideoThumbnail(
+  sourcePath: string,
+  mediaId: number,
+  durationSeconds: number | null,
+): Promise<string> {
+  const dest = thumbPathFor(mediaId);
+  const seek = durationSeconds && durationSeconds > 1 ? durationSeconds * 0.3 : 0;
+  await ffmpegFrameToWebp(sourcePath, dest, seek);
   return dest;
 }
 

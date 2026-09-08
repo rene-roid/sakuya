@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS media (
   created_at INTEGER NOT NULL,
   indexed_at INTEGER,
   tagged_at INTEGER,
+  transcoded_at INTEGER,
   last_viewed_at INTEGER,
   view_progress REAL NOT NULL DEFAULT 0,
   liked INTEGER NOT NULL DEFAULT 0,
@@ -153,6 +154,7 @@ try { sqlite.exec('ALTER TABLE media ADD COLUMN perceptual_hash TEXT'); } catch 
 try { sqlite.exec('ALTER TABLE media ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { sqlite.exec('ALTER TABLE media ADD COLUMN watched_seconds REAL NOT NULL DEFAULT 0'); } catch {}
 try { sqlite.exec('CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)'); } catch {}
+try { sqlite.exec('ALTER TABLE media ADD COLUMN transcoded_at INTEGER'); } catch {}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(

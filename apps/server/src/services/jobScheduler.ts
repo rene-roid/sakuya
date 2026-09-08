@@ -3,7 +3,8 @@ import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
 import { enqueueTagJob, enqueueHashJob, modelReady } from './tagger';
 import { enqueueCleanupJob } from './cleanup';
-import { aiTaggingEnabled } from '../lib/settings';
+import { enqueueTranscodeJob } from './transcoder';
+import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
 
 type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
 type ScheduleMode = 'off' | 'interval' | 'after-scan';
@@ -75,6 +76,21 @@ function unhashedImageIdsForLibrary(libraryId: number): number[] {
     .map((r) => r.id);
 }
 
+function untranscodedVideoIdsForLibrary(libraryId: number): number[] {
+  return db
+    .select({ id: schema.media.id })
+    .from(schema.media)
+    .where(
+      and(
+        eq(schema.media.libraryId, libraryId),
+        eq(schema.media.type, 'video'),
+        isNull(schema.media.transcodedAt),
+      ),
+    )
+    .all()
+    .map((r) => r.id);
+}
+
 function libraryName(libraryId: number): string {
   const lib = db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get();
   return lib?.name ?? 'Library';
@@ -89,6 +105,12 @@ function dispatchTagForLibrary(libraryId: number): void {
 function dispatchHashForLibrary(libraryId: number): void {
   const ids = unhashedImageIdsForLibrary(libraryId);
   if (ids.length) enqueueHashJob(ids, libraryId);
+}
+
+function dispatchTranscodeForLibrary(libraryId: number): void {
+  if (!videoTranscodeEnabled()) return;
+  const ids = untranscodedVideoIdsForLibrary(libraryId);
+  if (ids.length) enqueueTranscodeJob(ids, `Transcode: ${libraryName(libraryId)}`, libraryId);
 }
 
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
@@ -113,6 +135,8 @@ export function dispatchAfterScan(libraryId: number): void {
 
   const hashSchedule = resolveSchedule('hash', libraryId);
   if (hashSchedule.mode === 'after-scan') dispatchHashForLibrary(libraryId);
+
+  dispatchTranscodeForLibrary(libraryId);
 }
 
 /**

@@ -19,6 +19,8 @@ interface ProbeResult {
   width: number | null;
   height: number | null;
   durationSeconds: number | null;
+  videoCodec?: string | null;
+  audioCodec?: string | null;
 }
 
 export async function probeVideo(filePath: string): Promise<ProbeResult> {
@@ -36,12 +38,16 @@ export async function probeVideo(filePath: string): Promise<ProbeResult> {
     proc.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`ffprobe: ${err.slice(-300)}`))));
   });
   const data = JSON.parse(json);
-  const video = (data.streams ?? []).find((s: any) => s.codec_type === 'video');
+  const streams = data.streams ?? [];
+  const video = streams.find((s: any) => s.codec_type === 'video');
+  const audio = streams.find((s: any) => s.codec_type === 'audio');
   const duration = Number(data.format?.duration ?? video?.duration);
   return {
     width: video?.width ?? null,
     height: video?.height ?? null,
     durationSeconds: Number.isFinite(duration) ? duration : null,
+    videoCodec: video?.codec_name ?? null,
+    audioCodec: audio?.codec_name ?? null,
   };
 }
 

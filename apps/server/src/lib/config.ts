@@ -6,6 +6,7 @@ const serverRoot = path.resolve(import.meta.dir, '..', '..');
 export const DATA_DIR = process.env.SAKUYA_DATA_DIR ?? path.join(serverRoot, 'data');
 export const DB_PATH = path.join(DATA_DIR, 'tbge.db');
 export const THUMBS_DIR = path.join(DATA_DIR, 'thumbnails');
+export const TRANSCODES_DIR = path.join(DATA_DIR, 'transcodes');
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 export const MODELS_DIR = path.join(DATA_DIR, 'models');
 export const MODEL_PATH = path.join(MODELS_DIR, 'model.onnx');
@@ -49,6 +50,6 @@ export function modelRepoBase(id: string): string {
 export const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tiff']);
 export const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v', '.ts', '.wmv']);
 
-for (const dir of [DATA_DIR, THUMBS_DIR, UPLOADS_DIR, MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
+for (const dir of [DATA_DIR, THUMBS_DIR, TRANSCODES_DIR, UPLOADS_DIR, MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }

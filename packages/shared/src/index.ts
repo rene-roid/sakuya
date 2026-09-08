@@ -10,7 +10,8 @@ export type JobType =
   | 'hash'
   | 'cleanup'
   | 'downloader-install'
-  | 'reclassify-gifs';
+  | 'reclassify-gifs'
+  | 'transcode';
 export type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
 export type TagSource = 'ai' | 'user';
@@ -117,6 +118,7 @@ export interface Settings {
   tagger_model: string;
   downloader_concurrency: string;
   gifs_as_videos: string;
+  video_transcode_enabled: string;
 }
 
 export interface DashboardResponse {

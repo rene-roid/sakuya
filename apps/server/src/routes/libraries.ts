@@ -10,6 +10,7 @@ import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { thumbPathFor } from '../services/thumbnailer';
+import { transcodePathFor } from '../services/transcoder';
 import { UPLOADS_DIR } from '../lib/config';
 import type { LibraryWithStats } from '@sakuya/shared';
 
@@ -95,6 +96,7 @@ librariesRouter.delete(
     const mediaRows = db.select().from(schema.media).where(eq(schema.media.libraryId, id)).all();
     for (const m of mediaRows) {
       fs.rmSync(thumbPathFor(m.id), { force: true });
+      fs.rmSync(transcodePathFor(m.id), { force: true });
       if (m.source === 'upload') fs.rmSync(m.path, { force: true });
       db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, m.id)).run();
     }
@@ -159,6 +161,7 @@ librariesRouter.delete(
     for (const m of rows) {
       if (m.path.startsWith(folder.path + path.sep) || m.path === folder.path) {
         fs.rmSync(thumbPathFor(m.id), { force: true });
+        fs.rmSync(transcodePathFor(m.id), { force: true });
         db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, m.id)).run();
         db.delete(schema.media).where(eq(schema.media.id, m.id)).run();
       }

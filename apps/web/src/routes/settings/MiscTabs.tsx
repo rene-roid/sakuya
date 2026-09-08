@@ -55,6 +55,7 @@ export function SystemTab() {
   const [showCleanupWarning, setShowCleanupWarning] = useState(false);
 
   const cacheEnabled = settings?.thumbnail_cache_enabled !== '0';
+  const transcodeEnabled = settings?.video_transcode_enabled === '1';
 
   const clearMutation = useMutation({
     mutationFn: api.clearThumbnails,
@@ -77,6 +78,21 @@ export function SystemTab() {
   const regenerateMutation = useMutation({
     mutationFn: api.regenerateAllThumbnails,
     onSuccess: () => showToast('Thumbnail regeneration started'),
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const transcodeToggleMutation = useMutation({
+    mutationFn: (value: boolean) => api.patchSettings({ video_transcode_enabled: value ? '1' : '0' }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['settings'], data);
+      showToast('Video transcoding setting updated');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  const transcodeRunMutation = useMutation({
+    mutationFn: api.transcodeVideos,
+    onSuccess: () => showToast('Checking videos for playback compatibility…'),
     onError: (err: Error) => showToast(err.message),
   });
 
@@ -112,6 +128,22 @@ export function SystemTab() {
           />
         </div>
       </div>
+      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[13.5px] font-bold">Video transcoding</div>
+            <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
+              After each scan, automatically re-encode videos the browser can't play (e.g. HEVC, or
+              .mkv/.avi/.wmv files) to a compatible file used for playback. Originals are left untouched.
+            </div>
+          </div>
+          <ToggleSwitch
+            checked={transcodeEnabled}
+            pending={transcodeToggleMutation.isPending}
+            onChange={(value) => transcodeToggleMutation.mutate(value)}
+          />
+        </div>
+      </div>
       <div className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
         <Row label="Version" value={info?.version ?? '—'} />
         <Row label="Media stored" value={info ? `${info.mediaCount} files · ${formatBytes(info.mediaBytes)}` : '—'} />
@@ -143,6 +175,20 @@ export function SystemTab() {
               className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
             >
               Regenerate all
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+            <div>
+              <div className="text-[13px] font-semibold text-zinc-200">Transcode videos</div>
+              <div className="text-[11px] text-zinc-500">Check every video and re-encode any the browser can't play</div>
+            </div>
+            <button
+              disabled={transcodeRunMutation.isPending}
+              onClick={() => transcodeRunMutation.mutate()}
+              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+            >
+              Transcode all videos now
             </button>
           </div>
 

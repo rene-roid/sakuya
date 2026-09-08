@@ -15,6 +15,7 @@ const DEFAULTS: Record<string, string> = {
   tagger_model: 'wd-swinv2-tagger-v3',
   downloader_concurrency: '2',
   gifs_as_videos: '0',
+  video_transcode_enabled: '0',
 };
 
 export function getSetting(key: string): string {
@@ -56,4 +57,8 @@ export function downloaderConcurrency(): number {
 
 export function gifsAsVideos(): boolean {
   return getSetting('gifs_as_videos') === '1';
+}
+
+export function videoTranscodeEnabled(): boolean {
+  return getSetting('video_transcode_enabled') === '1';
 }
