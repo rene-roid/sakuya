@@ -13,10 +13,10 @@ services:
       - ./apps/server/data:/data
       # Library folders must be mounted at the SAME absolute path the DB already
       # references (visible via GET /api/libraries), otherwise scanning/original
-      # file serving can't find them. The existing libraries in tbge.db point at
-      # folders under these two paths:
-      - /home/yuuki/Pictures:/home/yuuki/Pictures
-      - /home/yuuki/Videos:/home/yuuki/Videos
+      # file serving can't find them. Edit these to match the absolute paths
+      # your libraries were added under:
+      - /path/to/your/Pictures:/path/to/your/Pictures
+      - /path/to/your/Videos:/path/to/your/Videos
     ports:
       - "3777:3777"
 

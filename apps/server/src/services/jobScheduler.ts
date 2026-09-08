@@ -1,4 +1,5 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
+import type { ScheduleJobType } from '@sakuya/shared';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
 import { enqueueTagJob, enqueueHashJob, modelReady } from './tagger';
@@ -6,7 +7,6 @@ import { enqueueCleanupJob } from './cleanup';
 import { enqueueTranscodeJob } from './transcoder';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
 
-type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
 type ScheduleMode = 'off' | 'interval' | 'after-scan';
 
 interface Schedule {

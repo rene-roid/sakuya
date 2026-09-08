@@ -58,7 +58,7 @@ export async function tryConvertUgoiraZip(zipPath: string): Promise<string | nul
   }
   if (!looksLikeUgoiraZip(zip)) return null;
 
-  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'tbge-ugoira-'));
+  const tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'sakuya-ugoira-'));
   try {
     zip.extractAllTo(tmpDir, true);
     const frames = (await fsp.readdir(tmpDir)).filter((f) => UGOIRA_FRAME_NAME.test(f)).sort();

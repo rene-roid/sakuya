@@ -57,6 +57,17 @@ function getItem(id: number) {
   return db.select().from(schema.downloadItems).where(eq(schema.downloadItems.id, id)).get();
 }
 
+function getItemOrThrow(id: number) {
+  const item = getItem(id);
+  if (!item) throw new Error('Item not found');
+  return item;
+}
+
+function removeFromQueue(id: number) {
+  const idx = queue.indexOf(id);
+  if (idx !== -1) queue.splice(idx, 1);
+}
+
 function broadcastItem(id: number) {
   const row = getItem(id);
   if (row) downloaderEvents.emit('item', rowToItem(row));
@@ -284,11 +295,9 @@ export function listItemLogs(itemId: number, afterId = 0): DownloadLogLine[] {
 }
 
 export function pauseItem(id: number): void {
-  const item = getItem(id);
-  if (!item) throw new Error('Item not found');
+  const item = getItemOrThrow(id);
   if (item.status === 'queued') {
-    const idx = queue.indexOf(id);
-    if (idx !== -1) queue.splice(idx, 1);
+    removeFromQueue(id);
     patchItem(id, { status: 'paused' });
     return;
   }
@@ -303,8 +312,7 @@ export function pauseItem(id: number): void {
 }
 
 export function resumeItem(id: number): void {
-  const item = getItem(id);
-  if (!item) throw new Error('Item not found');
+  const item = getItemOrThrow(id);
   if (item.status !== 'paused' && item.status !== 'error' && item.status !== 'skipped') return;
   patchItem(id, { status: 'queued', errorMessage: null });
   queue.push(id);
@@ -312,8 +320,7 @@ export function resumeItem(id: number): void {
 }
 
 export function redoItem(id: number): void {
-  const item = getItem(id);
-  if (!item) throw new Error('Item not found');
+  const item = getItemOrThrow(id);
   if (item.status === 'running' || item.status === 'queued') return;
   db.delete(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).run();
   patchItem(id, { status: 'queued', errorMessage: null, filesDownloaded: 0 });
@@ -322,11 +329,9 @@ export function redoItem(id: number): void {
 }
 
 export function skipItem(id: number): void {
-  const item = getItem(id);
-  if (!item) throw new Error('Item not found');
+  const item = getItemOrThrow(id);
   if (item.status === 'queued') {
-    const idx = queue.indexOf(id);
-    if (idx !== -1) queue.splice(idx, 1);
+    removeFromQueue(id);
     patchItem(id, { status: 'skipped' });
     maybeCompleteBatch(item.batchId);
     return;
@@ -345,8 +350,7 @@ export function skipItem(id: number): void {
 }
 
 export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
-  const item = getItem(id);
-  if (!item) throw new Error('Item not found');
+  const item = getItemOrThrow(id);
 
   const entry = runningProcs.get(id);
   if (entry) {
@@ -354,8 +358,7 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
     entry.child.kill();
     runningProcs.delete(id);
   }
-  const qIdx = queue.indexOf(id);
-  if (qIdx !== -1) queue.splice(qIdx, 1);
+  removeFromQueue(id);
 
   if (opts.deleteFiles) {
     const batch = db.select().from(schema.downloadBatches).where(eq(schema.downloadBatches.id, item.batchId)).get();

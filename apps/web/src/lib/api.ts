@@ -11,6 +11,7 @@ import type {
   LibraryWithStats,
   MediaDetail,
   MediaListResponse,
+  ScheduleJobType,
   ScheduleMode,
   Settings,
   SimilarResponse,
@@ -21,8 +22,7 @@ import type {
   TaggerStatus,
   JobSchedulesPayload,
 } from '@sakuya/shared';
-
-export type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
+export type { ScheduleJobType } from '@sakuya/shared';
 
 export interface UpdateJobScheduleBody {
   jobType: ScheduleJobType;

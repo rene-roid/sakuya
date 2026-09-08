@@ -1,7 +1,7 @@
-export type LibraryType = 'image' | 'video' | 'mixed';
-export type MediaType = 'image' | 'video';
-export type MediaSource = 'folder' | 'upload';
-export type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
+type LibraryType = 'image' | 'video' | 'mixed';
+type MediaType = 'image' | 'video';
+type MediaSource = 'folder' | 'upload';
+type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
 export type JobType =
   | 'scan'
   | 'tag'
@@ -12,11 +12,12 @@ export type JobType =
   | 'downloader-install'
   | 'reclassify-gifs'
   | 'transcode';
-export type JobStatus = 'queued' | 'running' | 'done' | 'error';
+type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = 'rating' | 'general' | 'character' | 'user';
-export type TagSource = 'ai' | 'user';
-export type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
+type TagSource = 'ai' | 'user';
+type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
 export type ScheduleMode = 'off' | 'interval' | 'after-scan';
+export type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
 
 export interface Library {
   id: number;
