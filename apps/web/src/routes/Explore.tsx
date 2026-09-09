@@ -9,9 +9,9 @@ import { TagSidebar } from '../components/TagSidebar';
 import { MediaGrid } from '../components/MediaGrid';
 import { MediaViewer } from '../components/MediaViewer';
 
-const BOARD_FILTERS_KEY = 'sakuya:boardFilters';
+const EXPLORE_FILTERS_KEY = 'sakuya:exploreFilters';
 
-export function Board() {
+export function Explore() {
   const [filters, actions] = useFilters();
   const media = useMediaInfinite(filters);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
@@ -23,17 +23,17 @@ export function Board() {
   const rememberFilters = settings?.board_remember_filters !== '0';
   const restored = useRef(false);
 
-  // Restore last-used filters (once) when landing on a bare /board, if remembering is on.
+  // Restore last-used filters (once) when landing on a bare /explore, if remembering is on.
   useEffect(() => {
     if (restored.current || settings === undefined) return;
     restored.current = true;
     if (!rememberFilters) {
-      localStorage.removeItem(BOARD_FILTERS_KEY);
+      localStorage.removeItem(EXPLORE_FILTERS_KEY);
       return;
     }
     if (!location.search) {
-      const stored = localStorage.getItem(BOARD_FILTERS_KEY);
-      if (stored) navigate(`/board?${stored}`, { replace: true });
+      const stored = localStorage.getItem(EXPLORE_FILTERS_KEY);
+      if (stored) navigate(`/explore?${stored}`, { replace: true });
     }
   }, [settings, rememberFilters, location.search, navigate]);
 
@@ -41,8 +41,8 @@ export function Board() {
   useEffect(() => {
     if (!rememberFilters) return;
     const qs = location.search.replace(/^\?/, '');
-    if (qs) localStorage.setItem(BOARD_FILTERS_KEY, qs);
-    else localStorage.removeItem(BOARD_FILTERS_KEY);
+    if (qs) localStorage.setItem(EXPLORE_FILTERS_KEY, qs);
+    else localStorage.removeItem(EXPLORE_FILTERS_KEY);
   }, [location.search, rememberFilters]);
 
   return (
@@ -56,7 +56,7 @@ export function Board() {
       <div className="min-w-0 flex-1">
         <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
           <div className="mb-1 flex items-baseline gap-3">
-            <h1 className="m-0 text-[22px] font-extrabold">Board</h1>
+            <h1 className="m-0 text-[22px] font-extrabold">Explore</h1>
             <span className="text-[13px] text-zinc-500">
               {media.total} item{media.total === 1 ? '' : 's'}
             </span>

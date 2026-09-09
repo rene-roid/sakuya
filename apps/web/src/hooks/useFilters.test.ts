@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { boardQueryString, parseFilters } from './useFilters';
+import { exploreQueryString, parseFilters } from './useFilters';
 
 const CASES = [
   '',
@@ -14,9 +14,9 @@ const CASES = [
   'q=beach&q=sunset&tags=solo',
 ];
 
-test('boardQueryString survives a parse round-trip', () => {
+test('exploreQueryString survives a parse round-trip', () => {
   for (const qs of CASES) {
-    const saved = boardQueryString(parseFilters(new URLSearchParams(qs)));
+    const saved = exploreQueryString(parseFilters(new URLSearchParams(qs)));
     expect(parseFilters(new URLSearchParams(saved))).toEqual(parseFilters(new URLSearchParams(qs)));
   }
 });

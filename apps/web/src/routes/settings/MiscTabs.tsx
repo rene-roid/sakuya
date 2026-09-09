@@ -310,8 +310,8 @@ export function BehaviorTab() {
     },
     {
       key: 'board_remember_filters',
-      label: 'Remember board filters',
-      desc: 'Restore your last Board filters when you return. Turn off to reset the board each time you leave.',
+      label: 'Remember explore filters',
+      desc: 'Restore your last Explore filters when you return. Turn off to reset the page each time you leave.',
       defaultOn: true,
     },
     {

@@ -224,7 +224,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const openTag = useCallback(
     (tag: string) => {
       handleClose();
-      navigate(`/board?tags=${encodeURIComponent(tag)}`);
+      navigate(`/explore?tags=${encodeURIComponent(tag)}`);
     },
     [handleClose, navigate],
   );

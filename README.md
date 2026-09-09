@@ -31,8 +31,8 @@ collection with an AI booru-style tagger, then gets out of your way.
 </td>
 <td width="50%">
 
-**Board** — tag sidebar, filters, search-as-you-type
-<img src="docs/screenshots/board.png" alt="Board" />
+**Explore** — tag sidebar, filters, search-as-you-type
+<img src="docs/screenshots/board.png" alt="Explore" />
 
 </td>
 </tr>

@@ -9,7 +9,7 @@ import { useAuth } from './hooks/useAuth';
 import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
-import { Board } from './routes/Board';
+import { Explore } from './routes/Explore';
 import { LibraryView } from './routes/LibraryView';
 import { Boards, BoardView } from './routes/Boards';
 import { Settings } from './routes/settings';
@@ -41,7 +41,7 @@ export function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/board" element={<Board />} />
+            <Route path="/explore" element={<Explore />} />
             <Route path="/boards" element={<Boards />} />
             <Route path="/boards/:id" element={<BoardView />} />
             <Route path="/library/:id" element={<LibraryView />} />
