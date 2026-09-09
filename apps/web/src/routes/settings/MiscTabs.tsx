@@ -309,12 +309,6 @@ export function BehaviorTab() {
       defaultOn: true,
     },
     {
-      key: 'autosearch_first_tag',
-      label: 'Auto-search first tag on Enter',
-      desc: 'Pressing Enter in a search box adds the first matching tag instead of a free-text search.',
-      defaultOn: true,
-    },
-    {
       key: 'board_remember_filters',
       label: 'Remember board filters',
       desc: 'Restore your last Board filters when you return. Turn off to reset the board each time you leave.',

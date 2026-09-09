@@ -8,7 +8,6 @@ const DEFAULTS: Record<string, string> = {
   model_status: 'absent',
   remember_mute_state: '0',
   remember_volume_level: '1',
-  autosearch_first_tag: '1',
   continue_where_left: '1',
   thumbnail_cache_enabled: '1',
   board_remember_filters: '1',
