@@ -1,5 +1,8 @@
-import { Shuffle, ArrowUp, ArrowDown, Heart, X } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
+import { api } from '../lib/api';
+import { boardQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
 function segStyle(active: boolean): string {
@@ -10,6 +13,12 @@ function segStyle(active: boolean): string {
 
 export function FilterToolbar({ filters, actions }: { filters: FilterState; actions: FilterActions }) {
   const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
+  const qc = useQueryClient();
+  const query = boardQueryString(filters);
+  const saveSearch = useMutation({
+    mutationFn: (name: string) => api.createSavedSearch({ name, query }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
+  });
 
   return (
     <div className="flex flex-wrap items-center gap-4">
@@ -72,6 +81,19 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
           >
             <X size={11} />
           </span>
+        </div>
+      )}
+      {query && (
+        <div
+          title="Save these filters as a search"
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+          onClick={() => {
+            const name = window.prompt('Name this search')?.trim();
+            if (name) saveSearch.mutate(name);
+          }}
+        >
+          <BookmarkPlus size={16} />
+          <span>Save</span>
         </div>
       )}
     </div>

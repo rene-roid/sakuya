@@ -240,3 +240,10 @@ export interface ConsoleSessionStatus {
   command: string | null;
   startedAt: number | null;
 }
+
+export interface SavedSearch {
+  id: number;
+  name: string;
+  query: string;
+  createdAt: number;
+}

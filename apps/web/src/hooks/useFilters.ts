@@ -17,26 +17,45 @@ export interface FilterActions {
   toggleLiked(): void;
 }
 
+export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): FilterState {
+  const typeParam = (params.get('type') as 'image' | 'video' | null) ?? 'all';
+  const sort = (params.get('sort') as 'recent' | 'name' | 'random' | null) ?? 'recent';
+  const dir = (params.get('dir') as 'asc' | 'desc' | null) ?? (sort === 'recent' ? 'desc' : 'asc');
+  const libParam = params.get('library');
+  return {
+    typeParam: typeParam === 'image' || typeParam === 'video' ? typeParam : 'all',
+    type: typeParam === 'image' || typeParam === 'video' ? typeParam : undefined,
+    sort,
+    dir,
+    seed: Number(params.get('seed') ?? 1) || 1,
+    tags: (params.get('tags') ?? '').split(',').filter(Boolean),
+    liked: params.get('liked') === '1',
+    q: params.get('q') ?? undefined,
+    libraryId: fixedLibraryId ?? (libParam ? Number(libParam) : undefined),
+  };
+}
+
+/**
+ * Inverse of parseFilters: the canonical /board query string for a filter state.
+ * Omits values equal to the parser's defaults so saved searches stay short and comparable.
+ */
+export function boardQueryString(f: FilterState): string {
+  const p = new URLSearchParams();
+  if (f.libraryId) p.set('library', String(f.libraryId));
+  if (f.typeParam !== 'all') p.set('type', f.typeParam);
+  if (f.tags.length) p.set('tags', f.tags.join(','));
+  if (f.liked) p.set('liked', '1');
+  if (f.q) p.set('q', f.q);
+  if (f.sort !== 'recent') p.set('sort', f.sort);
+  if (f.dir !== (f.sort === 'recent' ? 'desc' : 'asc')) p.set('dir', f.dir);
+  if (f.sort === 'random') p.set('seed', String(f.seed));
+  return p.toString();
+}
+
 export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions] {
   const [params, setParams] = useSearchParams();
 
-  const state = useMemo<FilterState>(() => {
-    const typeParam = (params.get('type') as 'image' | 'video' | null) ?? 'all';
-    const sort = (params.get('sort') as 'recent' | 'name' | 'random' | null) ?? 'recent';
-    const dir = (params.get('dir') as 'asc' | 'desc' | null) ?? (sort === 'recent' ? 'desc' : 'asc');
-    const libParam = params.get('library');
-    return {
-      typeParam: typeParam === 'image' || typeParam === 'video' ? typeParam : 'all',
-      type: typeParam === 'image' || typeParam === 'video' ? typeParam : undefined,
-      sort,
-      dir,
-      seed: Number(params.get('seed') ?? 1) || 1,
-      tags: (params.get('tags') ?? '').split(',').filter(Boolean),
-      liked: params.get('liked') === '1',
-      q: params.get('q') ?? undefined,
-      libraryId: fixedLibraryId ?? (libParam ? Number(libParam) : undefined),
-    };
-  }, [params, fixedLibraryId]);
+  const state = useMemo<FilterState>(() => parseFilters(params, fixedLibraryId), [params, fixedLibraryId]);
 
   const update = useCallback(
     (fn: (next: URLSearchParams) => void) => {

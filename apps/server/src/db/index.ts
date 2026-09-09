@@ -145,6 +145,13 @@ CREATE TABLE IF NOT EXISTS download_cookies (
   stored_path TEXT NOT NULL,
   uploaded_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS saved_searches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  query TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_name_idx ON saved_searches(name);
 `);
 
 // Versioned migrations, tracked via PRAGMA user_version so each runs exactly once.

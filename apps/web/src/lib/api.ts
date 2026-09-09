@@ -14,6 +14,7 @@ import type {
   ScheduleJobType,
   ScheduleMode,
   Settings,
+  SavedSearch,
   SimilarResponse,
   SystemInfo,
   TagCategory,
@@ -96,6 +97,10 @@ export const api = {
   login: (secret: string) => request<{ ok: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ secret }) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
   dashboard: () => request<DashboardResponse>('/api/dashboard'),
+  savedSearches: () => request<SavedSearch[]>('/api/saved-searches'),
+  createSavedSearch: (body: { name: string; query: string }) =>
+    request<SavedSearch>('/api/saved-searches', { method: 'POST', body: JSON.stringify(body) }),
+  deleteSavedSearch: (id: number) => request<{ ok: true }>(`/api/saved-searches/${id}`, { method: 'DELETE' }),
   libraries: () => request<LibraryWithStats[]>('/api/libraries'),
   library: (id: number) => request<LibraryWithStats>(`/api/libraries/${id}`),
   createLibrary: (body: { name: string; type: string; autoScanInterval?: number }) =>

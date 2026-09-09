@@ -181,3 +181,15 @@ export const jobSchedules = sqliteTable(
   },
   (t) => [primaryKey({ columns: [t.jobType, t.libraryId] })],
 );
+
+export const savedSearches = sqliteTable(
+  'saved_searches',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(),
+    // Board URL query string (e.g. "tags=solo,blue_hair&liked=1&sort=name"), replayed as /board?<query>.
+    query: text('query').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('saved_searches_name_idx').on(t.name)],
+);

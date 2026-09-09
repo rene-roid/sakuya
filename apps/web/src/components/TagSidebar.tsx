@@ -1,6 +1,8 @@
-import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { boardQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
 function rowStyle(active: boolean): string {
@@ -20,7 +22,19 @@ export function TagSidebar({
   collapsed: boolean;
   onToggle: () => void;
 }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, staleTime: 30_000 });
+  const { data: savedSearches } = useQuery({
+    queryKey: ['saved-searches'],
+    queryFn: api.savedSearches,
+    staleTime: 30_000,
+  });
+  const deleteSearch = useMutation({
+    mutationFn: api.deleteSavedSearch,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
+  });
+  const currentQuery = boardQueryString(filters);
   const { data: ratingTags } = useQuery({
     queryKey: ['tags', 'sidebar', 'rating', filters.libraryId],
     queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'rating' }),
@@ -72,6 +86,32 @@ export function TagSidebar({
           </div>
         ))}
       </div>
+      {(savedSearches ?? []).length > 0 && (
+        <>
+          <div className="mb-2.5 text-[11px] font-bold tracking-[0.6px] text-zinc-500">SAVED</div>
+          <div className="mb-5 flex flex-col gap-px">
+            {(savedSearches ?? []).map((search) => (
+              <div
+                key={search.id}
+                className={rowStyle(search.query === currentQuery)}
+                onClick={() => navigate(`/board?${search.query}`)}
+              >
+                <span className="truncate">{search.name}</span>
+                <span
+                  title="Delete saved search"
+                  className="ml-1 flex-none cursor-pointer text-zinc-600 hover:text-rose-400"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSearch.mutate(search.id);
+                  }}
+                >
+                  <X size={12} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
       {(() => {
         const ratings = ratingTags ?? [];
         const characters = characterTags ?? [];
