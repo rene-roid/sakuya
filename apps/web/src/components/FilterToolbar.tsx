@@ -15,6 +15,8 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
   const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
   const qc = useQueryClient();
   const query = boardQueryString(filters);
+  const hasFilters =
+    filters.tags.length > 0 || filters.q.length > 0 || filters.liked || filters.typeParam !== 'all';
   const saveSearch = useMutation({
     mutationFn: (name: string) => api.createSavedSearch({ name, query }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
@@ -66,21 +68,33 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
                 tags={filters.tags}
                 onAddTag={actions.addTag}
                 onRemoveTag={actions.removeTag}
-                onFreeText={actions.setQ}
+                onFreeText={actions.addQ}
                 libraryId={filters.libraryId}
                 placeholder="Add tag filter, press Enter…"
             />
         </div>
-        {filters.q && (
-            <div
-                className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 py-1 pl-2.5 pr-1.5 text-xs font-semibold text-zinc-300">
-          <span>“{filters.q}”</span>
+      {filters.q.map((term) => (
+        <div
+          key={term}
+          className="flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-800 py-1 pl-2.5 pr-1.5 text-xs font-semibold text-zinc-300"
+        >
+          <span>“{term}”</span>
           <span
             className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-zinc-700"
-            onClick={() => actions.setQ('')}
+            onClick={() => actions.removeQ(term)}
           >
             <X size={11} />
           </span>
+        </div>
+      ))}
+      {hasFilters && (
+        <div
+          title="Clear every active filter"
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+          onClick={actions.clearFilters}
+        >
+          <X size={16} />
+          <span>Clear all</span>
         </div>
       )}
       {query && (

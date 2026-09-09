@@ -71,7 +71,7 @@ export interface MediaFilters {
   type?: 'image' | 'video';
   tags: string[];
   liked?: boolean;
-  q?: string;
+  q: string[];
   sort: 'recent' | 'name' | 'random';
   dir: 'asc' | 'desc';
   seed: number;
@@ -83,7 +83,7 @@ export function mediaQueryString(filters: MediaFilters, cursor?: string): string
   if (filters.type) params.set('type', filters.type);
   if (filters.tags.length) params.set('tags', filters.tags.join(','));
   if (filters.liked) params.set('liked', '1');
-  if (filters.q) params.set('q', filters.q);
+  for (const term of filters.q) params.append('q', term);
   params.set('sort', filters.sort);
   params.set('dir', filters.dir);
   params.set('seed', String(filters.seed));

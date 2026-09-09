@@ -299,7 +299,7 @@ function ThumbnailPickerModal({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: media } = useQuery({
     queryKey: ['media', 'thumb-picker', lib.id],
-    queryFn: () => api.mediaList({ libraryId: lib.id, tags: [], sort: 'recent', dir: 'desc', seed: 1 }),
+    queryFn: () => api.mediaList({ libraryId: lib.id, tags: [], q: [], sort: 'recent', dir: 'desc', seed: 1 }),
   });
 
   const setThumbMutation = useMutation({

@@ -9,6 +9,7 @@ const CASES = [
   'sort=name&dir=desc',
   'sort=random&seed=42',
   'q=beach&type=image',
+  'q=beach&q=sunset&tags=solo',
 ];
 
 test('boardQueryString survives a parse round-trip', () => {

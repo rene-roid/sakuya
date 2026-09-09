@@ -13,8 +13,10 @@ export interface FilterActions {
   addTag(tag: string): void;
   removeTag(tag: string): void;
   setLibrary(id: number | undefined): void;
-  setQ(q: string): void;
+  addQ(term: string): void;
+  removeQ(term: string): void;
   toggleLiked(): void;
+  clearFilters(): void;
 }
 
 export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): FilterState {
@@ -30,7 +32,7 @@ export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): 
     seed: Number(params.get('seed') ?? 1) || 1,
     tags: (params.get('tags') ?? '').split(',').filter(Boolean),
     liked: params.get('liked') === '1',
-    q: params.get('q') ?? undefined,
+    q: params.getAll('q').filter(Boolean),
     libraryId: fixedLibraryId ?? (libParam ? Number(libParam) : undefined),
   };
 }
@@ -45,7 +47,7 @@ export function boardQueryString(f: FilterState): string {
   if (f.typeParam !== 'all') p.set('type', f.typeParam);
   if (f.tags.length) p.set('tags', f.tags.join(','));
   if (f.liked) p.set('liked', '1');
-  if (f.q) p.set('q', f.q);
+  for (const term of f.q) p.append('q', term);
   if (f.sort !== 'recent') p.set('sort', f.sort);
   if (f.dir !== (f.sort === 'recent' ? 'desc' : 'asc')) p.set('dir', f.dir);
   if (f.sort === 'random') p.set('seed', String(f.seed));
@@ -104,8 +106,24 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
           else p.delete('tags');
         }),
       setLibrary: (id) => update((p) => (id ? p.set('library', String(id)) : p.delete('library'))),
-      setQ: (q) => update((p) => (q ? p.set('q', q) : p.delete('q'))),
+      addQ: (term) =>
+        update((p) => {
+          const clean = term.trim();
+          if (clean && !p.getAll('q').includes(clean)) p.append('q', clean);
+        }),
+      removeQ: (term) =>
+        update((p) => {
+          const rest = p.getAll('q').filter((t) => t !== term);
+          p.delete('q');
+          for (const t of rest) p.append('q', t);
+        }),
       toggleLiked: () => update((p) => (p.get('liked') === '1' ? p.delete('liked') : p.set('liked', '1'))),
+      // Clears what narrows the results; sort/seed and the current library are how you're
+      // viewing them, not filters, so they survive.
+      clearFilters: () =>
+        update((p) => {
+          for (const key of ['tags', 'q', 'liked', 'type']) p.delete(key);
+        }),
     }),
     [update],
   );

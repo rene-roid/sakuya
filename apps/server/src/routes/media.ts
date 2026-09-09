@@ -21,7 +21,7 @@ const listQuerySchema = z.object({
   type: z.enum(['image', 'video']).optional(),
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
-  q: z.string().optional(),
+  q: z.union([z.string(), z.array(z.string())]).optional(),
   sort: z.enum(['recent', 'name', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
   seed: z.coerce.number().int().default(1),
@@ -52,11 +52,15 @@ mediaRouter.get(
     if (query.liked) {
       conds.push('m.liked = 1');
     }
-    if (query.q) {
+    // Repeated ?q= params are ANDed, so several free-text terms can narrow one search.
+    const qTerms = (Array.isArray(query.q) ? query.q : query.q ? [query.q] : [])
+      .map((t) => t.trim())
+      .filter(Boolean);
+    for (const term of qTerms) {
       conds.push(
         `(m.path LIKE ? OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))`,
       );
-      params.push(`%${query.q}%`, `%${query.q}%`);
+      params.push(`%${term}%`, `%${term}%`);
     }
     if (tagNames.length) {
       const placeholders = tagNames.map(() => '?').join(',');
