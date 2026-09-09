@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  BoardWithStats,
   ConsoleSessionStatus,
   DashboardResponse,
   DownloadBatchWithItems,
@@ -68,6 +69,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export interface MediaFilters {
   libraryId?: number;
+  boardId?: number;
   type?: 'image' | 'video';
   tags: string[];
   liked?: boolean;
@@ -80,6 +82,7 @@ export interface MediaFilters {
 export function mediaQueryString(filters: MediaFilters, cursor?: string): string {
   const params = new URLSearchParams();
   if (filters.libraryId) params.set('libraryId', String(filters.libraryId));
+  if (filters.boardId) params.set('boardId', String(filters.boardId));
   if (filters.type) params.set('type', filters.type);
   if (filters.tags.length) params.set('tags', filters.tags.join(','));
   if (filters.liked) params.set('liked', '1');
@@ -101,6 +104,16 @@ export const api = {
   createSavedSearch: (body: { name: string; query: string }) =>
     request<SavedSearch>('/api/saved-searches', { method: 'POST', body: JSON.stringify(body) }),
   deleteSavedSearch: (id: number) => request<{ ok: true }>(`/api/saved-searches/${id}`, { method: 'DELETE' }),
+  boards: () => request<BoardWithStats[]>('/api/boards'),
+  board: (id: number) => request<BoardWithStats>(`/api/boards/${id}`),
+  createBoard: (name: string) => request<BoardWithStats>('/api/boards', { method: 'POST', body: JSON.stringify({ name }) }),
+  renameBoard: (id: number, name: string) =>
+    request<BoardWithStats>(`/api/boards/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) }),
+  deleteBoard: (id: number) => request<{ ok: true }>(`/api/boards/${id}`, { method: 'DELETE' }),
+  addToBoard: (id: number, mediaIds: number[]) =>
+    request<BoardWithStats>(`/api/boards/${id}/media`, { method: 'POST', body: JSON.stringify({ mediaIds }) }),
+  removeFromBoard: (id: number, mediaId: number) =>
+    request<{ ok: true }>(`/api/boards/${id}/media/${mediaId}`, { method: 'DELETE' }),
   libraries: () => request<LibraryWithStats[]>('/api/libraries'),
   library: (id: number) => request<LibraryWithStats>(`/api/libraries/${id}`),
   createLibrary: (body: { name: string; type: string; autoScanInterval?: number }) =>

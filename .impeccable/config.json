@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "apps/web/src/routes/Boards.tsx"
+        ],
+        "createdAt": "2026-09-09T18:42:02.541Z",
+        "reason": "false positive: text-zinc-500 with hover:bg-rose-500/20 hover:text-rose-400 — bg and text color change together on hover, gray never renders on the tint; same pattern as MediaViewer.tsx delete button"
+      }
+    ]
+  }
+}

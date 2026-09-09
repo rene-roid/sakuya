@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
-import type { Media, MediaTag, TagCategory } from '@sakuya/shared';
+import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { useToast } from './Toast';
@@ -422,6 +422,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           placeholder={`Add ${addCategory} tag, press Enter…`}
           className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
         />
+        <BoardsSection mediaId={item.id} boards={detail?.id === item.id ? detail.boards : []} />
       </div>
       {showDeleteConfirm && (
         <ConfirmDialog
@@ -432,6 +433,109 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteMutation.mutate()}
         />
+      )}
+    </div>
+  );
+}
+
+/** Board membership for the open item: current boards as removable pills, plus an add picker. */
+function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }) {
+  const queryClient = useQueryClient();
+  const showToast = useToast();
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const { data: allBoards } = useQuery({ queryKey: ['boards'], queryFn: api.boards });
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['media-detail', mediaId] });
+    queryClient.invalidateQueries({ queryKey: ['boards'] });
+    // Board views are media lists filtered by boardId, so they need to re-fetch too.
+    queryClient.invalidateQueries({ queryKey: ['media'] });
+  };
+
+  const addMutation = useMutation({
+    mutationFn: (boardId: number) => api.addToBoard(boardId, [mediaId]),
+    onSuccess: (board) => {
+      invalidate();
+      showToast(`Added to ${board.name}`);
+    },
+    onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (boardId: number) => api.removeFromBoard(boardId, mediaId),
+    onSuccess: invalidate,
+    onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (name: string) => api.createBoard(name),
+    onSuccess: (board) => {
+      setNewName('');
+      setCreating(false);
+      addMutation.mutate(board.id);
+    },
+    onError: (err: Error) => showToast(`Failed: ${err.message}`),
+  });
+
+  const memberIds = new Set(boards.map((b) => b.id));
+  const addable = (allBoards ?? []).filter((b) => !memberIds.has(b.id));
+
+  return (
+    <div className="mt-[22px]">
+      <div className="mb-2 text-xs font-bold tracking-[0.4px] text-zinc-500">BOARDS</div>
+      <div className="mb-2 flex flex-wrap gap-1.5">
+        {boards.map((board) => (
+          <div
+            key={board.id}
+            className="flex items-center gap-[5px] rounded-full bg-zinc-800 py-1 pl-2.5 pr-[5px] text-xs text-zinc-200"
+          >
+            <Link to={`/boards/${board.id}`} className="cursor-pointer hover:underline">
+              {board.name}
+            </Link>
+            <button
+              title="Remove from board"
+              className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+              onClick={() => removeMutation.mutate(board.id)}
+            >
+              <X size={11} />
+            </button>
+          </div>
+        ))}
+        {boards.length === 0 && <div className="text-[11.5px] text-zinc-600">Not on any board</div>}
+      </div>
+      {creating ? (
+        <input
+          autoFocus
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            // The viewer's window-level Escape handler would otherwise close the whole viewer.
+            e.stopPropagation();
+            if (e.key === 'Enter' && newName.trim()) createMutation.mutate(newName.trim());
+            else if (e.key === 'Escape') setCreating(false);
+          }}
+          onBlur={() => setCreating(false)}
+          placeholder="New board name, press Enter…"
+          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+        />
+      ) : (
+        <select
+          value=""
+          onChange={(e) => {
+            if (e.target.value === 'new') setCreating(true);
+            else if (e.target.value) addMutation.mutate(Number(e.target.value));
+          }}
+          className="w-full cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none focus:border-zinc-600"
+        >
+          <option value="">Add to board…</option>
+          {addable.map((board) => (
+            <option key={board.id} value={board.id}>
+              {board.name}
+            </option>
+          ))}
+          <option value="new">+ New board…</option>
+        </select>
       )}
     </div>
   );

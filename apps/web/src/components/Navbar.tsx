@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Download, Home, LayoutGrid, Lock, Settings } from 'lucide-react';
+import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
 import { useAuth } from '../hooks/useAuth';
 import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
@@ -143,6 +143,10 @@ export function Navbar() {
         <NavLink to="/board" className={({ isActive }) => navPill(isActive)} title="Board">
           <LayoutGrid size={15} className="sm:hidden" />
           <span className="hidden sm:inline">Board</span>
+        </NavLink>
+        <NavLink to="/boards" className={({ isActive }) => navPill(isActive)} title="Boards">
+          <Images size={15} className="sm:hidden" />
+          <span className="hidden sm:inline">Boards</span>
         </NavLink>
         <NavLink to="/downloader" className={({ isActive }) => navPill(isActive)} title="Downloader">
           <Download size={15} className="sm:hidden" />
