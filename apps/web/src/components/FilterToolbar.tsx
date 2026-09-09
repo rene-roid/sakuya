@@ -11,6 +11,12 @@ function segStyle(active: boolean): string {
   }`;
 }
 
+const SORTS = [
+  { key: 'recent', label: 'Recent' },
+  { key: 'name', label: 'Name' },
+  { key: 'size', label: 'Size' },
+] as const;
+
 export function FilterToolbar({ filters, actions }: { filters: FilterState; actions: FilterActions }) {
   const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
   const qc = useQueryClient();
@@ -41,18 +47,14 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
         </div>
       </div>
       <div className="flex rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
-        <div className={segStyle(filters.sort === 'recent')} onClick={() => actions.setSort('recent')}>
-          <span className="flex items-center gap-1">
-            Recent
-            {filters.sort === 'recent' && <DirIcon size={13} />}
-          </span>
-        </div>
-        <div className={segStyle(filters.sort === 'name')} onClick={() => actions.setSort('name')}>
-          <span className="flex items-center gap-1">
-            Name
-            {filters.sort === 'name' && <DirIcon size={13} />}
-          </span>
-        </div>
+        {SORTS.map((srt) => (
+          <div key={srt.key} className={segStyle(filters.sort === srt.key)} onClick={() => actions.setSort(srt.key)}>
+            <span className="flex items-center gap-1">
+              {srt.label}
+              {filters.sort === srt.key && <DirIcon size={13} />}
+            </span>
+          </div>
+        ))}
       </div>
       <div
         className={`flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-[7px] text-[13px] font-semibold ${

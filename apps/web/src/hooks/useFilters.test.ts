@@ -8,6 +8,8 @@ const CASES = [
   'library=3&tags=solo&sort=name',
   'sort=name&dir=desc',
   'sort=random&seed=42',
+  'sort=size',
+  'sort=size&dir=asc',
   'q=beach&type=image',
   'q=beach&q=sunset&tags=solo',
 ];
