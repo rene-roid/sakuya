@@ -2,13 +2,20 @@ import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { MediaFilters } from '../lib/api';
 
+export type SortMode = MediaFilters['sort'];
+
+/** Newest/biggest first reads better; only name wants A→Z. Server mirrors this. */
+export function defaultDir(sort: SortMode): 'asc' | 'desc' {
+  return sort === 'name' ? 'asc' : 'desc';
+}
+
 export interface FilterState extends MediaFilters {
   typeParam: 'all' | 'image' | 'video';
 }
 
 export interface FilterActions {
   setType(type: 'all' | 'image' | 'video'): void;
-  setSort(sort: 'recent' | 'name'): void;
+  setSort(sort: SortMode): void;
   randomize(): void;
   addTag(tag: string): void;
   removeTag(tag: string): void;
@@ -21,8 +28,8 @@ export interface FilterActions {
 
 export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): FilterState {
   const typeParam = (params.get('type') as 'image' | 'video' | null) ?? 'all';
-  const sort = (params.get('sort') as 'recent' | 'name' | 'random' | null) ?? 'recent';
-  const dir = (params.get('dir') as 'asc' | 'desc' | null) ?? (sort === 'recent' ? 'desc' : 'asc');
+  const sort = (params.get('sort') as SortMode | null) ?? 'recent';
+  const dir = (params.get('dir') as 'asc' | 'desc' | null) ?? defaultDir(sort);
   const libParam = params.get('library');
   return {
     typeParam: typeParam === 'image' || typeParam === 'video' ? typeParam : 'all',
@@ -49,7 +56,7 @@ export function boardQueryString(f: FilterState): string {
   if (f.liked) p.set('liked', '1');
   for (const term of f.q) p.append('q', term);
   if (f.sort !== 'recent') p.set('sort', f.sort);
-  if (f.dir !== (f.sort === 'recent' ? 'desc' : 'asc')) p.set('dir', f.dir);
+  if (f.dir !== defaultDir(f.sort)) p.set('dir', f.dir);
   if (f.sort === 'random') p.set('seed', String(f.seed));
   return p.toString();
 }
@@ -76,21 +83,24 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
   const actions = useMemo<FilterActions>(
     () => ({
       setType: (type) => update((p) => (type === 'all' ? p.delete('type') : p.set('type', type))),
+      // Three states per sort: default direction, flipped direction, then off (back to recent).
       setSort: (sort) =>
         update((p) => {
-          const current = p.get('sort') ?? 'recent';
-          if (current === sort) {
-            const dir = p.get('dir') ?? (sort === 'recent' ? 'desc' : 'asc');
-            p.set('dir', dir === 'asc' ? 'desc' : 'asc');
-          } else {
+          const current = (p.get('sort') as SortMode | null) ?? 'recent';
+          if (current !== sort) {
             p.set('sort', sort);
-            p.set('dir', sort === 'recent' ? 'desc' : 'asc');
+            p.set('dir', defaultDir(sort));
+          } else if ((p.get('dir') ?? defaultDir(sort)) === defaultDir(sort)) {
+            p.set('dir', defaultDir(sort) === 'asc' ? 'desc' : 'asc');
+          } else {
+            p.delete('sort');
+            p.delete('dir');
           }
         }),
       randomize: () =>
         update((p) => {
           p.set('sort', 'random');
-          p.set('dir', 'asc');
+          p.set('dir', defaultDir('random'));
           p.set('seed', String(Math.floor(Math.random() * 2 ** 30) + 1));
         }),
       addTag: (tag) =>
