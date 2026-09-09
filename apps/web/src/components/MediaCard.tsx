@@ -38,6 +38,20 @@ export function MediaCard({ item, onClick }: { item: Media; onClick: () => void 
         />
         {item.type === 'video' && <TypeBadge type={item.type} />}
         <DurationBadge seconds={item.durationSeconds} />
+        {item.reasonTag && (
+          <div
+            title={
+              item.reasonRelated
+                ? `Related to tags you like: "${item.reasonTag}"`
+                : `Recommended because you like "${item.reasonTag}"`
+            }
+            className={`absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded px-1.5 py-px text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
+              item.reasonRelated ? 'bg-teal-500/85' : 'bg-accent/85'
+            }`}
+          >
+            {item.reasonRelated ? `~ ${item.reasonTag}` : item.reasonTag}
+          </div>
+        )}
         <div
           className={`absolute right-1.5 top-1.5 transition-opacity ${
             item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'

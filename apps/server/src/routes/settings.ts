@@ -28,6 +28,7 @@ const EDITABLE_KEYS = new Set([
   'downloader_concurrency',
   'gifs_as_videos',
   'video_transcode_enabled',
+  'discover_enabled',
 ]);
 
 settingsRouter.get(

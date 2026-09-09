@@ -62,11 +62,17 @@ export interface Media {
   viewProgress: number;
   viewCount: number;
   watchedSeconds: number;
+  /** Seconds an image/GIF was open in the viewer (foreground only). */
+  dwellSeconds: number;
   liked: boolean;
   likedAt: number | null;
   perceptualHash?: string | null;
   tagCount: number;
   libraryName?: string;
+  /** Discover only: the taste-profile tag that scored this item highest. */
+  reasonTag?: string;
+  /** Discover only: true when reasonTag is a related tag rather than one you engaged with directly. */
+  reasonRelated?: boolean;
 }
 
 export interface MediaTag {
@@ -132,6 +138,7 @@ export interface Settings {
   downloader_concurrency: string;
   gifs_as_videos: string;
   video_transcode_enabled: string;
+  discover_enabled: string;
 }
 
 export interface DashboardResponse {

@@ -20,10 +20,13 @@ export function rowToMedia(row: any): Media {
     viewProgress: row.view_progress,
     viewCount: row.view_count ?? 0,
     watchedSeconds: row.watched_seconds ?? 0,
+    dwellSeconds: row.dwell_seconds ?? 0,
     liked: !!row.liked,
     likedAt: row.liked_at ?? null,
     perceptualHash: row.perceptual_hash ?? null,
     tagCount: row.tag_count ?? 0,
     libraryName: row.library_name ?? undefined,
+    reasonTag: row.reason_tag ?? undefined,
+    reasonRelated: row.reason_related ? true : undefined,
   };
 }

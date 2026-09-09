@@ -446,6 +446,8 @@ const progressSchema = z.object({
   progress: z.number().min(0).max(1),
   view: z.boolean().optional(),
   watchedDelta: z.number().min(0).max(60).optional(),
+  // Dwell is flushed on close/tab-hide, so a single delta can be much longer than a video tick.
+  dwellDelta: z.number().min(0).max(3600).optional(),
 });
 
 mediaRouter.patch(
@@ -456,6 +458,7 @@ mediaRouter.patch(
     const updates: Record<string, unknown> = { viewProgress: body.progress, lastViewedAt: Date.now() };
     if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
+    if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;
     db.update(schema.media).set(updates).where(eq(schema.media.id, id)).run();
     res.json({ ok: true });
   }),

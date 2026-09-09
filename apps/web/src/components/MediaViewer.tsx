@@ -11,6 +11,8 @@ import { ConfirmDialog } from './ConfirmDialog';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
+/** Flipping past an image with the arrow keys isn't interest — anything shorter is discarded. */
+const MIN_DWELL_SECONDS = 1;
 
 interface MediaViewerProps {
   items: Media[];
@@ -25,6 +27,12 @@ const ADD_CATEGORIES: { key: TagCategory; label: string }[] = [
   { key: 'character', label: 'Character' },
   { key: 'rating', label: 'Rating' },
 ];
+
+// Actual .gif files can't be decoded by an HTML5 <video> element even when classified as a video
+// (see the "Detect GIFs as videos" setting), so they render as an <img> and dwell like an image.
+function isGifName(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.gif');
+}
 
 export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
   const queryClient = useQueryClient();
@@ -112,6 +120,36 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     pendingWatchedSeconds.current = 0;
     api.saveProgress(item.id, item.viewProgress ?? 0, { view: true }).catch(() => {});
   }, [item?.id]);
+
+  // Dwell time: the still-image counterpart to a video's watched seconds. Counts only while the
+  // tab is actually in the foreground, and flushes on hide so closing the tab doesn't lose it.
+  useEffect(() => {
+    if (!item || (item.type === 'video' && !isGifName(item.filename))) return;
+    const mediaId = item.id;
+    // Echo the current progress back rather than 0 — this endpoint writes whatever it's given.
+    const progress = item.viewProgress ?? 0;
+    let startedAt = document.visibilityState === 'visible' ? Date.now() : 0;
+    let pending = 0;
+
+    const flush = () => {
+      if (startedAt) pending += Date.now() - startedAt;
+      startedAt = document.visibilityState === 'visible' ? Date.now() : 0;
+      const seconds = pending / 1000;
+      if (seconds < MIN_DWELL_SECONDS) return;
+      pending = 0;
+      api.saveProgress(mediaId, progress, { dwellDelta: Math.min(seconds, 3600) }).catch(() => {});
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') startedAt = Date.now();
+      else flush();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      flush();
+    };
+  }, [item?.id, item?.type, item?.filename]);
 
   useEffect(() => {
     setRenaming(false);
@@ -235,9 +273,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   // detail may reflect a rename that hasn't propagated back into the parent's items list yet.
   const displayName = detail?.id === item.id ? detail.filename : item.filename;
   const displayPath = detail?.id === item.id ? detail.path : item.path;
-  // Actual .gif files can't be decoded by an HTML5 <video> element even when classified
-  // as a video (see the "Detect GIFs as videos" setting), so always render them as an <img>.
-  const isGif = item.filename.toLowerCase().endsWith('.gif');
+  const isGif = isGifName(item.filename);
 
   return (
     <div className="fade-in fixed inset-0 z-[80] flex flex-col overflow-y-auto bg-zinc-950/92 backdrop-blur sm:flex-row sm:overflow-hidden">

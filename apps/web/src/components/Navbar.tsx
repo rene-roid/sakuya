@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings } from 'lucide-react';
+import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings, Sparkles } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
 import { useAuth } from '../hooks/useAuth';
 import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
@@ -120,6 +120,8 @@ export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTags, setSearchTags] = useState<string[]>([]);
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const discoverEnabled = settings?.discover_enabled === '1';
 
   const goToExplore = (tags: string[]) => {
     navigate(tags.length ? `/explore?tags=${tags.map(encodeURIComponent).join(',')}` : '/explore');
@@ -144,6 +146,12 @@ export function Navbar() {
           <LayoutGrid size={15} className="sm:hidden" />
           <span className="hidden sm:inline">Explore</span>
         </NavLink>
+        {discoverEnabled && (
+          <NavLink to="/discover" className={({ isActive }) => navPill(isActive)} title="Discover">
+            <Sparkles size={15} className="sm:hidden" />
+            <span className="hidden sm:inline">Discover</span>
+          </NavLink>
+        )}
         <NavLink to="/boards" className={({ isActive }) => navPill(isActive)} title="Boards">
           <Images size={15} className="sm:hidden" />
           <span className="hidden sm:inline">Boards</span>

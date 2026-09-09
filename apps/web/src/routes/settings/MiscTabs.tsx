@@ -315,6 +315,11 @@ export function BehaviorTab() {
       defaultOn: true,
     },
     {
+      key: 'discover_enabled',
+      label: 'Discover tab',
+      desc: 'Show the Discover tab, which recommends media from the tags you like, watch and linger on. Your viewing is tracked either way, so the feed is already warm when you switch this on.',
+    },
+    {
       key: 'gifs_as_videos',
       label: 'Detect GIFs as videos',
       desc: 'Classify .gif files as videos instead of images (filters, badges, duration). New scans pick this up automatically; already-indexed GIFs need the button below.',

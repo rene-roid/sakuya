@@ -11,7 +11,9 @@
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
-    "typecheck": "bun run --cwd apps/server typecheck && bun run --cwd apps/web typecheck"
+    "typecheck": "bun run --cwd apps/server typecheck && bun run --cwd apps/web typecheck",
+    "_comment_test": "--isolate is required: each server test file boots its own server and sqlite singleton",
+    "test": "bun test --isolate"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

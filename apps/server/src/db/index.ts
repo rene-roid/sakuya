@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS media (
   view_progress REAL NOT NULL DEFAULT 0,
   view_count INTEGER NOT NULL DEFAULT 0,
   watched_seconds REAL NOT NULL DEFAULT 0,
+  dwell_seconds REAL NOT NULL DEFAULT 0,
   liked INTEGER NOT NULL DEFAULT 0,
   liked_at INTEGER,
   perceptual_hash TEXT
@@ -183,16 +184,22 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 7, sql: 'ALTER TABLE media ADD COLUMN watched_seconds REAL NOT NULL DEFAULT 0' },
   { version: 8, sql: 'CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)' },
   { version: 9, sql: 'ALTER TABLE media ADD COLUMN transcoded_at INTEGER' },
+  { version: 10, sql: 'ALTER TABLE media ADD COLUMN dwell_seconds REAL NOT NULL DEFAULT 0' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
+// Everything up to here landed via the old ad-hoc try/catch mechanism, so a pre-existing DB with
+// no tracked version already has those columns — but not anything added after, which must still run.
+const BASELINE_VERSION = 9;
 
-const currentVersion = (sqlite.query('PRAGMA user_version').get() as { user_version: number }).user_version;
-if (isFreshDb || currentVersion === 0) {
-  // Fresh DB: the CREATE TABLE block above already has every column.
-  // Pre-existing DB with no tracked version: these migrations already landed via
-  // the old ad-hoc try/catch mechanism, so just record the baseline.
+let currentVersion = (sqlite.query('PRAGMA user_version').get() as { user_version: number }).user_version;
+if (isFreshDb) {
+  // The CREATE TABLE block above already has every column.
   sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
-} else if (currentVersion < LATEST_VERSION) {
+  currentVersion = LATEST_VERSION;
+} else if (currentVersion === 0) {
+  currentVersion = BASELINE_VERSION;
+}
+if (currentVersion < LATEST_VERSION) {
   const pending = MIGRATIONS.filter((m) => m.version > currentVersion);
   sqlite.transaction(() => {
     for (const m of pending) sqlite.exec(m.sql);

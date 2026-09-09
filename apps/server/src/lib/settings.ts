@@ -15,6 +15,9 @@ const DEFAULTS: Record<string, string> = {
   downloader_concurrency: '2',
   gifs_as_videos: '0',
   video_transcode_enabled: '0',
+  // Off until switched on in Settings. Engagement tracking runs regardless, so the taste profile
+  // is already warm the first time it's turned on.
+  discover_enabled: '0',
 };
 
 export function getSetting(key: string): string {

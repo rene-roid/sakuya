@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { api, type MediaFilters } from '../lib/api';
+import { api, type DiscoverFilters, type MediaFilters } from '../lib/api';
 import type { Media } from '@sakuya/shared';
 
 export function useMediaInfinite(filters: MediaFilters) {
@@ -16,6 +16,21 @@ export function useMediaInfinite(filters: MediaFilters) {
     () => query.data?.pages.flatMap((p) => p.items) ?? [],
     [query.data],
   );
+  const total = query.data?.pages[0]?.total ?? 0;
+
+  return { ...query, items, total };
+}
+
+export function useDiscoverInfinite(filters: DiscoverFilters) {
+  const query = useInfiniteQuery({
+    queryKey: ['discover', filters],
+    queryFn: ({ pageParam }) => api.discover(filters, pageParam || undefined),
+    initialPageParam: '',
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    staleTime: 15_000,
+  });
+
+  const items = useMemo<Media[]>(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
   const total = query.data?.pages[0]?.total ?? 0;
 
   return { ...query, items, total };

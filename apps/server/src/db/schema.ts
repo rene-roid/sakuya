@@ -43,6 +43,8 @@ export const media = sqliteTable(
     viewProgress: real('view_progress').notNull().default(0),
     viewCount: integer('view_count').notNull().default(0),
     watchedSeconds: real('watched_seconds').notNull().default(0),
+    // How long an image/GIF stayed open in the viewer — the still-image counterpart to watchedSeconds.
+    dwellSeconds: real('dwell_seconds').notNull().default(0),
     liked: integer('liked').notNull().default(0),
     likedAt: integer('liked_at'),
     perceptualHash: text('perceptual_hash'),

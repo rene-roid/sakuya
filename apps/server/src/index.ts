@@ -3,6 +3,7 @@ import { PORT } from './lib/config';
 import './db';
 import { librariesRouter } from './routes/libraries';
 import { mediaRouter } from './routes/media';
+import { discoverRouter } from './routes/discover';
 import { tagsRouter } from './routes/tags';
 import { uploadsRouter } from './routes/uploads';
 import { jobsRouter } from './routes/jobs';
@@ -26,6 +27,7 @@ app.use(requireAuth);
 app.use(uploadsRouter); // must come before express.json would matter; multipart parsed manually
 app.use(librariesRouter);
 app.use(mediaRouter);
+app.use(discoverRouter);
 app.use(tagsRouter);
 app.use(jobsRouter);
 app.use(settingsRouter);

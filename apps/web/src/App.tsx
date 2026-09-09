@@ -10,6 +10,7 @@ import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
 import { Explore } from './routes/Explore';
+import { Discover } from './routes/Discover';
 import { LibraryView } from './routes/LibraryView';
 import { Boards, BoardView } from './routes/Boards';
 import { Settings } from './routes/settings';
@@ -42,6 +43,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/explore" element={<Explore />} />
+            <Route path="/discover" element={<Discover />} />
             <Route path="/boards" element={<Boards />} />
             <Route path="/boards/:id" element={<BoardView />} />
             <Route path="/library/:id" element={<LibraryView />} />

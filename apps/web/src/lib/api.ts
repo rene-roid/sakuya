@@ -95,6 +95,23 @@ export function mediaQueryString(filters: MediaFilters, cursor?: string): string
   return params.toString();
 }
 
+export interface DiscoverFilters {
+  type?: 'image' | 'video';
+  /** 0 = pure taste match, 1 = pure random. */
+  surprise: number;
+  seed: number;
+}
+
+export function discoverQueryString(filters: DiscoverFilters, cursor?: string, limit = 60): string {
+  const params = new URLSearchParams();
+  if (filters.type) params.set('type', filters.type);
+  params.set('surprise', String(filters.surprise));
+  params.set('seed', String(filters.seed));
+  params.set('limit', String(limit));
+  if (cursor) params.set('cursor', cursor);
+  return params.toString();
+}
+
 export const api = {
   authStatus: () => request<AuthStatus>('/api/auth/status'),
   login: (secret: string) => request<{ ok: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ secret }) }),
@@ -130,6 +147,8 @@ export const api = {
   mediaList: (filters: MediaFilters, cursor?: string) =>
     request<MediaListResponse>(`/api/media?${mediaQueryString(filters, cursor)}`),
   mediaDetail: (id: number) => request<MediaDetail>(`/api/media/${id}`),
+  discover: (filters: DiscoverFilters, cursor?: string, limit?: number) =>
+    request<MediaListResponse>(`/api/discover?${discoverQueryString(filters, cursor, limit)}`),
   patchTags: (
     id: number,
     body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> },
@@ -146,7 +165,7 @@ export const api = {
   duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
   deleteMediaBatch: (ids: number[]) =>
     request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
-  saveProgress: (id: number, progress: number, opts?: { view?: boolean; watchedDelta?: number }) =>
+  saveProgress: (id: number, progress: number, opts?: { view?: boolean; watchedDelta?: number; dwellDelta?: number }) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress, ...opts }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
     const params = new URLSearchParams();
