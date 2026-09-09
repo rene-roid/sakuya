@@ -45,10 +45,10 @@ export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): 
 }
 
 /**
- * Inverse of parseFilters: the canonical /board query string for a filter state.
+ * Inverse of parseFilters: the canonical /explore query string for a filter state.
  * Omits values equal to the parser's defaults so saved searches stay short and comparable.
  */
-export function boardQueryString(f: FilterState): string {
+export function exploreQueryString(f: FilterState): string {
   const p = new URLSearchParams();
   if (f.libraryId) p.set('library', String(f.libraryId));
   if (f.typeParam !== 'all') p.set('type', f.typeParam);

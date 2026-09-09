@@ -205,7 +205,7 @@ export const savedSearches = sqliteTable(
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull(),
-    // Board URL query string (e.g. "tags=solo,blue_hair&liked=1&sort=name"), replayed as /board?<query>.
+    // Explore URL query string (e.g. "tags=solo,blue_hair&liked=1&sort=name"), replayed as /explore?<query>.
     query: text('query').notNull(),
     createdAt: integer('created_at').notNull(),
   },

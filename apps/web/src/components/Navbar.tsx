@@ -121,8 +121,8 @@ export function Navbar() {
   const location = useLocation();
   const [searchTags, setSearchTags] = useState<string[]>([]);
 
-  const goToBoard = (tags: string[]) => {
-    navigate(tags.length ? `/board?tags=${tags.map(encodeURIComponent).join(',')}` : '/board');
+  const goToExplore = (tags: string[]) => {
+    navigate(tags.length ? `/explore?tags=${tags.map(encodeURIComponent).join(',')}` : '/explore');
   };
 
   return (
@@ -140,9 +140,9 @@ export function Navbar() {
           <Home size={15} className="sm:hidden" />
           <span className="hidden sm:inline">Dashboard</span>
         </NavLink>
-        <NavLink to="/board" className={({ isActive }) => navPill(isActive)} title="Board">
+        <NavLink to="/explore" className={({ isActive }) => navPill(isActive)} title="Explore">
           <LayoutGrid size={15} className="sm:hidden" />
-          <span className="hidden sm:inline">Board</span>
+          <span className="hidden sm:inline">Explore</span>
         </NavLink>
         <NavLink to="/boards" className={({ isActive }) => navPill(isActive)} title="Boards">
           <Images size={15} className="sm:hidden" />
@@ -159,14 +159,14 @@ export function Navbar() {
           onAddTag={(tag) => {
             const next = [...searchTags, tag];
             setSearchTags(next);
-            goToBoard(next);
+            goToExplore(next);
           }}
           onRemoveTag={(tag) => {
             const next = searchTags.filter((t) => t !== tag);
             setSearchTags(next);
-            goToBoard(next);
+            goToExplore(next);
           }}
-          onFreeText={(q) => navigate(`/board?q=${encodeURIComponent(q)}`)}
+          onFreeText={(q) => navigate(`/explore?q=${encodeURIComponent(q)}`)}
           placeholder="Search tags, filenames, folders..."
         />
       </div>

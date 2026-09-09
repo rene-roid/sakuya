@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { api } from '../lib/api';
-import { boardQueryString } from '../hooks/useFilters';
+import { exploreQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
 function rowStyle(active: boolean): string {
@@ -34,7 +34,7 @@ export function TagSidebar({
     mutationFn: api.deleteSavedSearch,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
   });
-  const currentQuery = boardQueryString(filters);
+  const currentQuery = exploreQueryString(filters);
   const { data: ratingTags } = useQuery({
     queryKey: ['tags', 'sidebar', 'rating', filters.libraryId],
     queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'rating' }),
@@ -94,7 +94,7 @@ export function TagSidebar({
               <div
                 key={search.id}
                 className={rowStyle(search.query === currentQuery)}
-                onClick={() => navigate(`/board?${search.query}`)}
+                onClick={() => navigate(`/explore?${search.query}`)}
               >
                 <span className="truncate">{search.name}</span>
                 <span

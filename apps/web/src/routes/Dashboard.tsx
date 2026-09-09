@@ -16,7 +16,7 @@ export function Dashboard() {
     <div className="fade-in mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-7">
       <SectionHeader title="Your Libraries" />
       <div className="mb-9 flex gap-4 overflow-x-auto pb-2">
-        <div className="w-[220px] flex-none cursor-pointer" onClick={() => navigate('/board?liked=1')}>
+        <div className="w-[220px] flex-none cursor-pointer" onClick={() => navigate('/explore?liked=1')}>
           <div className="relative h-[130px] w-[220px] overflow-hidden rounded-xl border border-zinc-800 bg-gradient-to-br from-rose-500/20 to-zinc-900">
             <div className="flex h-full w-full items-center justify-center text-rose-500/80">
               <Heart size={56} fill="currentColor" strokeWidth={1.5} />
@@ -64,7 +64,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <SectionHeader title="Continue Watching" onSeeAll={() => navigate('/board?type=video')} />
+      <SectionHeader title="Continue Watching" onSeeAll={() => navigate('/explore?type=video')} />
       <div className="mb-9 flex gap-3.5 overflow-x-auto pb-2">
         {(data?.continueWatching ?? []).map((item, i) => (
           <WideCard
@@ -79,7 +79,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <SectionHeader title="Recently Viewed" onSeeAll={() => navigate('/board')} />
+      <SectionHeader title="Recently Viewed" onSeeAll={() => navigate('/explore')} />
       <div className="mb-9 flex gap-3.5 overflow-x-auto pb-2">
         {(data?.recentlyViewed ?? []).map((item, i) => (
           <WideCard
@@ -94,7 +94,7 @@ export function Dashboard() {
         )}
       </div>
 
-      <SectionHeader title="Recently Added" onSeeAll={() => navigate('/board')} />
+      <SectionHeader title="Recently Added" onSeeAll={() => navigate('/explore')} />
       <div className="flex gap-3.5 overflow-x-auto pb-2">
         {(data?.recentlyAdded ?? []).map((item, i) => (
           <WideCard key={item.id} item={item} onClick={() => setViewer({ items: data!.recentlyAdded, index: i })} />

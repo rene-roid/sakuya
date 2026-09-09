@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
 import { api } from '../lib/api';
-import { boardQueryString } from '../hooks/useFilters';
+import { exploreQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
 function segStyle(active: boolean): string {
@@ -20,7 +20,7 @@ const SORTS = [
 export function FilterToolbar({ filters, actions }: { filters: FilterState; actions: FilterActions }) {
   const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
   const qc = useQueryClient();
-  const query = boardQueryString(filters);
+  const query = exploreQueryString(filters);
   const hasFilters =
     filters.tags.length > 0 || filters.q.length > 0 || filters.liked || filters.typeParam !== 'all';
   const saveSearch = useMutation({
