@@ -11,6 +11,7 @@ import { taggerRouter } from './routes/tagger';
 import { dashboardRouter } from './routes/dashboard';
 import { downloaderRouter } from './routes/downloader';
 import { savedSearchesRouter } from './routes/savedSearches';
+import { boardsRouter } from './routes/boards';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { initScheduler } from './services/jobScheduler';
@@ -32,6 +33,7 @@ app.use(taggerRouter);
 app.use(dashboardRouter);
 app.use(downloaderRouter);
 app.use(savedSearchesRouter);
+app.use(boardsRouter);
 
 app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const status = err?.status ?? (err?.name === 'ZodError' ? 400 : 500);

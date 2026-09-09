@@ -11,6 +11,7 @@ import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
 import { Board } from './routes/Board';
 import { LibraryView } from './routes/LibraryView';
+import { Boards, BoardView } from './routes/Boards';
 import { Settings } from './routes/settings';
 import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
@@ -41,6 +42,8 @@ export function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/board" element={<Board />} />
+            <Route path="/boards" element={<Boards />} />
+            <Route path="/boards/:id" element={<BoardView />} />
             <Route path="/library/:id" element={<LibraryView />} />
             <Route path="/downloader" element={<DownloaderPage />} />
             <Route path="/settings" element={<Settings />} />

@@ -18,6 +18,7 @@ export const mediaRouter = Router();
 
 const listQuerySchema = z.object({
   libraryId: z.coerce.number().int().optional(),
+  boardId: z.coerce.number().int().optional(),
   type: z.enum(['image', 'video']).optional(),
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
@@ -44,6 +45,10 @@ mediaRouter.get(
     if (query.libraryId !== undefined) {
       conds.push('m.library_id = ?');
       params.push(query.libraryId);
+    }
+    if (query.boardId !== undefined) {
+      conds.push('m.id IN (SELECT bm.media_id FROM board_media bm WHERE bm.board_id = ?)');
+      params.push(query.boardId);
     }
     if (query.type) {
       conds.push('m.type = ?');
@@ -192,7 +197,14 @@ function getDetail(id: number): MediaDetail | null {
        ORDER BY CASE t.category WHEN 'rating' THEN 0 WHEN 'character' THEN 1 ELSE 2 END, mt.confidence DESC, t.name`,
     )
     .all(id) as any[];
-  return { ...rowToMedia(row), tags: tagRows };
+  const boardRows = sqlite
+    .query(
+      `SELECT b.id, b.name, b.created_at AS createdAt
+       FROM board_media bm JOIN boards b ON b.id = bm.board_id
+       WHERE bm.media_id = ? ORDER BY b.name`,
+    )
+    .all(id) as any[];
+  return { ...rowToMedia(row), tags: tagRows, boards: boardRows };
 }
 
 mediaRouter.get(

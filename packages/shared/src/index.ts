@@ -78,6 +78,19 @@ export interface MediaTag {
 
 export interface MediaDetail extends Media {
   tags: MediaTag[];
+  /** Boards this media belongs to — the membership marker, editable from the viewer. */
+  boards: Board[];
+}
+
+export interface Board {
+  id: number;
+  name: string;
+  createdAt: number;
+}
+
+export interface BoardWithStats extends Board {
+  itemCount: number;
+  thumbMediaId: number | null;
 }
 
 export interface TagCount {

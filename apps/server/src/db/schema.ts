@@ -83,6 +83,24 @@ export const mediaTags = sqliteTable(
   ],
 );
 
+export const boards = sqliteTable('boards', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
+// Membership rows are the "belongs to board N" marker on a media item. Both columns cascade
+// on delete (see db/index.ts), so deleting media or a board can't leave orphan memberships.
+export const boardMedia = sqliteTable(
+  'board_media',
+  {
+    boardId: integer('board_id').notNull(),
+    mediaId: integer('media_id').notNull(),
+    addedAt: integer('added_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.boardId, t.mediaId] }), index('board_media_media_idx').on(t.mediaId)],
+);
+
 export const jobs = sqliteTable('jobs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   type: text('type', {

@@ -57,6 +57,8 @@ CREATE TABLE IF NOT EXISTS media (
   transcoded_at INTEGER,
   last_viewed_at INTEGER,
   view_progress REAL NOT NULL DEFAULT 0,
+  view_count INTEGER NOT NULL DEFAULT 0,
+  watched_seconds REAL NOT NULL DEFAULT 0,
   liked INTEGER NOT NULL DEFAULT 0,
   liked_at INTEGER,
   perceptual_hash TEXT
@@ -66,6 +68,7 @@ CREATE INDEX IF NOT EXISTS media_library_idx ON media(library_id);
 CREATE INDEX IF NOT EXISTS media_created_idx ON media(created_at);
 CREATE INDEX IF NOT EXISTS media_type_idx ON media(type);
 CREATE INDEX IF NOT EXISTS media_hash_idx ON media(content_hash);
+CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked);
 CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -82,6 +85,18 @@ CREATE TABLE IF NOT EXISTS media_tags (
 );
 CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags(tag_id);
 CREATE INDEX IF NOT EXISTS media_tags_media_idx ON media_tags(media_id);
+CREATE TABLE IF NOT EXISTS boards (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS board_media (
+  board_id INTEGER NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  added_at INTEGER NOT NULL,
+  PRIMARY KEY (board_id, media_id)
+);
+CREATE INDEX IF NOT EXISTS board_media_media_idx ON board_media(media_id);
 CREATE TABLE IF NOT EXISTS jobs (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   type TEXT NOT NULL,
