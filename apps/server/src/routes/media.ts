@@ -23,7 +23,7 @@ const listQuerySchema = z.object({
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
   q: z.union([z.string(), z.array(z.string())]).optional(),
-  sort: z.enum(['recent', 'name', 'random']).default('recent'),
+  sort: z.enum(['recent', 'name', 'size', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
   seed: z.coerce.number().int().default(1),
   cursor: z.string().optional(),
@@ -34,7 +34,7 @@ mediaRouter.get(
   '/api/media',
   wrap(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
-    const dir = query.dir ?? (query.sort === 'recent' ? 'desc' : 'asc');
+    const dir = query.dir ?? (query.sort === 'name' ? 'asc' : 'desc');
     const tagNames = (query.tags ?? '')
       .split(',')
       .map((t) => t.trim().toLowerCase())
@@ -80,9 +80,11 @@ mediaRouter.get(
     const keyExpr =
       query.sort === 'name'
         ? 'lower(m.filename)'
-        : query.sort === 'random'
-          ? `(((m.id + ${seed}) * 2654435761) % 2147483647)`
-          : 'm.created_at';
+        : query.sort === 'size'
+          ? 'm.size_bytes'
+          : query.sort === 'random'
+            ? `(((m.id + ${seed}) * 2654435761) % 2147483647)`
+            : 'm.created_at';
 
     const countRow = sqlite
       .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)

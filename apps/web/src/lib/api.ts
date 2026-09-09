@@ -74,7 +74,7 @@ export interface MediaFilters {
   tags: string[];
   liked?: boolean;
   q: string[];
-  sort: 'recent' | 'name' | 'random';
+  sort: 'recent' | 'name' | 'size' | 'random';
   dir: 'asc' | 'desc';
   seed: number;
 }
