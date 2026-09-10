@@ -23,6 +23,26 @@ else
 fi
 
 echo ""
+if [ -d "$HOME/.sakuya" ]; then
+    echo "Data folder: $HOME/.sakuya (already set up)"
+elif [ -f "apps/server/data/tbge.db" ]; then
+    echo "Data folder: apps/server/data (existing database found)"
+    echo "Move it to $HOME/.sakuya any time from Settings > System in the web UI."
+else
+    echo "Where should Sakuya keep its data (database, thumbnails, uploads, downloads)?"
+    echo "  1) $HOME/.sakuya  - survives reinstalling or moving the app folder (recommended)"
+    echo "  2) apps/server/data - inside this project folder"
+    read -rp "Choice [1]: " data_choice || true
+    if [ "$data_choice" = "2" ]; then
+        mkdir -p apps/server/data
+        echo "Using apps/server/data."
+    else
+        mkdir -p "$HOME/.sakuya"
+        echo "Using $HOME/.sakuya."
+    fi
+fi
+
+echo ""
 echo "Installing dependencies..."
 bun install
 

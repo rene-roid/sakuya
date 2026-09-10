@@ -1,5 +1,5 @@
 import express from 'express';
-import { PORT } from './lib/config';
+import { PORT, DATA_DIR } from './lib/config';
 import './db';
 import { librariesRouter } from './routes/libraries';
 import { mediaRouter } from './routes/media';
@@ -45,5 +45,6 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(PORT, () => {
   console.log(`Sakuya server listening on http://localhost:${PORT}`);
+  console.log(`Data dir: ${DATA_DIR}`);
   initScheduler();
 });

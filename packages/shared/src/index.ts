@@ -191,6 +191,16 @@ export interface SystemInfo {
   thumbBytes: number;
 }
 
+export interface StorageInfo {
+  /** Data dir this process actually booted with. */
+  current: string;
+  home: string;
+  local: string;
+  usingHome: boolean;
+  /** SAKUYA_DATA_DIR is set (Docker), so the location can't be changed from the UI. */
+  locked: boolean;
+}
+
 export interface AuthStatus {
   enabled: boolean;
   unlocked: boolean;

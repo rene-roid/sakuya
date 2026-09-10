@@ -6,13 +6,14 @@ import { eq, isNotNull, isNull } from 'drizzle-orm';
 import { sqlite, db, schema } from '../db';
 import { wrap } from '../lib/http';
 import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
-import { THUMBS_DIR, DB_PATH, APP_VERSION } from '../lib/config';
+import { THUMBS_DIR, DB_PATH, APP_VERSION, DATA_DIR, HOME_DATA_DIR, LOCAL_DATA_DIR } from '../lib/config';
+import { migrateDataDir } from '../lib/storage';
 import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
 import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { performCleanup } from '../services/cleanup';
-import type { SystemInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
+import type { SystemInfo, StorageInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
 
 export const settingsRouter = Router();
 
@@ -80,6 +81,48 @@ settingsRouter.get(
       thumbBytes: dirSize(THUMBS_DIR),
     };
     res.json(info);
+  }),
+);
+
+settingsRouter.get(
+  '/api/system/storage',
+  wrap(async (_req, res) => {
+    const info: StorageInfo = {
+      current: DATA_DIR,
+      home: HOME_DATA_DIR,
+      local: LOCAL_DATA_DIR,
+      usingHome: DATA_DIR === HOME_DATA_DIR,
+      locked: Boolean(process.env.SAKUYA_DATA_DIR),
+    };
+    res.json(info);
+  }),
+);
+
+settingsRouter.post(
+  '/api/system/storage/migrate',
+  wrap(async (req, res) => {
+    const { target } = z.object({ target: z.enum(['home', 'local']) }).parse(req.body);
+    if (process.env.SAKUYA_DATA_DIR) {
+      return res.status(400).json({ error: 'SAKUYA_DATA_DIR is set — change that env var instead (Docker sets it).' });
+    }
+    const to = target === 'home' ? HOME_DATA_DIR : LOCAL_DATA_DIR;
+    if (to === DATA_DIR) return res.status(400).json({ error: 'Data is already stored there.' });
+
+    // ponytail: no request draining — single-user local app, so any query still in flight after the
+    // close below just errors out and the forced restart clears it. Add a drain if this ever goes multi-user.
+    sqlite.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    sqlite.close();
+    try {
+      migrateDataDir(DATA_DIR, to);
+    } catch (err) {
+      // The DB handle is gone either way, so the process is unusable — restart picks up the
+      // untouched original.
+      setTimeout(() => process.exit(1), 200);
+      throw err;
+    }
+    res.json({ movedTo: to });
+    // DATA_DIR is resolved once at import; only a restart can pick up the new location.
+    setTimeout(() => process.exit(0), 200);
   }),
 );
 

@@ -17,6 +17,7 @@ import type {
   Settings,
   SavedSearch,
   SimilarResponse,
+  StorageInfo,
   SystemInfo,
   TagCategory,
   TagCount,
@@ -181,6 +182,12 @@ export const api = {
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
   system: () => request<SystemInfo>('/api/system'),
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
+  storage: () => request<StorageInfo>('/api/system/storage'),
+  migrateStorage: (target: 'home' | 'local') =>
+    request<{ movedTo: string }>('/api/system/storage/migrate', {
+      method: 'POST',
+      body: JSON.stringify({ target }),
+    }),
   jobSchedules: () => request<JobSchedulesPayload>('/api/job-schedules'),
   updateJobSchedule: (body: UpdateJobScheduleBody) =>
     request<{ ok: true }>('/api/job-schedules', { method: 'PATCH', body: JSON.stringify(body) }),

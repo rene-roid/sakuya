@@ -1,9 +1,23 @@
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 
 const serverRoot = path.resolve(import.meta.dir, '..', '..');
 
-export const DATA_DIR = process.env.SAKUYA_DATA_DIR ?? path.join(serverRoot, 'data');
+export const HOME_DATA_DIR = path.join(os.homedir(), '.sakuya');
+export const LOCAL_DATA_DIR = path.join(serverRoot, 'data');
+
+/**
+ * Where the data lives is not a stored setting — it can't be, since the settings table lives in the
+ * DB we're trying to find. The folder's existence *is* the state: setup.sh or the Settings > System
+ * migrate button creates ~/.sakuya, and from then on every start finds it.
+ */
+export function resolveDataDir(): string {
+  if (process.env.SAKUYA_DATA_DIR) return process.env.SAKUYA_DATA_DIR;
+  return fs.existsSync(HOME_DATA_DIR) ? HOME_DATA_DIR : LOCAL_DATA_DIR;
+}
+
+export const DATA_DIR = resolveDataDir();
 export const DB_PATH = path.join(DATA_DIR, 'tbge.db');
 export const THUMBS_DIR = path.join(DATA_DIR, 'thumbnails');
 export const TRANSCODES_DIR = path.join(DATA_DIR, 'transcodes');
@@ -49,6 +63,10 @@ export function modelRepoBase(id: string): string {
 
 export const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tiff']);
 export const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v', '.ts', '.wmv']);
+
+if (!process.env.SAKUYA_DATA_DIR && DATA_DIR !== LOCAL_DATA_DIR && fs.existsSync(path.join(LOCAL_DATA_DIR, 'tbge.db'))) {
+  console.warn(`[sakuya] using ${DATA_DIR} — the database still sitting in ${LOCAL_DATA_DIR} is ignored`);
+}
 
 for (const dir of [DATA_DIR, THUMBS_DIR, TRANSCODES_DIR, UPLOADS_DIR, MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });

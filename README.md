@@ -79,7 +79,8 @@ bun dev       # server on :3777, web on :5173 (Vite proxies /api)
 ```
 
 Open `http://localhost:5173`. No configuration required to start — everything lives under
-`apps/server/data/` by default.
+`apps/server/data/` by default, or in `~/.sakuya/` if that folder exists (`./setup.sh` offers to create
+it, and Settings > System can move an existing library there).
 
 Prefer scripts? `./setup.sh` installs Bun for you if it's missing, `./run.sh` starts dev, and
 `./update.sh` pulls + reinstalls. `.bat` equivalents exist for Windows.

@@ -53,9 +53,22 @@ export function SystemTab() {
   const [showCacheWarning, setShowCacheWarning] = useState(false);
   const [showRegenerateWarning, setShowRegenerateWarning] = useState(false);
   const [showCleanupWarning, setShowCleanupWarning] = useState(false);
+  const [migrateTo, setMigrateTo] = useState<'home' | 'local' | null>(null);
+  const [movedTo, setMovedTo] = useState<string | null>(null);
 
   const cacheEnabled = settings?.thumbnail_cache_enabled !== '0';
   const transcodeEnabled = settings?.video_transcode_enabled === '1';
+
+  const { data: storage } = useQuery({ queryKey: ['storage'], queryFn: api.storage });
+
+  const migrateMutation = useMutation({
+    mutationFn: (target: 'home' | 'local') => api.migrateStorage(target),
+    onSuccess: (res) => {
+      setMovedTo(res.movedTo);
+      showToast(`Data moved to ${res.movedTo} — restart Sakuya`);
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
 
   const clearMutation = useMutation({
     mutationFn: api.clearThumbnails,
@@ -109,6 +122,37 @@ export function SystemTab() {
   return (
     <div>
       <TabHeader title="System" subtitle="Storage and maintenance." />
+      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="text-[13.5px] font-bold">Store data in your home folder</div>
+            <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
+              Keeps the database, thumbnails, uploads and downloads in <code>~/.sakuya</code> instead of the app
+              folder, so reinstalling or moving Sakuya leaves your library alone. Switching moves every file, then
+              the server shuts down — start it again to continue.
+            </div>
+            <div className="mt-2 text-[11.5px] text-zinc-500">
+              Currently: <span className="text-zinc-300">{storage?.current ?? '—'}</span>
+            </div>
+            {storage?.locked && (
+              <div className="mt-1 text-[11.5px] text-amber-500">
+                Set by the SAKUYA_DATA_DIR environment variable (Docker) — change it there.
+              </div>
+            )}
+            {movedTo && (
+              <div className="mt-1 text-[11.5px] text-emerald-500">Moved to {movedTo}. Restart Sakuya.</div>
+            )}
+          </div>
+          <ToggleSwitch
+            checked={storage?.usingHome ?? false}
+            pending={migrateMutation.isPending}
+            onChange={(value) => {
+              if (storage?.locked || migrateMutation.isPending) return;
+              setMigrateTo(value ? 'home' : 'local');
+            }}
+          />
+        </div>
+      </div>
       <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
         <div className="flex items-center justify-between">
           <div>
@@ -207,6 +251,26 @@ export function SystemTab() {
           </div>
         </div>
       </div>
+      {migrateTo && (
+        <ConfirmDialog
+          title={migrateTo === 'home' ? 'Move data to ~/.sakuya?' : 'Move data back to the app folder?'}
+          confirmLabel="Move and shut down"
+          body={
+            <>
+              Everything in <span className="text-zinc-300">{storage?.current}</span> is copied to{' '}
+              <span className="text-zinc-300">{migrateTo === 'home' ? storage?.home : storage?.local}</span> and the
+              old folder is deleted. Large thumbnail and transcode caches can make this take a while — don't close
+              the browser. The server shuts down when it's done; start it again to keep using Sakuya.
+            </>
+          }
+          onCancel={() => setMigrateTo(null)}
+          onConfirm={() => {
+            const target = migrateTo;
+            setMigrateTo(null);
+            migrateMutation.mutate(target);
+          }}
+        />
+      )}
       {showCacheWarning && (
         <ConfirmDialog
           title="Disable thumbnail cache?"
