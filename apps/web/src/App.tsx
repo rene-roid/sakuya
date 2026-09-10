@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
+import { UpdateToast } from './components/UpdateToast';
 import { LoginGate } from './components/LoginGate';
 import { useAuth } from './hooks/useAuth';
 import { JobsProvider } from './hooks/useJobs';
@@ -39,6 +40,7 @@ export function App() {
       <DownloaderProvider>
         <div className="relative min-h-screen bg-zinc-950 text-zinc-100">
           <ReleaseNotesDialog />
+          <UpdateToast />
           <Navbar />
           <Routes>
             <Route path="/" element={<Dashboard />} />
