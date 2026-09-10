@@ -28,6 +28,7 @@ export interface Library {
   createdAt: number;
   lastVisitedAt: number | null;
   autoScanInterval: number;
+  sortOrder: number;
 }
 
 export interface LibraryWithStats extends Library {

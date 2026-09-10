@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, X, Upload, RotateCw } from 'lucide-react';
+import { Pencil, X, Upload, RotateCw, ChevronUp, ChevronDown, Check } from 'lucide-react';
 import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { useScanAllLibraries } from '../../hooks/useScanAllLibraries';
@@ -38,6 +38,21 @@ export function LibrariesTab() {
 
   const scanAllMutation = useScanAllLibraries(libraries);
 
+  const reorderMutation = useMutation({
+    mutationFn: (ids: number[]) => api.reorderLibraries(ids),
+    onSuccess: () => invalidate(),
+    onError: (err: Error) => showToast(err.message),
+  });
+
+  // Swap a library with its neighbour and persist the whole list's new order.
+  const move = (index: number, delta: number) => {
+    const ids = (libraries ?? []).map((l) => l.id);
+    const target = index + delta;
+    if (target < 0 || target >= ids.length) return;
+    [ids[index], ids[target]] = [ids[target], ids[index]];
+    reorderMutation.mutate(ids);
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between">
@@ -50,8 +65,15 @@ export function LibrariesTab() {
           Scan All
         </button>
       </div>
-      {(libraries ?? []).map((lib) => (
-        <LibraryCard key={lib.id} lib={lib} onChanged={invalidate} />
+      {(libraries ?? []).map((lib, i) => (
+        <LibraryCard
+          key={lib.id}
+          lib={lib}
+          onChanged={invalidate}
+          onMove={(delta) => move(i, delta)}
+          canMoveUp={i > 0}
+          canMoveDown={i < (libraries?.length ?? 0) - 1}
+        />
       ))}
       <div className="rounded-xl border border-dashed border-zinc-800 p-4">
         <div className="mb-2.5 text-[13.5px] font-bold">New library</div>
@@ -95,12 +117,25 @@ const AUTO_SCAN_OPTIONS = [
   { label: '24 hours', value: 1440 },
 ];
 
-function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () => void }) {
+function LibraryCard({
+  lib,
+  onChanged,
+  onMove,
+  canMoveUp,
+  canMoveDown,
+}: {
+  lib: LibraryWithStats;
+  onChanged: () => void;
+  onMove: (delta: number) => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}) {
   const showToast = useToast();
   const queryClient = useQueryClient();
   const [folderInput, setFolderInput] = useState('');
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [showThumbPicker, setShowThumbPicker] = useState(false);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [thumbBust, setThumbBust] = useState(0);
   const { data: schedules } = useQuery({ queryKey: ['job-schedules'], queryFn: api.jobSchedules });
 
@@ -148,6 +183,20 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
     },
     onError: (err: Error) => showToast(err.message),
   });
+  const renameMutation = useMutation({
+    mutationFn: (name: string) => api.updateLibrary(lib.id, { name }),
+    onSuccess: () => {
+      setRenaming(null);
+      onChanged();
+      showToast('Library renamed');
+    },
+    onError: (err: Error) => showToast(err.message),
+  });
+  const submitRename = () => {
+    const name = renaming?.trim();
+    if (!name || name === lib.name) return setRenaming(null);
+    renameMutation.mutate(name);
+  };
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteLibrary(lib.id),
     onSuccess: () => {
@@ -177,12 +226,57 @@ function LibraryCard({ lib, onChanged }: { lib: LibraryWithStats; onChanged: () 
               <Pencil size={12} />
             </div>
           </div>
-          <div>
-            <div className="text-sm font-bold">{lib.name}</div>
+          <div className="min-w-0 flex-1">
+            {renaming === null ? (
+              <div
+                className="group/name flex cursor-pointer items-center gap-1.5 text-sm font-bold"
+                title="Rename library"
+                onClick={() => setRenaming(lib.name)}
+              >
+                <span className="truncate">{lib.name}</span>
+                <Pencil size={11} className="flex-none text-zinc-600 opacity-0 group-hover/name:opacity-100" />
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={renaming}
+                  disabled={renameMutation.isPending}
+                  onChange={(e) => setRenaming(e.target.value)}
+                  onBlur={submitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') submitRename();
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  className="w-full max-w-[240px] rounded-[6px] border border-zinc-700 bg-zinc-900 px-2 py-[3px] text-sm font-bold text-zinc-100 outline-none"
+                />
+                <span className="cursor-pointer text-zinc-500 hover:text-zinc-200" onMouseDown={(e) => e.preventDefault()} onClick={submitRename}>
+                  <Check size={14} />
+                </span>
+              </div>
+            )}
             <div className="text-[11.5px] capitalize text-zinc-500">
               {lib.type} Library · {lib.itemCount} items
             </div>
           </div>
+        </div>
+        <div className="flex flex-none flex-col">
+          <button
+            disabled={!canMoveUp}
+            title="Move up"
+            onClick={() => onMove(-1)}
+            className="cursor-pointer text-zinc-600 hover:text-zinc-200 disabled:cursor-default disabled:opacity-25"
+          >
+            <ChevronUp size={15} />
+          </button>
+          <button
+            disabled={!canMoveDown}
+            title="Move down"
+            onClick={() => onMove(1)}
+            className="cursor-pointer text-zinc-600 hover:text-zinc-200 disabled:cursor-default disabled:opacity-25"
+          >
+            <ChevronDown size={15} />
+          </button>
         </div>
         <div
           className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200"

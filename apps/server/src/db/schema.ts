@@ -9,6 +9,7 @@ export const libraries = sqliteTable('libraries', {
   createdAt: integer('created_at').notNull(),
   lastVisitedAt: integer('last_visited_at'),
   autoScanInterval: integer('auto_scan_interval').notNull().default(0),
+  sortOrder: integer('sort_order').notNull().default(0),
 });
 
 export const folders = sqliteTable('folders', {

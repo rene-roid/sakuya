@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS libraries (
   custom_image_path TEXT,
   created_at INTEGER NOT NULL,
   last_visited_at INTEGER,
-  auto_scan_interval INTEGER NOT NULL DEFAULT 0
+  auto_scan_interval INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS folders (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -185,6 +186,7 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 8, sql: 'CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked)' },
   { version: 9, sql: 'ALTER TABLE media ADD COLUMN transcoded_at INTEGER' },
   { version: 10, sql: 'ALTER TABLE media ADD COLUMN dwell_seconds REAL NOT NULL DEFAULT 0' },
+  { version: 11, sql: 'ALTER TABLE libraries ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;

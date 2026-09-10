@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db, sqlite, schema } from '../db';
 import { wrap } from '../lib/http';
-import { libraryWithStats } from './libraries';
+import { libraryWithStats, librariesInOrder } from './libraries';
 import { rowToMedia } from '../lib/rowToMedia';
 import type { DashboardResponse } from '@sakuya/shared';
 
@@ -15,7 +15,7 @@ const MEDIA_SELECT = `
 dashboardRouter.get(
   '/api/dashboard',
   wrap(async (_req, res) => {
-    const libs = db.select().from(schema.libraries).all();
+    const libs = librariesInOrder();
     const continueWatching = (
       sqlite
         .query(`${MEDIA_SELECT} WHERE m.view_progress > 0.01 AND m.view_progress < 0.98 ORDER BY m.last_viewed_at DESC LIMIT 12`)

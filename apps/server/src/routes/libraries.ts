@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
@@ -33,6 +33,7 @@ export function libraryWithStats(row: typeof schema.libraries.$inferSelect): Lib
     createdAt: row.createdAt,
     lastVisitedAt: row.lastVisitedAt,
     autoScanInterval: row.autoScanInterval,
+    sortOrder: row.sortOrder,
     itemCount: count.c,
     // Cover precedence: custom uploaded image wins; otherwise a media thumbnail.
     thumbMediaId: row.customImagePath ? null : thumb,
@@ -40,10 +41,15 @@ export function libraryWithStats(row: typeof schema.libraries.$inferSelect): Lib
   };
 }
 
+/** Libraries in user-defined display order; ties (all-zero, pre-reorder) fall back to creation order. */
+export function librariesInOrder(): (typeof schema.libraries.$inferSelect)[] {
+  return db.select().from(schema.libraries).orderBy(asc(schema.libraries.sortOrder), asc(schema.libraries.id)).all();
+}
+
 librariesRouter.get(
   '/api/libraries',
   wrap(async (_req, res) => {
-    const rows = db.select().from(schema.libraries).all();
+    const rows = librariesInOrder();
     res.json(rows.map(libraryWithStats));
   }),
 );
@@ -64,17 +70,41 @@ const libraryBodySchema = z.object({
   autoScanInterval: z.number().int().min(0).default(0),
 });
 
+/** New libraries land at the bottom of the list. */
+function nextSortOrder(): number {
+  const row = sqlite.query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM libraries').get() as { n: number };
+  return row.n;
+}
+
 librariesRouter.post(
   '/api/libraries',
   wrap(async (req, res) => {
     const body = libraryBodySchema.parse(req.body);
     const row = db
       .insert(schema.libraries)
-      .values({ name: body.name, type: body.type, autoScanInterval: body.autoScanInterval, createdAt: Date.now() })
+      .values({
+        name: body.name,
+        type: body.type,
+        autoScanInterval: body.autoScanInterval,
+        createdAt: Date.now(),
+        sortOrder: nextSortOrder(),
+      })
       .returning()
       .get();
     scheduleAll();
     res.status(201).json(libraryWithStats(row));
+  }),
+);
+
+// Persist a full display order: the client sends every library id in the order it wants.
+librariesRouter.put(
+  '/api/libraries/order',
+  wrap(async (req, res) => {
+    const { ids } = z.object({ ids: z.array(z.number().int()).min(1) }).parse(req.body);
+    db.transaction((tx) => {
+      ids.forEach((id, i) => tx.update(schema.libraries).set({ sortOrder: i + 1 }).where(eq(schema.libraries.id, id)).run());
+    });
+    res.json(librariesInOrder().map(libraryWithStats));
   }),
 );
 

@@ -52,7 +52,7 @@ Response (`DashboardResponse`):
 ## Libraries
 
 ### `GET /api/libraries`
-List all libraries. Response: `LibraryWithStats[]`.
+List all libraries in display order (`sortOrder`, then id). Response: `LibraryWithStats[]`.
 
 ### `GET /api/libraries/:id`
 Get one library; also updates its `lastVisitedAt` timestamp. Response: `LibraryWithStats`.
@@ -65,9 +65,15 @@ Body: `{ name: string (1-120 chars), type?: 'image'|'video'|'mixed' (default 'mi
 Response: `201` + `LibraryWithStats`.
 
 ### `PATCH /api/libraries/:id`
-Partially update a library. Body: any subset of the create body plus `thumbnailMediaId?: number | null`.
+Partially update a library (this is how a rename is done). Body: any subset of the create body plus
+`thumbnailMediaId?: number | null`.
 
 Response: `LibraryWithStats`.
+
+### `PUT /api/libraries/order`
+Set the display order. Body: `{ ids: number[] }` — every library id, in the wanted order.
+
+Response: `LibraryWithStats[]` in the new order.
 
 ### `DELETE /api/libraries/:id`
 Delete a library and all its media, tags, thumbnails, and folders (files on disk are removed for

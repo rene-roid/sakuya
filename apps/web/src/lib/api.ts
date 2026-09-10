@@ -140,6 +140,8 @@ export const api = {
     id: number,
     body: { name?: string; type?: string; autoScanInterval?: number; thumbnailMediaId?: number | null },
   ) => request<LibraryWithStats>(`/api/libraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  reorderLibraries: (ids: number[]) =>
+    request<LibraryWithStats[]>('/api/libraries/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteLibrary: (id: number) => request<{ ok: true }>(`/api/libraries/${id}`, { method: 'DELETE' }),
   addFolder: (libraryId: number, path: string) =>
     request(`/api/libraries/${libraryId}/folders`, { method: 'POST', body: JSON.stringify({ path }) }),
