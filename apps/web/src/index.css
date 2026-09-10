@@ -19,6 +19,8 @@ body {
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
 }
 
 ::-webkit-scrollbar {
@@ -26,10 +28,21 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #27272a;
-  border-radius: 8px;
+  background: #3f3f46;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
 }
-::-webkit-scrollbar-track {
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--accent);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
   background: transparent;
 }
 
