@@ -187,25 +187,31 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 10, sql: 'ALTER TABLE media ADD COLUMN dwell_seconds REAL NOT NULL DEFAULT 0' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
-// Everything up to here landed via the old ad-hoc try/catch mechanism, so a pre-existing DB with
-// no tracked version already has those columns — but not anything added after, which must still run.
-const BASELINE_VERSION = 9;
+const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;
 
-let currentVersion = (sqlite.query('PRAGMA user_version').get() as { user_version: number }).user_version;
-if (isFreshDb) {
-  // The CREATE TABLE block above already has every column.
-  sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
-  currentVersion = LATEST_VERSION;
-} else if (currentVersion === 0) {
-  currentVersion = BASELINE_VERSION;
+/** True when this migration adds a column the table already has. */
+function columnExists(sql: string): boolean {
+  const match = ADD_COLUMN.exec(sql);
+  if (!match) return false;
+  const cols = sqlite.query(`PRAGMA table_info(${match[1]})`).all() as { name: string }[];
+  return cols.some((c) => c.name === match[2]);
 }
-if (currentVersion < LATEST_VERSION) {
-  const pending = MIGRATIONS.filter((m) => m.version > currentVersion);
-  sqlite.transaction(() => {
-    for (const m of pending) sqlite.exec(m.sql);
-  })();
-  sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
-}
+
+// user_version alone can't be trusted for DBs that predate it: they report 0 regardless of which
+// columns the old ad-hoc try/catch mechanism actually managed to add, and a DB last booted before
+// the transcode release ended up stamped as current while `media.transcoded_at` was still missing.
+// So ADD COLUMN migrations are decided by the real schema, which also heals a DB already stamped
+// wrong; anything else (index creation, future backfills) still runs once, by version.
+const currentVersion = isFreshDb
+  ? LATEST_VERSION // the CREATE TABLE block above already has every column
+  : (sqlite.query('PRAGMA user_version').get() as { user_version: number }).user_version;
+
+sqlite.transaction(() => {
+  for (const m of MIGRATIONS) {
+    if (ADD_COLUMN.test(m.sql) ? !columnExists(m.sql) : m.version > currentVersion) sqlite.exec(m.sql);
+  }
+})();
+sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(
