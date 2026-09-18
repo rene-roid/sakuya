@@ -4,9 +4,11 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
 import { useMediaInfinite } from '../hooks/useMedia';
+import { useSelection } from '../hooks/useSelection';
 import { FilterToolbar } from '../components/FilterToolbar';
 import { TagSidebar } from '../components/TagSidebar';
 import { MediaGrid } from '../components/MediaGrid';
+import { SelectionBar } from '../components/SelectionBar';
 import { MediaViewer } from '../components/MediaViewer';
 
 const EXPLORE_FILTERS_KEY = 'sakuya:exploreFilters';
@@ -14,6 +16,7 @@ const EXPLORE_FILTERS_KEY = 'sakuya:exploreFilters';
 export function Explore() {
   const [filters, actions] = useFilters();
   const media = useMediaInfinite(filters);
+  const selection = useSelection(media.items, JSON.stringify(filters));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
@@ -64,7 +67,7 @@ export function Explore() {
         </div>
         <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
           <div className="px-4 sm:px-8 py-3">
-            <FilterToolbar filters={filters} actions={actions} />
+            <FilterToolbar filters={filters} actions={actions} selection={selection} />
           </div>
         </div>
         <div className="px-4 sm:px-8 pb-16 pt-5">
@@ -75,9 +78,11 @@ export function Explore() {
             fetchNextPage={media.fetchNextPage}
             isLoading={media.isLoading}
             onOpen={setViewerIndex}
+            selection={selection}
           />
         </div>
       </div>
+      {selection.active && <SelectionBar selection={selection} filters={filters} total={media.total} />}
       {viewerIndex !== null && (
         <MediaViewer
           items={media.items}

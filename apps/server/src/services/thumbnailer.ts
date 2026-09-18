@@ -78,28 +78,41 @@ export async function generateThumbnail(
     : generateImageThumbnail(sourcePath, mediaId);
 }
 
-export function enqueueBulkThumbnailRegenerate() {
-  return enqueueJob('thumbnail', 'Regenerate all thumbnails', async (job: JobHandle) => {
-    const allMedia = db.select().from(schema.media).all();
-    job.update({ total: allMedia.length, log: `Regenerating ${allMedia.length} thumbnails…` });
+/** Shared worker for both "regenerate everything" and "regenerate this selection". */
+function regenerateJob(label: string, rows: (typeof schema.media.$inferSelect)[], libraryId: number | null = null) {
+  return enqueueJob('thumbnail', label, async (job: JobHandle) => {
+    job.update({ total: rows.length, log: `Regenerating ${rows.length} thumbnails…` });
     let regenerated = 0;
     let errors = 0;
 
-    for (let i = 0; i < allMedia.length; i++) {
+    for (let i = 0; i < rows.length; i++) {
       try {
-        if (fs.existsSync(allMedia[i].path)) {
-          await generateThumbnail(allMedia[i].path, allMedia[i].id, allMedia[i].type, allMedia[i].durationSeconds ?? null);
+        if (fs.existsSync(rows[i].path)) {
+          await generateThumbnail(rows[i].path, rows[i].id, rows[i].type, rows[i].durationSeconds ?? null);
+          db.update(schema.media).set({ thumbnailPath: thumbPathFor(rows[i].id) }).where(eq(schema.media.id, rows[i].id)).run();
           regenerated++;
         }
       } catch (err) {
         errors++;
-        console.error(`thumbnail regeneration failed for media ${allMedia[i].id}:`, err);
+        console.error(`thumbnail regeneration failed for media ${rows[i].id}:`, err);
       }
-      if (i % 5 === 0 || i === allMedia.length - 1) {
-        job.update({ progress: i + 1, log: `Regenerated ${i + 1}/${allMedia.length} thumbnails…` });
+      if (i % 5 === 0 || i === rows.length - 1) {
+        job.update({ progress: i + 1, log: `Regenerated ${i + 1}/${rows.length} thumbnails…` });
       }
     }
 
     return `Completed. ${regenerated} regenerated${errors ? `, ${errors} errors` : ''}.`;
-  });
+  }, libraryId);
+}
+
+export function enqueueBulkThumbnailRegenerate() {
+  return regenerateJob('Regenerate all thumbnails', db.select().from(schema.media).all());
+}
+
+/** Regenerate thumbnails for an explicit selection (bulk action in the grid). */
+export function enqueueThumbnailRegenerate(mediaIds: number[], libraryId: number | null = null) {
+  const rows = mediaIds
+    .map((id) => db.select().from(schema.media).where(eq(schema.media.id, id)).get())
+    .filter((row): row is typeof schema.media.$inferSelect => !!row);
+  return regenerateJob(`Regenerate ${rows.length} thumbnail${rows.length === 1 ? '' : 's'}`, rows, libraryId);
 }

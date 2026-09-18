@@ -6,17 +6,27 @@ import { z } from 'zod';
 import { eq, and, sql } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
-import { thumbPathFor, generateThumbnail } from '../services/thumbnailer';
+import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor, transcodePathFor } from '../services/transcoder';
 import { rowToMedia } from '../lib/rowToMedia';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
-import type { DuplicatesResponse, MediaDetail, MediaListResponse, SimilarResponse } from '@sakuya/shared';
+import type {
+  BulkFailure,
+  BulkResult,
+  DuplicatesResponse,
+  MediaDetail,
+  MediaIdsResponse,
+  MediaListResponse,
+  SimilarResponse,
+} from '@sakuya/shared';
 
 export const mediaRouter = Router();
 
-const listQuerySchema = z.object({
+const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
+
+const filterSchema = z.object({
   libraryId: z.coerce.number().int().optional(),
   boardId: z.coerce.number().int().optional(),
   type: z.enum(['image', 'video']).optional(),
@@ -26,65 +36,85 @@ const listQuerySchema = z.object({
   sort: z.enum(['recent', 'name', 'size', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
   seed: z.coerce.number().int().default(1),
+});
+
+const listQuerySchema = filterSchema.extend({
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(60),
 });
+
+type MediaFilterQuery = z.infer<typeof filterSchema>;
+
+/**
+ * WHERE fragments + bound params for a filter query. Shared by the paginated list and by
+ * `/api/media/ids`, so "select all matching" can never drift from what the grid shows.
+ */
+function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: unknown[] } {
+  const tagNames = (query.tags ?? '')
+    .split(',')
+    .map((t) => t.trim().toLowerCase())
+    .filter(Boolean);
+
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (query.libraryId !== undefined) {
+    conds.push('m.library_id = ?');
+    params.push(query.libraryId);
+  }
+  if (query.boardId !== undefined) {
+    conds.push('m.id IN (SELECT bm.media_id FROM board_media bm WHERE bm.board_id = ?)');
+    params.push(query.boardId);
+  }
+  if (query.type) {
+    conds.push('m.type = ?');
+    params.push(query.type);
+  }
+  if (query.liked) {
+    conds.push('m.liked = 1');
+  }
+  // Repeated ?q= params are ANDed, so several free-text terms can narrow one search.
+  const qTerms = (Array.isArray(query.q) ? query.q : query.q ? [query.q] : [])
+    .map((t) => t.trim())
+    .filter(Boolean);
+  for (const term of qTerms) {
+    conds.push(
+      `(m.path LIKE ? OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))`,
+    );
+    params.push(`%${term}%`, `%${term}%`);
+  }
+  if (tagNames.length) {
+    const placeholders = tagNames.map(() => '?').join(',');
+    conds.push(
+      `m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name IN (${placeholders}) GROUP BY mt.media_id HAVING COUNT(DISTINCT t.id) = ?)`,
+    );
+    params.push(...tagNames, tagNames.length);
+  }
+  return { conds, params };
+}
+
+/** Deterministic sort key per mode; random uses a seeded hash so pagination stays stable. */
+function sortKeyExpr(query: MediaFilterQuery): string {
+  const seed = query.seed % 2147483647;
+  return query.sort === 'name'
+    ? 'lower(m.filename)'
+    : query.sort === 'size'
+      ? 'm.size_bytes'
+      : query.sort === 'random'
+        ? `(((m.id + ${seed}) * 2654435761) % 2147483647)`
+        : 'm.created_at';
+}
+
+function sortDir(query: MediaFilterQuery): 'asc' | 'desc' {
+  return query.dir ?? (query.sort === 'name' ? 'asc' : 'desc');
+}
 
 mediaRouter.get(
   '/api/media',
   wrap(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
-    const dir = query.dir ?? (query.sort === 'name' ? 'asc' : 'desc');
-    const tagNames = (query.tags ?? '')
-      .split(',')
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
-
-    const conds: string[] = [];
-    const params: unknown[] = [];
-    if (query.libraryId !== undefined) {
-      conds.push('m.library_id = ?');
-      params.push(query.libraryId);
-    }
-    if (query.boardId !== undefined) {
-      conds.push('m.id IN (SELECT bm.media_id FROM board_media bm WHERE bm.board_id = ?)');
-      params.push(query.boardId);
-    }
-    if (query.type) {
-      conds.push('m.type = ?');
-      params.push(query.type);
-    }
-    if (query.liked) {
-      conds.push('m.liked = 1');
-    }
-    // Repeated ?q= params are ANDed, so several free-text terms can narrow one search.
-    const qTerms = (Array.isArray(query.q) ? query.q : query.q ? [query.q] : [])
-      .map((t) => t.trim())
-      .filter(Boolean);
-    for (const term of qTerms) {
-      conds.push(
-        `(m.path LIKE ? OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name LIKE ?))`,
-      );
-      params.push(`%${term}%`, `%${term}%`);
-    }
-    if (tagNames.length) {
-      const placeholders = tagNames.map(() => '?').join(',');
-      conds.push(
-        `m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.name IN (${placeholders}) GROUP BY mt.media_id HAVING COUNT(DISTINCT t.id) = ?)`,
-      );
-      params.push(...tagNames, tagNames.length);
-    }
-
-    // Deterministic sort key per mode; random uses a seeded hash so pagination stays stable.
-    const seed = query.seed % 2147483647;
-    const keyExpr =
-      query.sort === 'name'
-        ? 'lower(m.filename)'
-        : query.sort === 'size'
-          ? 'm.size_bytes'
-          : query.sort === 'random'
-            ? `(((m.id + ${seed}) * 2654435761) % 2147483647)`
-            : 'm.created_at';
+    const dir = sortDir(query);
+    const { conds, params } = buildMediaFilter(query);
+    const keyExpr = sortKeyExpr(query);
 
     const countRow = sqlite
       .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
@@ -118,6 +148,26 @@ mediaRouter.get(
       nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id])).toString('base64url');
     }
     const body: MediaListResponse = { items: rows.map(rowToMedia), nextCursor, total: countRow.c };
+    res.json(body);
+  }),
+);
+
+// Must stay ahead of `/api/media/:id` — otherwise "ids" is parsed as an id and 400s.
+mediaRouter.get(
+  '/api/media/ids',
+  wrap(async (req, res) => {
+    const query = filterSchema.parse(req.query);
+    const { conds, params } = buildMediaFilter(query);
+    const keyExpr = sortKeyExpr(query);
+    const dir = sortDir(query);
+    const rows = sqlite
+      .query(
+        `SELECT m.id FROM media m
+         ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}
+         ORDER BY ${keyExpr} ${dir === 'asc' ? 'ASC' : 'DESC'}, m.id ${dir === 'asc' ? 'ASC' : 'DESC'}`,
+      )
+      .all(...(params as any[])) as { id: number }[];
+    const body: MediaIdsResponse = { ids: rows.map((r) => r.id), total: rows.length };
     res.json(body);
   }),
 );
@@ -177,6 +227,227 @@ mediaRouter.post(
       deleted++;
     }
     res.json({ ok: true, deleted });
+  }),
+);
+
+const idsBody = z.object({ ids: z.array(z.number().int()).min(1).max(5000) });
+
+/**
+ * Rows for an explicit id list, in the order requested. A selection can span pages the grid
+ * never loaded ("select all matching"), so bulk confirmations resolve names through here
+ * rather than from whatever happens to be in the client's cache.
+ */
+mediaRouter.post(
+  '/api/media/by-ids',
+  wrap(async (req, res) => {
+    const { ids } = idsBody.parse(req.body);
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = sqlite
+      .query(
+        `SELECT m.*, l.name AS library_name,
+                (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+         FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+         WHERE m.id IN (${placeholders})`,
+      )
+      .all(...(ids as any[])) as any[];
+    const byId = new Map(rows.map((row) => [row.id as number, rowToMedia(row)]));
+    res.json(ids.map((id) => byId.get(id)).filter(Boolean));
+  }),
+);
+
+/** Tag histogram across a selection — powers the bulk "remove tags" picker and its confirm preview. */
+mediaRouter.post(
+  '/api/media/tags-summary',
+  wrap(async (req, res) => {
+    const { ids } = idsBody.parse(req.body);
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = sqlite
+      .query(
+        `SELECT t.name, t.category, COUNT(*) AS count
+         FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+         WHERE mt.media_id IN (${placeholders})
+         GROUP BY t.id ORDER BY count DESC, t.name`,
+      )
+      .all(...(ids as any[]));
+    res.json(rows);
+  }),
+);
+
+const tagsBatchSchema = z.object({
+  ids: z.array(z.number().int()).min(1).max(5000),
+  add: z.array(z.string().min(1)).default([]),
+  remove: z.array(z.string().min(1)).default([]),
+  category: z.enum(TAG_CATEGORIES).default('user'),
+});
+
+mediaRouter.post(
+  '/api/media/tags-batch',
+  wrap(async (req, res) => {
+    const body = tagsBatchSchema.parse(req.body);
+    const addNames = body.add.map((raw) => raw.trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
+    const removeNames = body.remove.map((raw) => raw.trim().toLowerCase()).filter(Boolean);
+    if (!addNames.length && !removeNames.length) {
+      return res.status(400).json({ error: 'Nothing to add or remove' });
+    }
+
+    // Resolve every tag id once up front rather than per media row.
+    const addTagIds = addNames.map((name) => upsertTag(name, body.category));
+    const removeTagIds = removeNames
+      .map((name) => db.select().from(schema.tags).where(eq(schema.tags.name, name)).get()?.id)
+      .filter((id): id is number => id !== undefined);
+
+    const failed: BulkFailure[] = [];
+    let updated = 0;
+    const apply = sqlite.transaction(() => {
+      for (const id of body.ids) {
+        const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+        if (!row) {
+          failed.push({ id, error: 'Not found' });
+          continue;
+        }
+        for (const tagId of addTagIds) {
+          db.insert(schema.mediaTags)
+            .values({ mediaId: id, tagId, confidence: null, source: 'user' })
+            .onConflictDoNothing()
+            .run();
+        }
+        for (const tagId of removeTagIds) {
+          db.delete(schema.mediaTags)
+            .where(and(eq(schema.mediaTags.mediaId, id), eq(schema.mediaTags.tagId, tagId)))
+            .run();
+        }
+        updated++;
+      }
+    });
+    apply();
+    refreshUsageCounts([...addTagIds, ...removeTagIds]);
+
+    const result: BulkResult = { ok: true, updated, failed };
+    res.json(result);
+  }),
+);
+
+const likeBatchSchema = z.object({
+  ids: z.array(z.number().int()).min(1).max(5000),
+  liked: z.boolean(),
+});
+
+mediaRouter.post(
+  '/api/media/like-batch',
+  wrap(async (req, res) => {
+    const { ids, liked } = likeBatchSchema.parse(req.body);
+    const failed: BulkFailure[] = [];
+    let updated = 0;
+    const apply = sqlite.transaction(() => {
+      for (const id of ids) {
+        const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+        if (!row) {
+          failed.push({ id, error: 'Not found' });
+          continue;
+        }
+        db.update(schema.media)
+          .set({ liked: liked ? 1 : 0, likedAt: liked ? Date.now() : null })
+          .where(eq(schema.media.id, id))
+          .run();
+        updated++;
+      }
+    });
+    apply();
+    const body: BulkResult = { ok: true, updated, failed };
+    res.json(body);
+  }),
+);
+
+const renameBatchSchema = z.object({
+  items: z
+    .array(z.object({ id: z.number().int(), filename: z.string().min(1) }))
+    .min(1)
+    .max(5000),
+});
+
+mediaRouter.post(
+  '/api/media/rename-batch',
+  wrap(async (req, res) => {
+    const { items } = renameBatchSchema.parse(req.body);
+    const failed: BulkFailure[] = [];
+
+    // Phase 1: resolve every target path and reject anything unsafe, missing, or colliding —
+    // including two items in this same batch aiming at one path.
+    const planned: { id: number; from: string; to: string; filename: string }[] = [];
+    const claimed = new Set<string>();
+    for (const item of items) {
+      const row = db.select().from(schema.media).where(eq(schema.media.id, item.id)).get();
+      if (!row) {
+        failed.push({ id: item.id, error: 'Not found' });
+        continue;
+      }
+      const safeName = path.basename(item.filename.trim());
+      if (!safeName || safeName === '.' || safeName === '..') {
+        failed.push({ id: item.id, error: 'Invalid filename' });
+        continue;
+      }
+      if (safeName === row.filename) continue; // no-op, not a failure
+      if (!fs.existsSync(row.path)) {
+        failed.push({ id: item.id, error: 'Source file missing' });
+        continue;
+      }
+      const newPath = path.join(path.dirname(row.path), safeName);
+      if (claimed.has(newPath)) {
+        failed.push({ id: item.id, error: 'Two files would end up with the same name' });
+        continue;
+      }
+      // A swap (a→b while b→a) also lands here: refusing is safer than a rename dance.
+      if (fs.existsSync(newPath)) {
+        failed.push({ id: item.id, error: 'A file with that name already exists' });
+        continue;
+      }
+      claimed.add(newPath);
+      planned.push({ id: item.id, from: row.path, to: newPath, filename: safeName });
+    }
+
+    // Phase 2: move on disk first; only rows whose file actually moved get their path updated.
+    const renamed: typeof planned = [];
+    for (const move of planned) {
+      try {
+        fs.renameSync(move.from, move.to);
+        renamed.push(move);
+      } catch (err) {
+        failed.push({ id: move.id, error: err instanceof Error ? err.message : 'Rename failed' });
+      }
+    }
+    const commit = sqlite.transaction(() => {
+      for (const move of renamed) {
+        db.update(schema.media)
+          .set({ path: move.to, filename: move.filename })
+          .where(eq(schema.media.id, move.id))
+          .run();
+      }
+    });
+    commit();
+
+    const body: BulkResult = { ok: true, updated: renamed.length, failed };
+    res.json(body);
+  }),
+);
+
+mediaRouter.post(
+  '/api/media/retag-batch',
+  wrap(async (req, res) => {
+    const { ids } = idsBody.parse(req.body);
+    if (!modelReady()) return res.status(409).json({ error: 'Tagger model not downloaded' });
+    const existing = ids.filter((id) => db.select().from(schema.media).where(eq(schema.media.id, id)).get());
+    if (!existing.length) return res.status(404).json({ error: 'Not found' });
+    const job = enqueueTagJob(existing, `AI tag: ${existing.length} selected`);
+    res.json({ job });
+  }),
+);
+
+mediaRouter.post(
+  '/api/media/thumbnails-batch',
+  wrap(async (req, res) => {
+    const { ids } = idsBody.parse(req.body);
+    const job = enqueueThumbnailRegenerate(ids);
+    res.json({ job });
   }),
 );
 
@@ -318,8 +589,6 @@ mediaRouter.post(
     res.json({ ok: true });
   }),
 );
-
-const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
 
 const tagsPatchSchema = z.object({
   add: z.array(z.string().min(1)).default([]),

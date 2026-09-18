@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ListChecks } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import type { Media } from '@sakuya/shared';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { useDiscoverInfinite } from '../hooks/useMedia';
+import { useSelection } from '../hooks/useSelection';
 import { MediaGrid } from '../components/MediaGrid';
+import { SelectionBar } from '../components/SelectionBar';
 import { MediaViewer } from '../components/MediaViewer';
 import { useToast } from '../components/Toast';
 
@@ -44,6 +46,7 @@ export function Discover() {
     surprise: debouncedSurprise,
     seed,
   });
+  const selection = useSelection(feed.items, `${typeParam}|${debouncedSurprise}|${seed}`);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   // "I'm feeling lucky" opens its pick outside the feed's list, on a max-surprise run of its own
   // so you can keep paging past the first pick instead of being stuck on one item.
@@ -162,6 +165,16 @@ export function Discover() {
           >
             Reshuffle
           </button>
+          {!selection.active && (
+            <button
+              onClick={selection.enter}
+              title="Select multiple files for bulk actions"
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+            >
+              <ListChecks size={16} />
+              Select
+            </button>
+          )}
         </div>
       </div>
       <div className="px-4 sm:px-8 pb-16 pt-5">
@@ -172,8 +185,10 @@ export function Discover() {
           fetchNextPage={feed.fetchNextPage}
           isLoading={feed.isLoading}
           onOpen={setViewerIndex}
+          selection={selection}
         />
       </div>
+      {selection.active && <SelectionBar selection={selection} total={feed.items.length} />}
       {lucky && (
         <MediaViewer
           items={lucky.items}

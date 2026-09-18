@@ -1,6 +1,8 @@
 import type {
   AuthStatus,
   BoardWithStats,
+  BulkRenameItem,
+  BulkResult,
   ConsoleSessionStatus,
   DashboardResponse,
   DownloadBatchWithItems,
@@ -10,7 +12,9 @@ import type {
   DuplicatesResponse,
   Job,
   LibraryWithStats,
+  Media,
   MediaDetail,
+  MediaIdsResponse,
   MediaListResponse,
   ScheduleJobType,
   ScheduleMode,
@@ -80,7 +84,8 @@ export interface MediaFilters {
   seed: number;
 }
 
-export function mediaQueryString(filters: MediaFilters, cursor?: string): string {
+/** Filter params only — no cursor/limit. Shared by the list query and "select all matching". */
+function filterParams(filters: MediaFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.libraryId) params.set('libraryId', String(filters.libraryId));
   if (filters.boardId) params.set('boardId', String(filters.boardId));
@@ -91,6 +96,11 @@ export function mediaQueryString(filters: MediaFilters, cursor?: string): string
   params.set('sort', filters.sort);
   params.set('dir', filters.dir);
   params.set('seed', String(filters.seed));
+  return params;
+}
+
+export function mediaQueryString(filters: MediaFilters, cursor?: string): string {
+  const params = filterParams(filters);
   params.set('limit', '60');
   if (cursor) params.set('cursor', cursor);
   return params.toString();
@@ -168,6 +178,26 @@ export const api = {
   duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
   deleteMediaBatch: (ids: number[]) =>
     request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
+  mediaIds: (filters: MediaFilters) => request<MediaIdsResponse>(`/api/media/ids?${filterParams(filters)}`),
+  mediaByIds: (ids: number[]) =>
+    request<Media[]>('/api/media/by-ids', { method: 'POST', body: JSON.stringify({ ids }) }),
+  tagsSummary: (ids: number[]) =>
+    request<TagCount[]>('/api/media/tags-summary', { method: 'POST', body: JSON.stringify({ ids }) }),
+  tagsBatch: (body: { ids: number[]; add?: string[]; remove?: string[]; category?: TagCategory }) =>
+    request<BulkResult>('/api/media/tags-batch', { method: 'POST', body: JSON.stringify(body) }),
+  likeBatch: (ids: number[], liked: boolean) =>
+    request<BulkResult>('/api/media/like-batch', { method: 'POST', body: JSON.stringify({ ids, liked }) }),
+  renameBatch: (items: BulkRenameItem[]) =>
+    request<BulkResult>('/api/media/rename-batch', { method: 'POST', body: JSON.stringify({ items }) }),
+  retagBatch: (ids: number[]) =>
+    request<{ job: Job }>('/api/media/retag-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
+  thumbnailsBatch: (ids: number[]) =>
+    request<{ job: Job }>('/api/media/thumbnails-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
+  removeFromBoardBatch: (id: number, mediaIds: number[]) =>
+    request<BoardWithStats>(`/api/boards/${id}/media/remove-batch`, {
+      method: 'POST',
+      body: JSON.stringify({ mediaIds }),
+    }),
   saveProgress: (id: number, progress: number, opts?: { view?: boolean; watchedDelta?: number; dwellDelta?: number }) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress, ...opts }) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {

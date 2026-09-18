@@ -4,8 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
 import { useMediaInfinite } from '../hooks/useMedia';
+import { useSelection } from '../hooks/useSelection';
 import { FilterToolbar } from '../components/FilterToolbar';
 import { MediaGrid } from '../components/MediaGrid';
+import { SelectionBar } from '../components/SelectionBar';
 import { MediaViewer } from '../components/MediaViewer';
 
 export function LibraryView() {
@@ -13,6 +15,7 @@ export function LibraryView() {
   const libraryId = Number(id);
   const [filters, actions] = useFilters(libraryId);
   const media = useMediaInfinite(filters);
+  const selection = useSelection(media.items, JSON.stringify(filters));
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const { data: library } = useQuery({
@@ -33,7 +36,7 @@ export function LibraryView() {
       </div>
       <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
-          <FilterToolbar filters={filters} actions={actions} />
+          <FilterToolbar filters={filters} actions={actions} selection={selection} />
         </div>
       </div>
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-5">
@@ -44,8 +47,10 @@ export function LibraryView() {
           fetchNextPage={media.fetchNextPage}
           isLoading={media.isLoading}
           onOpen={setViewerIndex}
+          selection={selection}
         />
       </div>
+      {selection.active && <SelectionBar selection={selection} filters={filters} total={media.total} />}
       {viewerIndex !== null && (
         <MediaViewer
           items={media.items}

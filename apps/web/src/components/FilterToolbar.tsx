@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus } from 'lucide-react';
+import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus, ListChecks } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
 import { api } from '../lib/api';
 import { exploreQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
+import type { SelectionApi } from '../hooks/useSelection';
 
 function segStyle(active: boolean): string {
   return `cursor-pointer rounded-md px-[13px] py-1.5 text-[12.5px] font-semibold ${
@@ -17,7 +18,15 @@ const SORTS = [
   { key: 'size', label: 'Size' },
 ] as const;
 
-export function FilterToolbar({ filters, actions }: { filters: FilterState; actions: FilterActions }) {
+export function FilterToolbar({
+  filters,
+  actions,
+  selection,
+}: {
+  filters: FilterState;
+  actions: FilterActions;
+  selection?: SelectionApi;
+}) {
   const DirIcon = filters.dir === 'asc' ? ArrowUp : ArrowDown;
   const qc = useQueryClient();
   const query = exploreQueryString(filters);
@@ -97,6 +106,16 @@ export function FilterToolbar({ filters, actions }: { filters: FilterState; acti
         >
           <X size={16} />
           <span>Clear all</span>
+        </div>
+      )}
+      {selection && !selection.active && (
+        <div
+          title="Select multiple files for bulk actions"
+          className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+          onClick={selection.enter}
+        >
+          <ListChecks size={16} />
+          <span>Select</span>
         </div>
       )}
       {query && (

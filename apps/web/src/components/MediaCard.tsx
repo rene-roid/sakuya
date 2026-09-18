@@ -1,3 +1,5 @@
+import type { MouseEvent } from 'react';
+import { Check } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
@@ -26,10 +28,25 @@ export function DurationBadge({ seconds }: { seconds: number | null }) {
 }
 
 /** Square virtualized-grid card with hover overlay. */
-export function MediaCard({ item, onClick }: { item: Media; onClick: () => void }) {
+export function MediaCard({
+  item,
+  onClick,
+  selectMode,
+  selected,
+}: {
+  item: Media;
+  onClick: (e: MouseEvent) => void;
+  /** In select mode a click toggles the card instead of opening the viewer. */
+  selectMode?: boolean;
+  selected?: boolean;
+}) {
   return (
-    <div className="cursor-pointer" onClick={onClick}>
-      <div className="group relative aspect-square w-full overflow-hidden rounded-[10px] border border-zinc-800 bg-zinc-900">
+    <div className="cursor-pointer select-none" onClick={onClick}>
+      <div
+        className={`group relative aspect-square w-full overflow-hidden rounded-[10px] border bg-zinc-900 ${
+          selected ? 'border-accent ring-2 ring-accent' : 'border-zinc-800'
+        }`}
+      >
         <img
           src={thumbUrl(item.id)}
           alt={item.filename}
@@ -52,13 +69,26 @@ export function MediaCard({ item, onClick }: { item: Media; onClick: () => void 
             {item.reasonRelated ? `~ ${item.reasonTag}` : item.reasonTag}
           </div>
         )}
-        <div
-          className={`absolute right-1.5 top-1.5 transition-opacity ${
-            item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          }`}
-        >
-          <HeartButton mediaId={item.id} liked={item.liked} />
-        </div>
+        {selectMode ? (
+          <>
+            {!selected && <div className="absolute inset-0 bg-zinc-950/40" />}
+            <div
+              className={`absolute right-1.5 top-1.5 flex h-[19px] w-[19px] items-center justify-center rounded-md border ${
+                selected ? 'border-accent bg-accent text-white' : 'border-zinc-400 bg-black/50'
+              }`}
+            >
+              {selected && <Check size={13} strokeWidth={3} />}
+            </div>
+          </>
+        ) : (
+          <div
+            className={`absolute right-1.5 top-1.5 transition-opacity ${
+              item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+            }`}
+          >
+            <HeartButton mediaId={item.id} liked={item.liked} />
+          </div>
+        )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
           <div className="truncate text-xs font-bold text-white">{item.filename}</div>
           <div className="mt-0.5 text-[10.5px] text-zinc-300">

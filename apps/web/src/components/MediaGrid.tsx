@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Media } from '@sakuya/shared';
 import { MediaCard } from './MediaCard';
+import type { SelectionApi } from '../hooks/useSelection';
 
 const GAP = 14;
 const MIN_COL = 190;
@@ -13,9 +14,19 @@ interface MediaGridProps {
   fetchNextPage: () => void;
   isLoading: boolean;
   onOpen: (index: number) => void;
+  /** When passed, the grid supports multi-select: click toggles, shift extends, ctrl/cmd enters. */
+  selection?: SelectionApi;
 }
 
-export function MediaGrid({ items, hasNextPage, isFetchingNextPage, fetchNextPage, isLoading, onOpen }: MediaGridProps) {
+export function MediaGrid({
+  items,
+  hasNextPage,
+  isFetchingNextPage,
+  fetchNextPage,
+  isLoading,
+  onOpen,
+  selection,
+}: MediaGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [scrollMargin, setScrollMargin] = useState(0);
@@ -80,7 +91,21 @@ export function MediaGrid({ items, hasNextPage, isFetchingNextPage, fetchNextPag
             >
               {rowItems.map((item, i) => (
                 <div key={item.id} style={{ width: colWidth }}>
-                  <MediaCard item={item} onClick={() => onOpen(start + i)} />
+                  <MediaCard
+                    item={item}
+                    selectMode={selection?.active}
+                    selected={selection?.ids.has(item.id)}
+                    onClick={(e) => {
+                      const index = start + i;
+                      if (selection?.active) return selection.click(index, e.shiftKey);
+                      // Ctrl/Cmd-click is the shortcut into select mode from a normal grid.
+                      if (selection && (e.ctrlKey || e.metaKey)) {
+                        selection.enter();
+                        return selection.click(index, false);
+                      }
+                      onOpen(index);
+                    }}
+                  />
                 </div>
               ))}
             </div>

@@ -84,6 +84,27 @@ boardsRouter.post(
   }),
 );
 
+// Bulk counterpart of the single-item DELETE below; DELETE with a body isn't reliably
+// supported across clients, so removal-by-selection is a POST.
+boardsRouter.post(
+  '/api/boards/:id/media/remove-batch',
+  wrap(async (req, res) => {
+    const id = intParam(req.params.id);
+    const board = db.select().from(schema.boards).where(eq(schema.boards.id, id)).get();
+    if (!board) return res.status(404).json({ error: 'Not found' });
+    const { mediaIds } = mediaIdsBody.parse(req.body);
+    const remove = sqlite.transaction(() => {
+      for (const mediaId of mediaIds) {
+        db.delete(schema.boardMedia)
+          .where(and(eq(schema.boardMedia.boardId, id), eq(schema.boardMedia.mediaId, mediaId)))
+          .run();
+      }
+    });
+    remove();
+    res.json(boardWithStats(board));
+  }),
+);
+
 boardsRouter.delete(
   '/api/boards/:id/media/:mediaId',
   wrap(async (req, res) => {

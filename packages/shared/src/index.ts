@@ -125,6 +125,28 @@ export interface MediaListResponse {
   total: number;
 }
 
+export interface MediaIdsResponse {
+  ids: number[];
+  total: number;
+}
+
+/** Per-item outcome of a bulk mutation — batch routes never fail wholesale on one bad row. */
+export interface BulkFailure {
+  id: number;
+  error: string;
+}
+
+export interface BulkResult {
+  ok: true;
+  updated: number;
+  failed: BulkFailure[];
+}
+
+export interface BulkRenameItem {
+  id: number;
+  filename: string;
+}
+
 export interface Settings {
   ai_tagging_enabled: string;
   confidence_threshold: string;

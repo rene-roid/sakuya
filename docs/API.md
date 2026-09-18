@@ -125,6 +125,24 @@ Query params:
 
 Response (`MediaListResponse`): `{ items: Media[], nextCursor: string | null, total: number }`.
 
+### `GET /api/media/ids`
+Every media id matching a filter, in the same order `GET /api/media` would return them. Backs
+"select all N matching" in multi-select mode, where the grid has only loaded the first few pages.
+Accepts the same filter/sort params as `GET /api/media` (no `cursor`/`limit`).
+
+Response (`MediaIdsResponse`): `{ ids: number[], total: number }`.
+
+> Declared before `/api/media/:id` — route order matters, or `ids` is parsed as an id and `400`s.
+
+### `POST /api/media/by-ids`
+Rows for an explicit id list, **in the order requested**; unknown ids are dropped. Used by bulk
+confirmation dialogs, whose selection can span pages the client never loaded.
+Body: `{ ids: number[] }` (1-5000). Response: `Media[]`.
+
+### `POST /api/media/tags-summary`
+Tag histogram across a selection — drives the bulk "remove tags" picker.
+Body: `{ ids: number[] }` (1-5000). Response: `TagCount[]`, most used first.
+
 ### `GET /api/media/duplicates`
 Groups of media sharing an identical `content_hash`, sorted by wasted bytes descending.
 
@@ -133,6 +151,49 @@ Response (`DuplicatesResponse`): `{ groups: DuplicateGroup[], groupCount, fileCo
 ### `POST /api/media/delete-batch`
 Bulk delete. Body: `{ ids: number[] }`. Deletes DB rows, tag links, and files/thumbnails on disk
 for existing ids (missing ids are silently skipped). Response: `{ ok: true, deleted: number }`.
+
+## Bulk actions
+
+Mutations behind the grid's multi-select mode. They report per-item outcomes rather than failing
+wholesale on one bad row, so a selection containing a stale id still applies to the rest.
+
+Shared response shape (`BulkResult`): `{ ok: true, updated: number, failed: { id, error }[] }`.
+
+### `POST /api/media/tags-batch`
+Add and/or remove tags across a selection. Body:
+`{ ids: number[], add?: string[], remove?: string[], category?: TagCategory }`.
+Added names are lowercased with whitespace collapsed to `_`; `category` (default `user`) applies
+to newly created tags. Removing a tag a file doesn't have is a no-op, not a failure. Usage counts
+are refreshed once at the end. `400` if both `add` and `remove` are empty.
+
+### `POST /api/media/like-batch`
+Body: `{ ids: number[], liked: boolean }`. Sets `liked`/`liked_at` across the selection.
+
+### `POST /api/media/rename-batch`
+Body: `{ items: { id: number, filename: string }[] }`.
+
+Validates everything before touching the disk, then moves files and updates rows for the moves
+that succeeded. A row is refused (and reported in `failed`) when its name is empty/invalid, its
+source file is missing, two items in the batch target the same path, or the target already exists
+— which includes swaps (`a→b` while `b→a`). Names are reduced with `path.basename`, so a file can
+never be renamed out of its own folder. An unchanged name is a skipped no-op, not a failure.
+
+### `POST /api/media/retag-batch`
+Body: `{ ids: number[] }`. Enqueues one AI tagging job for the whole selection. `409` if the
+tagger model isn't downloaded, `404` if no id exists. Response: `{ job: Job }`.
+
+### `POST /api/media/thumbnails-batch`
+Body: `{ ids: number[] }`. Enqueues one thumbnail regeneration job for the selection.
+Response: `{ job: Job }`.
+
+### `POST /api/boards/:id/media/remove-batch`
+Remove several media from a board at once. Body: `{ mediaIds: number[] }`. Membership-only: the
+media rows and files on disk are untouched. A POST rather than a DELETE because DELETE-with-a-body
+isn't reliably supported across clients. Response: `BoardWithStats`.
+
+---
+
+## Media — single item
 
 ### `GET /api/media/:id`
 Media detail including tags. Response: `MediaDetail`.

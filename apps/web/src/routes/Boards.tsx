@@ -6,8 +6,10 @@ import type { BoardWithStats } from '@sakuya/shared';
 import { api, thumbUrl } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
 import { useMediaInfinite } from '../hooks/useMedia';
+import { useSelection } from '../hooks/useSelection';
 import { FilterToolbar } from '../components/FilterToolbar';
 import { MediaGrid } from '../components/MediaGrid';
+import { SelectionBar } from '../components/SelectionBar';
 import { MediaViewer } from '../components/MediaViewer';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
@@ -171,7 +173,9 @@ export function BoardView() {
   const { id } = useParams();
   const boardId = Number(id);
   const [filters, actions] = useFilters();
-  const media = useMediaInfinite({ ...filters, boardId });
+  const boardFilters = { ...filters, boardId };
+  const media = useMediaInfinite(boardFilters);
+  const selection = useSelection(media.items, JSON.stringify(boardFilters));
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const { data: board } = useQuery({
@@ -192,7 +196,7 @@ export function BoardView() {
       </div>
       <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
-          <FilterToolbar filters={filters} actions={actions} />
+          <FilterToolbar filters={filters} actions={actions} selection={selection} />
         </div>
       </div>
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-5">
@@ -203,8 +207,12 @@ export function BoardView() {
           fetchNextPage={media.fetchNextPage}
           isLoading={media.isLoading}
           onOpen={setViewerIndex}
+          selection={selection}
         />
       </div>
+      {selection.active && (
+        <SelectionBar selection={selection} filters={boardFilters} total={media.total} boardId={boardId} />
+      )}
       {viewerIndex !== null && (
         <MediaViewer
           items={media.items}
