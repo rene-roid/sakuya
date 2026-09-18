@@ -98,6 +98,10 @@ async function getSession(): Promise<any> {
   session = await ort.InferenceSession.create(MODEL_PATH, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
+    // Cap threads so bulk tagging can't monopolize every core and starve
+    // request handling (thumbnail/video serving) or other host services.
+    intraOpNumThreads: 2,
+    interOpNumThreads: 1,
   });
   return session;
 }

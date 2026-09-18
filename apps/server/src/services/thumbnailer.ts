@@ -19,6 +19,10 @@ async function ffmpegFrameToWebp(sourcePath: string, dest: string, seekSeconds: 
   await new Promise<void>((resolve, reject) => {
     const args = [
       '-y',
+      // Extracting a single frame doesn't benefit from multi-threaded decode;
+      // capping this keeps bulk regeneration from eating every core and
+      // starving request handling / other services on the host.
+      '-threads', '1',
       '-ss', seekSeconds.toFixed(2),
       '-i', sourcePath,
       '-frames:v', '1',
