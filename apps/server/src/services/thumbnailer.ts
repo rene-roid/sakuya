@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { THUMBS_DIR } from '../lib/config';
 import { db, schema } from '../db';
 import { enqueueJob, type JobHandle } from './jobQueue';
+import { mediaRowsByIds, type MediaRow } from '../lib/mediaByIds';
 
 const ffmpegPath: string = (ffmpegStatic as unknown as string) ?? 'ffmpeg';
 
@@ -111,8 +112,9 @@ export function enqueueBulkThumbnailRegenerate() {
 
 /** Regenerate thumbnails for an explicit selection (bulk action in the grid). */
 export function enqueueThumbnailRegenerate(mediaIds: number[], libraryId: number | null = null) {
-  const rows = mediaIds
-    .map((id) => db.select().from(schema.media).where(eq(schema.media.id, id)).get())
-    .filter((row): row is typeof schema.media.$inferSelect => !!row);
+  // One query per chunk rather than one per id: bulk regeneration is routinely handed
+  // thousands of ids, and the per-id lookup dominated the enqueue.
+  const byId = mediaRowsByIds(mediaIds);
+  const rows = mediaIds.map((id) => byId.get(id)).filter((row): row is MediaRow => !!row);
   return regenerateJob(`Regenerate ${rows.length} thumbnail${rows.length === 1 ? '' : 's'}`, rows, libraryId);
 }

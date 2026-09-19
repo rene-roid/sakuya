@@ -3,13 +3,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor, transcodePathFor } from '../services/transcoder';
 import { rowToMedia } from '../lib/rowToMedia';
+import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
 import type {
@@ -175,28 +176,37 @@ mediaRouter.get(
 mediaRouter.get(
   '/api/media/duplicates',
   wrap(async (req, res) => {
-    const hashRows = sqlite
+    // One query for every duplicated row, grouped in JS. This used to run a query per hash
+    // group, which on a library with thousands of duplicate groups meant thousands of
+    // round trips. The IN subquery keeps the group set in SQL, so nothing has to be bound.
+    const rows = sqlite
       .query(
-        `SELECT content_hash AS hash, COUNT(*) AS c FROM media
-         WHERE content_hash IS NOT NULL
-         GROUP BY content_hash HAVING COUNT(*) > 1`,
+        `SELECT m.*, l.name AS library_name,
+                (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+         FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+         WHERE m.content_hash IN (
+           SELECT content_hash FROM media
+           WHERE content_hash IS NOT NULL
+           GROUP BY content_hash HAVING COUNT(*) > 1
+         )
+         ORDER BY m.content_hash, m.created_at ASC`,
       )
-      .all() as { hash: string; c: number }[];
+      .all() as any[];
+
+    // Rows arrive grouped and oldest-first within each group, so the first item of a group is
+    // the original and the rest are what a cleanup would reclaim.
+    const byHash = new Map<string, ReturnType<typeof rowToMedia>[]>();
+    for (const row of rows) {
+      const hash = row.content_hash as string;
+      const list = byHash.get(hash);
+      if (list) list.push(rowToMedia(row));
+      else byHash.set(hash, [rowToMedia(row)]);
+    }
 
     const groups: DuplicatesResponse['groups'] = [];
     let fileCount = 0;
     let wastedBytes = 0;
-    for (const { hash } of hashRows) {
-      const rows = sqlite
-        .query(
-          `SELECT m.*, l.name AS library_name,
-                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-           FROM media m LEFT JOIN libraries l ON l.id = m.library_id
-           WHERE m.content_hash = ?
-           ORDER BY m.created_at ASC`,
-        )
-        .all(hash) as any[];
-      const items = rows.map(rowToMedia);
+    for (const [hash, items] of byHash) {
       const groupWasted = items.slice(1).reduce((sum, m) => sum + m.sizeBytes, 0);
       groups.push({ contentHash: hash, items, wastedBytes: groupWasted });
       fileCount += items.length;
@@ -215,18 +225,25 @@ mediaRouter.post(
   '/api/media/delete-batch',
   wrap(async (req, res) => {
     const { ids } = deleteBatchSchema.parse(req.body);
-    let deleted = 0;
-    for (const id of ids) {
-      const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-      if (!row) continue;
-      db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, id)).run();
-      db.delete(schema.media).where(eq(schema.media.id, id)).run();
-      fs.unlink(row.path, () => {});
+    const rows = mediaRowsByIds(ids);
+    const found = ids.filter((id) => rows.has(id));
+
+    // Rows go first and atomically: a half-applied delete would leave media_tags pointing at
+    // rows that no longer exist. Files are unlinked only once that commit succeeded.
+    const apply = sqlite.transaction(() => {
+      for (const part of chunkIds(found)) {
+        db.delete(schema.mediaTags).where(inArray(schema.mediaTags.mediaId, part)).run();
+        db.delete(schema.media).where(inArray(schema.media.id, part)).run();
+      }
+    });
+    apply();
+
+    for (const id of found) {
+      fs.unlink(rows.get(id)!.path, () => {});
       fs.unlink(thumbPathFor(id), () => {});
       fs.unlink(transcodePathFor(id), () => {});
-      deleted++;
     }
-    res.json({ ok: true, deleted });
+    res.json({ ok: true, deleted: found.length });
   }),
 );
 
@@ -296,12 +313,13 @@ mediaRouter.post(
       .map((name) => db.select().from(schema.tags).where(eq(schema.tags.name, name)).get()?.id)
       .filter((id): id is number => id !== undefined);
 
+    // Resolve every media row once too, rather than re-querying inside the loop.
+    const rows = mediaRowsByIds(body.ids);
     const failed: BulkFailure[] = [];
     let updated = 0;
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
-        const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-        if (!row) {
+        if (!rows.has(id)) {
           failed.push({ id, error: 'Not found' });
           continue;
         }
@@ -336,24 +354,23 @@ mediaRouter.post(
   '/api/media/like-batch',
   wrap(async (req, res) => {
     const { ids, liked } = likeBatchSchema.parse(req.body);
-    const failed: BulkFailure[] = [];
-    let updated = 0;
+    const rows = mediaRowsByIds(ids);
+    const failed: BulkFailure[] = ids.filter((id) => !rows.has(id)).map((id) => ({ id, error: 'Not found' }));
+    const found = ids.filter((id) => rows.has(id));
+
+    // One timestamp for the whole batch rather than one per row: these were liked by a single
+    // action, and a shared value keeps "liked at" ordering stable within the selection.
+    const likedAt = liked ? Date.now() : null;
     const apply = sqlite.transaction(() => {
-      for (const id of ids) {
-        const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-        if (!row) {
-          failed.push({ id, error: 'Not found' });
-          continue;
-        }
+      for (const part of chunkIds(found)) {
         db.update(schema.media)
-          .set({ liked: liked ? 1 : 0, likedAt: liked ? Date.now() : null })
-          .where(eq(schema.media.id, id))
+          .set({ liked: liked ? 1 : 0, likedAt })
+          .where(inArray(schema.media.id, part))
           .run();
-        updated++;
       }
     });
     apply();
-    const body: BulkResult = { ok: true, updated, failed };
+    const body: BulkResult = { ok: true, updated: found.length, failed };
     res.json(body);
   }),
 );
@@ -375,8 +392,9 @@ mediaRouter.post(
     // including two items in this same batch aiming at one path.
     const planned: { id: number; from: string; to: string; filename: string }[] = [];
     const claimed = new Set<string>();
+    const rows = mediaRowsByIds(items.map((item) => item.id));
     for (const item of items) {
-      const row = db.select().from(schema.media).where(eq(schema.media.id, item.id)).get();
+      const row = rows.get(item.id);
       if (!row) {
         failed.push({ id: item.id, error: 'Not found' });
         continue;
@@ -435,7 +453,8 @@ mediaRouter.post(
   wrap(async (req, res) => {
     const { ids } = idsBody.parse(req.body);
     if (!modelReady()) return res.status(409).json({ error: 'Tagger model not downloaded' });
-    const existing = ids.filter((id) => db.select().from(schema.media).where(eq(schema.media.id, id)).get());
+    const rows = mediaRowsByIds(ids);
+    const existing = ids.filter((id) => rows.has(id));
     if (!existing.length) return res.status(404).json({ error: 'Not found' });
     const job = enqueueTagJob(existing, `AI tag: ${existing.length} selected`);
     res.json({ job });
