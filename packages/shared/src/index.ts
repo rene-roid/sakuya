@@ -122,7 +122,12 @@ export interface Job {
 export interface MediaListResponse {
   items: Media[];
   nextCursor: string | null;
-  total: number;
+  /**
+   * Count of everything matching the filter, not of this page. Only the first request of a
+   * result set computes it; cursor-paginated follow-ups return null, since the filter — and so
+   * the count — hasn't changed. Clients should keep the first page's value.
+   */
+  total: number | null;
 }
 
 export interface MediaIdsResponse {

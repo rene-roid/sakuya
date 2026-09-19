@@ -117,9 +117,17 @@ mediaRouter.get(
     const { conds, params } = buildMediaFilter(query);
     const keyExpr = sortKeyExpr(query);
 
-    const countRow = sqlite
-      .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-      .get(...(params as any[])) as { c: number };
+    // The count describes the filter, not the page, so only the first request of a result set
+    // pays for it. Infinite scroll fetches page after page with identical filters, and a full
+    // filtered COUNT(*) was the most expensive part of each of those fetches; the client keeps
+    // the total it got from page one.
+    const total = query.cursor
+      ? null
+      : (
+          sqlite
+            .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
+            .get(...(params as any[])) as { c: number }
+        ).c;
 
     const pageConds = [...conds];
     const pageParams = [...params];
@@ -148,7 +156,7 @@ mediaRouter.get(
       const last = rows[rows.length - 1];
       nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id])).toString('base64url');
     }
-    const body: MediaListResponse = { items: rows.map(rowToMedia), nextCursor, total: countRow.c };
+    const body: MediaListResponse = { items: rows.map(rowToMedia), nextCursor, total };
     res.json(body);
   }),
 );
