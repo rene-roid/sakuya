@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { sqlite } from '../db';
 import { wrap } from '../lib/http';
 import { rowToMedia } from '../lib/rowToMedia';
+import { tasteVersion } from '../lib/tasteVersion';
 import type { MediaListResponse } from '@sakuya/shared';
 
 export const discoverRouter = Router();
@@ -47,8 +48,8 @@ interface ProfileTag {
  * outranks what's merely common. Co-occurring tags are folded in at a discount so adjacent
  * content can surface.
  *
- * ponytail: recomputed per request off the full media_tags table — fine at library scale, cache
- * it (or persist per-tag weights on write) if a huge library makes /api/discover feel slow.
+ * Expensive: two aggregates over the whole media_tags table. Go through tasteProfile() rather
+ * than calling this directly, so the result is cached between requests.
  */
 function buildProfile(): ProfileTag[] {
   const rows = sqlite
@@ -112,11 +113,32 @@ function buildProfile(): ProfileTag[] {
   return profile;
 }
 
+/**
+ * The profile is identical for every request until engagement or tags change, but infinite
+ * scroll asked for it once per 60 items and rebuilt it from the full media_tags table each time.
+ *
+ * Two guards, because they fail in different directions: the version counter catches writes that
+ * went through the API and makes them visible immediately, and the TTL catches everything else —
+ * a scan, a tag job, a direct database edit — so a stale profile can never outlive a minute.
+ */
+const PROFILE_TTL_MS = 60_000;
+let cache: { profile: ProfileTag[]; builtAt: number; version: number } | null = null;
+
+function tasteProfile(): ProfileTag[] {
+  const version = tasteVersion();
+  if (cache && cache.version === version && Date.now() - cache.builtAt < PROFILE_TTL_MS) {
+    return cache.profile;
+  }
+  const profile = buildProfile();
+  cache = { profile, builtAt: Date.now(), version };
+  return profile;
+}
+
 discoverRouter.get(
   '/api/discover',
   wrap(async (req, res) => {
     const query = discoverQuerySchema.parse(req.query);
-    const profile = buildProfile();
+    const profile = tasteProfile();
 
     // A single-row placeholder keeps one SQL path when nothing has been liked or viewed yet:
     // every score is 0, so the feed is pure random — which is the right cold start anyway.

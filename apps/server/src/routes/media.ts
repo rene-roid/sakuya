@@ -11,6 +11,7 @@ import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../ser
 import { playablePathFor, transcodePathFor } from '../services/transcoder';
 import { rowToMedia } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
+import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
 import type {
@@ -378,6 +379,7 @@ mediaRouter.post(
       }
     });
     apply();
+    bumpTasteVersion();
     const body: BulkResult = { ok: true, updated: found.length, failed };
     res.json(body);
   }),
@@ -676,6 +678,7 @@ mediaRouter.patch(
       .set({ liked: liked ? 1 : 0, likedAt: liked ? Date.now() : null })
       .where(eq(schema.media.id, id))
       .run();
+    bumpTasteVersion();
     res.json(getDetail(id));
   }),
 );
@@ -756,6 +759,8 @@ mediaRouter.patch(
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
     if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;
     db.update(schema.media).set(updates).where(eq(schema.media.id, id)).run();
+    // Views, watch time and dwell all feed the Discover taste profile.
+    bumpTasteVersion();
     res.json({ ok: true });
   }),
 );

@@ -7,6 +7,7 @@ import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, DEFAULT_MODEL_ID, MODEL_REG
 import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
+import { bumpTasteVersion } from '../lib/tasteVersion';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
@@ -196,6 +197,9 @@ export function refreshUsageCounts(tagIds: number[]): void {
       `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
     )
     .run(...tagIds);
+  // Every path that changes which tags are on which media lands here, including the AI tag job,
+  // so this is the one place the Discover taste profile needs invalidating for tag writes.
+  bumpTasteVersion();
 }
 
 export async function tagOneMedia(mediaId: number): Promise<number> {

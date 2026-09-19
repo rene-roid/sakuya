@@ -127,3 +127,19 @@ test('dwell time on an image feeds the profile like watch time does on a video',
   expect(after.items[rank(after, target.id)].reasonTag).toBe('macro');
   expect(rank(after, target.id)).toBeLessThan(rank(after, adjacent.id));
 });
+
+test('a like is reflected in the next feed rather than waiting out the profile cache', async () => {
+  // "spreadsheet" carries no engagement, so `unrelated` sits at the bottom with no credited tag.
+  const before = await json(fetch(`${BASE}/api/discover?surprise=0`));
+  expect(before.items.find((m: { id: number }) => m.id === unrelated.id).reasonTag).toBeUndefined();
+
+  await fetch(`${BASE}/api/media/${unrelated.id}/like`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ liked: true }),
+  });
+
+  // The profile is cached between requests; the like has to invalidate it, not wait for the TTL.
+  const after = await json(fetch(`${BASE}/api/discover?surprise=0`));
+  expect(after.items.find((m: { id: number }) => m.id === unrelated.id).reasonTag).toBe('spreadsheet');
+});
