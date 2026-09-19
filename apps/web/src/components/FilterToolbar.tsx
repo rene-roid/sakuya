@@ -21,6 +21,9 @@ function buttonStyle(accent?: boolean): string {
   }`;
 }
 
+/** Chips shown before the list folds into a "+N more" toggle — roughly two wrapped lines. */
+const CHIP_LIMIT = 12;
+
 const SORTS = [
   { key: 'recent', label: 'Recent' },
   { key: 'name', label: 'Name' },
@@ -37,10 +40,14 @@ interface ToolbarItem {
 }
 
 /**
- * Filter row for the media grids. It always occupies exactly one line: when the window (or a
- * pile of active query chips) leaves too little room, controls move into a three-dot menu from
- * the right edge inward — Save, Select, Clear all, Randomize, Sort, Type — until the rest fits.
- * The search box and the active chips stay put at every width.
+ * Filter row for the media grids. The controls always occupy exactly one line: when the window
+ * leaves too little room, they move into a three-dot menu from the right edge inward — Save,
+ * Select, Clear all, Randomize, Sort, Type — until the rest fits. The search box stays put at
+ * every width.
+ *
+ * Active filters (tag chips and free-text terms) are never part of that row — a handful of them
+ * would eat every control's width, and the row clips what doesn't fit. They wrap onto their own
+ * lines underneath instead, where growing sideways costs nothing.
  */
 export function FilterToolbar({
   filters,
@@ -56,6 +63,7 @@ export function FilterToolbar({
   const boxRef = useRef<HTMLDivElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showAllChips, setShowAllChips] = useState(false);
   const query = exploreQueryString(filters);
   const hasFilters =
     filters.tags.length > 0 || filters.q.length > 0 || filters.liked || filters.typeParam !== 'all';
@@ -169,25 +177,11 @@ export function FilterToolbar({
             onFreeText={actions.addQ}
             libraryId={filters.libraryId}
             placeholder="Add tag filter, press Enter…"
+            showChips={false}
           />
         </div>
       ),
     },
-    ...filters.q.map((term) => ({
-      id: `q:${term}`,
-      pinned: true,
-      inline: (
-        <div className="flex flex-none items-center gap-1.5 whitespace-nowrap rounded-full border border-zinc-700 bg-zinc-800 py-1 pl-2.5 pr-1.5 text-xs font-semibold text-zinc-300">
-          <span>“{term}”</span>
-          <span
-            className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-zinc-700"
-            onClick={() => actions.removeQ(term)}
-          >
-            <X size={11} />
-          </span>
-        </div>
-      ),
-    })),
   ];
 
   if (hasFilters) {
@@ -230,9 +224,7 @@ export function FilterToolbar({
   }
 
   const collapsible = items.filter((item) => !item.pinned);
-  const signature = `${items.map((i) => i.id).join('|')}|${filters.sort}|${filters.dir}|${filters.liked}|${
-    filters.tags.length
-  }`;
+  const signature = `${items.map((i) => i.id).join('|')}|${filters.sort}|${filters.dir}|${filters.liked}`;
   const hiddenCount = useOverflowCount(rowRef, boxRef, collapsible.length, signature);
   // Collapse right to left: the last `hiddenCount` collapsible controls move into the menu.
   const hiddenIds = new Set(collapsible.slice(collapsible.length - hiddenCount).map((item) => item.id));
@@ -242,32 +234,80 @@ export function FilterToolbar({
     (hiddenIds.has('type') && (filters.typeParam !== 'all' || filters.liked)) ||
     (hiddenIds.has('sort') && filters.sort !== 'recent');
 
+  // Tag filters and free-text terms read the same way — an active filter you can click off —
+  // so they share one list rather than sitting in two places with two shapes.
+  const chips = [
+    ...filters.tags.map((tag) => ({ id: `tag:${tag}`, label: tag, tag: true, remove: () => actions.removeTag(tag) })),
+    ...filters.q.map((term) => ({
+      id: `q:${term}`,
+      label: `“${term}”`,
+      tag: false,
+      remove: () => actions.removeQ(term),
+    })),
+  ];
+  // Past a couple of wrapped lines the chips push the grid off the screen, so the tail folds
+  // away behind a count until it's asked for.
+  const visibleChips = showAllChips ? chips : chips.slice(0, CHIP_LIMIT);
+
   return (
-    // The overflow button sits outside the clipped row: a dropdown inside it would be cut off,
-    // and a row whose own width the button changes would restart the measuring cycle forever.
-    <div ref={boxRef} className="flex items-center gap-4">
-      <div ref={rowRef} className="flex min-w-0 flex-1 flex-nowrap items-center gap-4 overflow-hidden">
-        {items.filter((item) => !hiddenIds.has(item.id)).map((item) => (
-          <Fragment key={item.id}>{item.inline}</Fragment>
-        ))}
-      </div>
-      {hiddenIds.size > 0 && (
-        <div className="relative flex-none">
-          <div
-            title="More filters"
-            aria-label="More filters"
-            className="relative flex cursor-pointer items-center rounded-lg border border-zinc-800 px-2 py-[7px] text-zinc-400 hover:text-zinc-200"
-            onClick={() => setMenuOpen((open) => !open)}
-          >
-            <MoreVertical size={16} />
-            {hiddenActive && (
-              <span className="absolute right-[3px] top-[3px] h-[6px] w-[6px] rounded-full bg-accent" />
+    <div className="flex min-w-0 flex-col gap-2.5">
+      {/* The overflow button sits outside the clipped row: a dropdown inside it would be cut off,
+          and a row whose own width the button changes would restart the measuring cycle forever. */}
+      <div ref={boxRef} className="flex items-center gap-4">
+        <div ref={rowRef} className="flex min-w-0 flex-1 flex-nowrap items-center gap-4 overflow-hidden">
+          {items.filter((item) => !hiddenIds.has(item.id)).map((item) => (
+            <Fragment key={item.id}>{item.inline}</Fragment>
+          ))}
+        </div>
+        {hiddenIds.size > 0 && (
+          <div className="relative flex-none">
+            <div
+              title="More filters"
+              aria-label="More filters"
+              className="relative flex cursor-pointer items-center rounded-lg border border-zinc-800 px-2 py-[7px] text-zinc-400 hover:text-zinc-200"
+              onClick={() => setMenuOpen((open) => !open)}
+            >
+              <MoreVertical size={16} />
+              {hiddenActive && (
+                <span className="absolute right-[3px] top-[3px] h-[6px] w-[6px] rounded-full bg-accent" />
+              )}
+            </div>
+            {menuOpen && (
+              <MenuPanel width={210} onClose={() => setMenuOpen(false)}>
+                {collapsible.filter((item) => hiddenIds.has(item.id)).map((item) => item.menu)}
+              </MenuPanel>
             )}
           </div>
-          {menuOpen && (
-            <MenuPanel width={210} onClose={() => setMenuOpen(false)}>
-              {collapsible.filter((item) => hiddenIds.has(item.id)).map((item) => item.menu)}
-            </MenuPanel>
+        )}
+      </div>
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {visibleChips.map((chip) => (
+            <span
+              key={chip.id}
+              className={`flex items-center gap-1.5 rounded-full border py-0.5 pl-2.5 pr-1.5 text-xs font-semibold ${
+                chip.tag ? 'border-accent/40 bg-accent/15 text-violet-300' : 'border-zinc-700 bg-zinc-800 text-zinc-300'
+              }`}
+            >
+              {chip.label}
+              <span
+                title={`Remove ${chip.label}`}
+                className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded-full ${
+                  chip.tag ? 'bg-accent/25' : 'bg-zinc-700'
+                }`}
+                onClick={chip.remove}
+              >
+                <X size={11} />
+              </span>
+            </span>
+          ))}
+          {chips.length > CHIP_LIMIT && (
+            <span
+              className="cursor-pointer rounded-full border border-zinc-700 px-2.5 py-[3px] text-xs font-semibold text-zinc-400 hover:text-zinc-200"
+              onClick={() => setShowAllChips((open) => !open)}
+            >
+              {showAllChips ? 'Show less' : `+${chips.length - CHIP_LIMIT} more`}
+            </span>
           )}
         </div>
       )}

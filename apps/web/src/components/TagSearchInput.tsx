@@ -12,6 +12,8 @@ interface TagSearchInputProps {
   onFreeText?: (q: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
+  /** Render selected tags as chips inside the box. Off when the caller lists them itself. */
+  showChips?: boolean;
 }
 
 /**
@@ -20,6 +22,9 @@ interface TagSearchInputProps {
  * never hijacks what you typed. Suggestions apply only to the token after the last space
  * or comma, so free text and tags can be mixed in one query. Backspace on an empty input
  * removes the last chip.
+ *
+ * With `showChips` off the box stays exactly one line tall however many tags are selected,
+ * and the caller is responsible for showing (and removing) them somewhere it has room for.
  */
 export function TagSearchInput({
   tags,
@@ -29,6 +34,7 @@ export function TagSearchInput({
   onFreeText,
   placeholder = 'Search tags…',
   autoFocus,
+  showChips = true,
 }: TagSearchInputProps) {
   const [text, setText] = useState('');
   const [highlight, setHighlight] = useState(-1);
@@ -93,23 +99,24 @@ export function TagSearchInput({
         className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 focus-within:border-zinc-600"
         onClick={() => inputRef.current?.focus()}
       >
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 py-0.5 pl-2.5 pr-1.5 text-xs font-semibold text-violet-300"
-          >
-            {tag}
+        {showChips &&
+          tags.map((tag) => (
             <span
-              className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-accent/25"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRemoveTag(tag);
-              }}
+              key={tag}
+              className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 py-0.5 pl-2.5 pr-1.5 text-xs font-semibold text-violet-300"
             >
-              ×
+              {tag}
+              <span
+                className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-accent/25"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveTag(tag);
+                }}
+              >
+                ×
+              </span>
             </span>
-          </span>
-        ))}
+          ))}
         <input
           ref={inputRef}
           autoFocus={autoFocus}
@@ -121,7 +128,7 @@ export function TagSearchInput({
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 120)}
-          placeholder={tags.length === 0 ? placeholder : ''}
+          placeholder={showChips && tags.length > 0 ? '' : placeholder}
           className="min-w-[80px] flex-1 bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
         />
       </div>
