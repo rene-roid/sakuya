@@ -8,6 +8,7 @@ import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { bumpTasteVersion } from '../lib/tasteVersion';
+import { phashColumns } from '../lib/phashBands';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
@@ -298,7 +299,7 @@ export function enqueueHashJob(mediaIds: number[], libraryId: number | null = nu
           const row = db.select().from(schema.media).where(eq(schema.media.id, mediaIds[i])).get();
           if (row && row.type === 'image' && fs.existsSync(row.path)) {
             const hash = await computeDHash(row.path);
-            db.update(schema.media).set({ perceptualHash: hash }).where(eq(schema.media.id, mediaIds[i])).run();
+            db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, mediaIds[i])).run();
             hashed++;
           }
         } catch (err) {

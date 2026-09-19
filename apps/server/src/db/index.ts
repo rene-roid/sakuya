@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { DB_PATH } from '../lib/config';
 import * as schema from './schema';
+import { phashBands } from '../lib/phashBands';
 
 export const sqlite = new Database(DB_PATH, { create: true });
 sqlite.exec('PRAGMA journal_mode = WAL;');
@@ -63,7 +64,15 @@ CREATE TABLE IF NOT EXISTS media (
   dwell_seconds REAL NOT NULL DEFAULT 0,
   liked INTEGER NOT NULL DEFAULT 0,
   liked_at INTEGER,
-  perceptual_hash TEXT
+  perceptual_hash TEXT,
+  phash_b0 INTEGER,
+  phash_b1 INTEGER,
+  phash_b2 INTEGER,
+  phash_b3 INTEGER,
+  phash_b4 INTEGER,
+  phash_b5 INTEGER,
+  phash_b6 INTEGER,
+  phash_b7 INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
 CREATE INDEX IF NOT EXISTS media_library_idx ON media(library_id);
@@ -187,6 +196,17 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 9, sql: 'ALTER TABLE media ADD COLUMN transcoded_at INTEGER' },
   { version: 10, sql: 'ALTER TABLE media ADD COLUMN dwell_seconds REAL NOT NULL DEFAULT 0' },
   { version: 11, sql: 'ALTER TABLE libraries ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0' },
+  // Perceptual-hash bands: eight indexed 8-bit slices of media.perceptual_hash, so similarity
+  // search can prefilter candidates rather than scanning every image row. Values are backfilled
+  // from the existing hashes below — no re-hashing of files is needed.
+  { version: 12, sql: 'ALTER TABLE media ADD COLUMN phash_b0 INTEGER' },
+  { version: 13, sql: 'ALTER TABLE media ADD COLUMN phash_b1 INTEGER' },
+  { version: 14, sql: 'ALTER TABLE media ADD COLUMN phash_b2 INTEGER' },
+  { version: 15, sql: 'ALTER TABLE media ADD COLUMN phash_b3 INTEGER' },
+  { version: 16, sql: 'ALTER TABLE media ADD COLUMN phash_b4 INTEGER' },
+  { version: 17, sql: 'ALTER TABLE media ADD COLUMN phash_b5 INTEGER' },
+  { version: 18, sql: 'ALTER TABLE media ADD COLUMN phash_b6 INTEGER' },
+  { version: 19, sql: 'ALTER TABLE media ADD COLUMN phash_b7 INTEGER' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;
@@ -214,6 +234,39 @@ sqlite.transaction(() => {
   }
 })();
 sqlite.exec(`PRAGMA user_version = ${LATEST_VERSION}`);
+
+// Backfill phash bands for rows hashed before the band columns existed. Derived from the stored
+// hex, so nothing is re-hashed and no files are read. Keyed on the data rather than a migration
+// version so it also heals rows written by a build that knew the hash but not the bands; once
+// every row is filled this finds nothing and does no writes.
+const unbanded = sqlite
+  .query(`SELECT id, perceptual_hash AS hash FROM media WHERE perceptual_hash IS NOT NULL AND phash_b0 IS NULL`)
+  .all() as { id: number; hash: string }[];
+if (unbanded.length > 0) {
+  const setBands = sqlite.prepare(
+    `UPDATE media SET phash_b0=?, phash_b1=?, phash_b2=?, phash_b3=?, phash_b4=?, phash_b5=?, phash_b6=?, phash_b7=?
+     WHERE id = ?`,
+  );
+  sqlite.transaction(() => {
+    for (const row of unbanded) setBands.run(...phashBands(row.hash), row.id);
+  })();
+  console.log(`[sakuya] backfilled perceptual-hash bands for ${unbanded.length} media rows`);
+}
+
+// Built here rather than in the CREATE TABLE block above, which runs before the migrations that
+// add these columns — on an existing database that block would reference columns that don't exist
+// yet. Creating them after the backfill is also cheaper than maintaining them during it.
+// IF NOT EXISTS keeps this idempotent across both fresh and migrated databases.
+sqlite.exec(`
+CREATE INDEX IF NOT EXISTS media_phash_b0_idx ON media(phash_b0);
+CREATE INDEX IF NOT EXISTS media_phash_b1_idx ON media(phash_b1);
+CREATE INDEX IF NOT EXISTS media_phash_b2_idx ON media(phash_b2);
+CREATE INDEX IF NOT EXISTS media_phash_b3_idx ON media(phash_b3);
+CREATE INDEX IF NOT EXISTS media_phash_b4_idx ON media(phash_b4);
+CREATE INDEX IF NOT EXISTS media_phash_b5_idx ON media(phash_b5);
+CREATE INDEX IF NOT EXISTS media_phash_b6_idx ON media(phash_b6);
+CREATE INDEX IF NOT EXISTS media_phash_b7_idx ON media(phash_b7);
+`);
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(

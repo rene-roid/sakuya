@@ -49,6 +49,16 @@ export const media = sqliteTable(
     liked: integer('liked').notNull().default(0),
     likedAt: integer('liked_at'),
     perceptualHash: text('perceptual_hash'),
+    // Eight 8-bit bands of perceptualHash, indexed so similarity search can prefilter
+    // candidates instead of scanning every image. See lib/phashBands.ts.
+    phashB0: integer('phash_b0'),
+    phashB1: integer('phash_b1'),
+    phashB2: integer('phash_b2'),
+    phashB3: integer('phash_b3'),
+    phashB4: integer('phash_b4'),
+    phashB5: integer('phash_b5'),
+    phashB6: integer('phash_b6'),
+    phashB7: integer('phash_b7'),
   },
   (t) => [
     uniqueIndex('media_path_idx').on(t.path),

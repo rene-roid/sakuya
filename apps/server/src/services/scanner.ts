@@ -12,6 +12,7 @@ import { generateThumbnail, thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { dispatchAfterScan } from './jobScheduler';
 import { tryConvertUgoiraZip } from './ugoira';
+import { phashColumns } from '../lib/phashBands';
 
 const ffprobePath: string = ffprobeStatic.path;
 
@@ -179,7 +180,7 @@ export async function indexFile(
     try {
       const { computeDHash } = await import('./perceptualHash');
       const phash = await computeDHash(filePath);
-      db.update(schema.media).set({ perceptualHash: phash }).where(eq(schema.media.id, mediaId)).run();
+      db.update(schema.media).set(phashColumns(phash)).where(eq(schema.media.id, mediaId)).run();
     } catch (err) {
       console.error(`perceptual hash failed for ${filePath}:`, err);
     }
@@ -240,14 +241,14 @@ export function enqueueGifReclassifyJob(toVideo: boolean) {
           if (toVideo) {
             const probe = await probeVideo(row.path);
             db.update(schema.media)
-              .set({ type: 'video', durationSeconds: probe.durationSeconds, perceptualHash: null })
+              .set({ type: 'video', durationSeconds: probe.durationSeconds, ...phashColumns(null) })
               .where(eq(schema.media.id, row.id))
               .run();
           } else {
             const { computeDHash } = await import('./perceptualHash');
             const phash = await computeDHash(row.path).catch(() => null);
             db.update(schema.media)
-              .set({ type: 'image', durationSeconds: null, perceptualHash: phash })
+              .set({ type: 'image', durationSeconds: null, ...phashColumns(phash) })
               .where(eq(schema.media.id, row.id))
               .run();
           }

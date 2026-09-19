@@ -59,5 +59,49 @@ describe('schema migrations', () => {
 
     expect(cols).toContain('transcoded_at');
     expect(cols).toContain('dwell_seconds');
+    // Perceptual-hash bands: added long after this legacy snapshot was taken.
+    expect(cols).toContain('phash_b0');
+    expect(cols).toContain('phash_b7');
+  });
+
+  test('the phash band indexes exist on a migrated database', async () => {
+    await import('./db');
+
+    const db = new Database(path.join(dataDir, 'tbge.db'));
+    const indexes = (db.query(`SELECT name FROM sqlite_master WHERE type = 'index'`).all() as { name: string }[]).map(
+      (r) => r.name,
+    );
+    db.close();
+
+    // These are created after the migrations rather than in the CREATE TABLE block, because that
+    // block runs first and would reference columns an existing database doesn't have yet.
+    for (let i = 0; i < 8; i++) expect(indexes).toContain(`media_phash_b${i}_idx`);
+  });
+
+  test('the live schema matches the Drizzle definitions', async () => {
+    const { sqlite, schema } = await import('./db');
+    const { getTableConfig } = await import('drizzle-orm/sqlite-core');
+
+    // db/index.ts hand-writes CREATE TABLE while schema.ts declares the same tables for Drizzle.
+    // Two sources of truth is what let `transcoded_at` go missing while user_version claimed the
+    // database was current, so compare them directly rather than trusting they were kept in step.
+    const tables = Object.values(schema).filter((t): t is never => {
+      try {
+        getTableConfig(t as never);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    expect(tables.length).toBeGreaterThan(0);
+
+    for (const table of tables) {
+      const { name, columns } = getTableConfig(table);
+      const live = (sqlite.query(`PRAGMA table_info(${name})`).all() as { name: string }[]).map((c) => c.name);
+      expect({ table: name, columns: live.slice().sort() }).toEqual({
+        table: name,
+        columns: columns.map((c) => c.name).sort(),
+      });
+    }
   });
 });

@@ -14,6 +14,7 @@ import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
+import { phashBands } from '../lib/phashBands';
 import type {
   BulkFailure,
   BulkResult,
@@ -706,14 +707,22 @@ mediaRouter.get(
     const dupIds = new Set(duplicates.map((d) => d.id));
     const similar: SimilarResponse['similar'] = [];
     if (row.perceptualHash) {
+      // Candidates are narrowed by perceptual-hash bands before any distance is computed.
+      // Written as a UNION of single-band lookups rather than an OR chain on purpose: with an OR,
+      // SQLite planned the whole thing through media_type_idx and never touched the band indexes.
+      // This form gives eight covering-index probes, taking a viewer open from ~146ms to ~11ms on
+      // a 30k-image library. See lib/phashBands.ts for the recall tradeoff this accepts.
+      const bands = phashBands(row.perceptualHash);
+      const bandUnion = bands.map((_, i) => `SELECT id FROM media WHERE phash_b${i} = ?`).join(' UNION ');
       const candidates = sqlite
         .query(
           `SELECT m.*, l.name AS library_name,
                   (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
            FROM media m LEFT JOIN libraries l ON l.id = m.library_id
-           WHERE m.type = 'image' AND m.perceptual_hash IS NOT NULL AND m.id != ?`,
+           WHERE m.id IN (${bandUnion})
+             AND m.type = 'image' AND m.perceptual_hash IS NOT NULL AND m.id != ?`,
         )
-        .all(id) as any[];
+        .all(...(bands as number[]), id) as any[];
       const scored: { media: any; dist: number }[] = [];
       for (const cand of candidates) {
         if (dupIds.has(cand.id)) continue;
