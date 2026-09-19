@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { JobSchedule, LibraryWithStats, ScheduleMode } from '@sakuya/shared';
+import type { JobSchedule, LibraryWithStats } from '@sakuya/shared';
 import { api, libraryCoverUrl, thumbUrl, type ScheduleJobType, type UpdateJobScheduleBody } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import { Search, Tag, Fingerprint, Trash2, ChevronDown } from 'lucide-react';

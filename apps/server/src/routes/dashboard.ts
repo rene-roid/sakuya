@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, sqlite, schema } from '../db';
+import { sqlite } from '../db';
 import { wrap } from '../lib/http';
 import { libraryWithStats, librariesInOrder } from './libraries';
 import { rowToMedia } from '../lib/rowToMedia';

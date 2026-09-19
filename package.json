@@ -11,12 +11,21 @@
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
     "build": "bun run --cwd apps/web build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "bun run --cwd apps/server typecheck && bun run --cwd apps/web typecheck",
     "_comment_test": "--isolate is required: each server test file boots its own server and sqlite singleton",
     "test": "bun test --isolate"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.8",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

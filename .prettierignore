@@ -1,0 +1,5 @@
+node_modules
+dist
+bun.lock
+apps/server/data
+docs/screenshots

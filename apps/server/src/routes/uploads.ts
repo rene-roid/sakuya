@@ -11,7 +11,7 @@ import { enqueueTagJob, modelReady } from '../services/tagger';
 export const uploadsRouter = Router();
 
 function sanitize(name: string): string {
-  return path.basename(name).replace(/[^\w.\-()\[\] ]+/g, '_').slice(-120);
+  return path.basename(name).replace(/[^\w.\-()[\] ]+/g, '_').slice(-120);
 }
 
 uploadsRouter.post(

@@ -8,7 +8,7 @@ import { wrap } from '../lib/http';
 import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION, DATA_DIR, HOME_DATA_DIR, LOCAL_DATA_DIR } from '../lib/config';
 import { migrateDataDir } from '../lib/storage';
-import { enqueueBulkThumbnailRegenerate, thumbPathFor } from '../services/thumbnailer';
+import { enqueueBulkThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';

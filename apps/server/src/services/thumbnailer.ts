@@ -49,7 +49,7 @@ export async function generateImageThumbnail(sourcePath: string, mediaId: number
       .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
       .webp({ quality: 80 })
       .toFile(dest);
-  } catch (err) {
+  } catch {
     // sharp/libvips can't decode this format — fall back to ffmpeg, which reads far more formats.
     await ffmpegFrameToWebp(sourcePath, dest, 0);
   }
