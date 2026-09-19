@@ -30,7 +30,27 @@ export const DOWNLOADER_BIN_DIR = path.join(DOWNLOADER_DIR, 'bin');
 export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
 
 export const PORT = Number(process.env.PORT ?? 3777);
-export const APP_VERSION = '0.1.0';
+/**
+ * The root package.json is the one source of truth for the app version: Settings > System reads
+ * this, and the bundled release notes in apps/web/src/releases drive the update toast. They used
+ * to disagree three ways (0.1.0 / 1.0.0 / 1.4.0); version.test.ts now keeps them in step.
+ *
+ * Read at runtime rather than imported so the value survives outside the workspace layout. The
+ * Docker image copies the root package.json into /app, one level above apps/server, so this
+ * resolves there too.
+ */
+function readAppVersion(): string {
+  try {
+    const raw = fs.readFileSync(path.resolve(serverRoot, '..', '..', 'package.json'), 'utf8');
+    const version = JSON.parse(raw).version;
+    if (typeof version === 'string' && version) return version;
+  } catch {
+    // A stripped-down install shouldn't fail to boot just because it can't name itself.
+  }
+  return 'unknown';
+}
+
+export const APP_VERSION = readAppVersion();
 
 export const AUTH_ENABLED = process.env.AUTH_ENABLED === 'true';
 export const AUTH_SECRET = process.env.AUTH_SECRET ?? '';
