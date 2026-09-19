@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
@@ -32,6 +32,51 @@ const ADD_CATEGORIES: { key: TagCategory; label: string }[] = [
 // (see the "Detect GIFs as videos" setting), so they render as an <img> and dwell like an image.
 function isGifName(filename: string): boolean {
   return filename.toLowerCase().endsWith('.gif');
+}
+
+/**
+ * Scale media to fit the viewer pane, upscaling small files instead of leaving them
+ * stranded at native size in the middle of a large screen.
+ *
+ * The obvious `h-full w-full object-contain` doesn't work for <video>: the native control bar
+ * spans the element box, not the letterboxed picture, so a portrait video in a wide pane gets a
+ * control bar far wider than the video. Computing the fitted box here and applying it as an
+ * explicit width/height keeps the element and the picture the same size.
+ *
+ * Returns null when the dimensions are unknown (e.g. rows whose ffprobe failed), letting the
+ * caller fall back to the CSS max-* caps.
+ */
+function useFitSize(width: number | null, height: number | null) {
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const el = paneRef.current;
+    if (!el || !width || !height) {
+      setSize(null);
+      return;
+    }
+    const measure = () => {
+      const style = getComputedStyle(el);
+      const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      // Mirror the old Tailwind caps so the nav chevrons keep their gutter.
+      const wide = window.matchMedia('(min-width: 640px)').matches;
+      const availW = (el.clientWidth - padX) * (wide ? 0.92 : 0.98);
+      const availH = (el.clientHeight - padY) * (wide ? 0.85 : 0.95);
+      if (availW <= 0 || availH <= 0) return;
+      const scale = Math.min(availW / width, availH / height); // may exceed 1 → upscales
+      // Floor, not round: rounding up past the max-* caps would let CSS clamp the element and
+      // reintroduce the letterboxing the explicit size exists to avoid.
+      setSize({ width: Math.floor(width * scale), height: Math.floor(height * scale) });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [width, height]);
+
+  return { paneRef, size };
 }
 
 export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
@@ -267,6 +312,8 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     [handleClose, navigate],
   );
 
+  const { paneRef, size } = useFitSize(item?.width ?? null, item?.height ?? null);
+
   if (!item) return null;
 
   const hasSimilar = (similar?.duplicates.length ?? 0) > 0 || (similar?.similar.length ?? 0) > 0;
@@ -277,7 +324,10 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 
   return (
     <div className="fade-in fixed inset-0 z-[80] flex flex-col overflow-y-auto bg-zinc-950/92 backdrop-blur sm:flex-row sm:overflow-hidden">
-      <div className="relative flex min-h-[65vh] min-w-0 flex-1 items-center justify-center p-2 sm:min-h-0 sm:p-10">
+      <div
+        ref={paneRef}
+        className="relative flex min-h-[65vh] min-w-0 flex-1 items-center justify-center p-2 sm:min-h-0 sm:p-10"
+      >
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
           <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
           <button
@@ -311,13 +361,16 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             onLoadedMetadata={onLoadedMetadata}
             onTimeUpdate={() => saveProgress()}
             onVolumeChange={handleVolumeChange}
-            className="max-h-[95%] max-w-[98%] rounded-xl shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
+            // The max-* caps stay as the fallback for rows with no stored dimensions.
+            style={size ? { width: size.width, height: size.height } : undefined}
+            className="max-h-[95%] max-w-[98%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         ) : (
           <img
             key={item.id}
             src={fileUrl(item.id)}
             alt={displayName}
+            style={size ? { width: size.width, height: size.height } : undefined}
             className="max-h-[95%] max-w-[98%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         )}
