@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { MouseEvent } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Media } from '@sakuya/shared';
 import { MediaCard } from './MediaCard';
@@ -40,6 +41,24 @@ export function MediaGrid({
     });
     observer.observe(el);
     return () => observer.disconnect();
+  }, []);
+
+  // MediaCard is memoized, so this handler has to keep one identity for the life of the grid.
+  // It can't close over `selection` directly: that object carries `ids`, so it changes on every
+  // click and would invalidate all visible cards. Reading both through a ref keeps the callback
+  // stable while still acting on the current selection.
+  const latest = useRef({ selection, onOpen });
+  latest.current = { selection, onOpen };
+
+  const handleActivate = useCallback((index: number, e: MouseEvent) => {
+    const { selection, onOpen } = latest.current;
+    if (selection?.active) return selection.click(index, e.shiftKey);
+    // Ctrl/Cmd-click is the shortcut into select mode from a normal grid.
+    if (selection && (e.ctrlKey || e.metaKey)) {
+      selection.enter();
+      return selection.click(index, false);
+    }
+    onOpen(index);
   }, []);
 
   const cols = Math.max(2, Math.floor((width + GAP) / (MIN_COL + GAP)));
@@ -93,18 +112,10 @@ export function MediaGrid({
                 <div key={item.id} style={{ width: colWidth }}>
                   <MediaCard
                     item={item}
+                    index={start + i}
                     selectMode={selection?.active}
                     selected={selection?.ids.has(item.id)}
-                    onClick={(e) => {
-                      const index = start + i;
-                      if (selection?.active) return selection.click(index, e.shiftKey);
-                      // Ctrl/Cmd-click is the shortcut into select mode from a normal grid.
-                      if (selection && (e.ctrlKey || e.metaKey)) {
-                        selection.enter();
-                        return selection.click(index, false);
-                      }
-                      onOpen(index);
-                    }}
+                    onActivate={handleActivate}
                   />
                 </div>
               ))}

@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react';
+import { memo, type MouseEvent } from 'react';
 import { Check } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
@@ -27,21 +27,30 @@ export function DurationBadge({ seconds }: { seconds: number | null }) {
   );
 }
 
-/** Square virtualized-grid card with hover overlay. */
-export function MediaCard({
+/**
+ * Square virtualized-grid card with hover overlay.
+ *
+ * Memoized because a grid renders dozens of these and every selection click re-renders the
+ * parent. The card takes its own `index` and a stable `onActivate` rather than a prepared
+ * click handler: a per-card closure would be a new prop on every parent render and defeat the
+ * memo entirely.
+ */
+export const MediaCard = memo(function MediaCard({
   item,
-  onClick,
+  index,
+  onActivate,
   selectMode,
   selected,
 }: {
   item: Media;
-  onClick: (e: MouseEvent) => void;
+  index: number;
+  onActivate: (index: number, e: MouseEvent) => void;
   /** In select mode a click toggles the card instead of opening the viewer. */
   selectMode?: boolean;
   selected?: boolean;
 }) {
   return (
-    <div className="cursor-pointer select-none" onClick={onClick}>
+    <div className="cursor-pointer select-none" onClick={(e) => onActivate(index, e)}>
       <div
         className={`group relative aspect-square w-full overflow-hidden rounded-[10px] border bg-zinc-900 ${
           selected ? 'border-accent ring-2 ring-accent' : 'border-zinc-800'
@@ -98,7 +107,7 @@ export function MediaCard({
       </div>
     </div>
   );
-}
+});
 
 /** Wide 16:9 card for dashboard rows. */
 export function WideCard({
