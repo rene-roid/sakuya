@@ -306,17 +306,22 @@ CREATE INDEX IF NOT EXISTS media_phash_b7_idx ON media(phash_b7);
 // Populate the search index for rows that predate it. Keyed on which rows are missing rather
 // than a migration version, so it also heals a database that lost the index or was written to by
 // an older build. Costs ~30ms on a 34k-row library once every row is present.
-const indexedMedia = sqlite
-  .query(`INSERT INTO media_fts(rowid, path, tags)
-          SELECT m.id, m.path || ' ' || m.filename,
-                 COALESCE(
-                   (SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
-                    WHERE mt.media_id = m.id),
-                   ''
-                 )
-          FROM media m WHERE m.id NOT IN (SELECT rowid FROM media_fts)`)
-  .run().changes;
-if (indexedMedia > 0) console.log(`[sakuya] built search index for ${indexedMedia} media rows`);
+// Counted separately rather than read off .changes: an insert into an FTS5 table reports the
+// writes to its shadow tables, which is several times the number of rows actually indexed.
+const pendingIndex = (
+  sqlite.query(`SELECT COUNT(*) AS c FROM media WHERE id NOT IN (SELECT rowid FROM media_fts)`).get() as { c: number }
+).c;
+if (pendingIndex > 0) {
+  sqlite.exec(`INSERT INTO media_fts(rowid, path, tags)
+               SELECT m.id, m.path || ' ' || m.filename,
+                      COALESCE(
+                        (SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+                         WHERE mt.media_id = m.id),
+                        ''
+                      )
+               FROM media m WHERE m.id NOT IN (SELECT rowid FROM media_fts)`);
+  console.log(`[sakuya] built search index for ${pendingIndex} media rows`);
+}
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(
