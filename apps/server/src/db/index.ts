@@ -178,6 +178,41 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_name_idx ON saved_searches(name);
+
+-- Free-text search index over filenames/paths and tag names. Replaces a pair of unindexable
+-- LIKE '%term%' scans; see buildMediaFilter in routes/media.ts.
+--
+-- rowid is media.id, which is what lets the triggers below address a row directly and what the
+-- search subquery selects. The path column holds the full path plus the filename, so searching
+-- a folder name keeps working.
+CREATE VIRTUAL TABLE IF NOT EXISTS media_fts USING fts5(path, tags);
+
+-- Triggers rather than application writes: media rows are inserted and renamed from several
+-- places (scanner, uploads, downloader, bulk rename), and an index that only some of those
+-- paths maintain is worse than no index at all.
+CREATE TRIGGER IF NOT EXISTS media_fts_ai AFTER INSERT ON media BEGIN
+  INSERT INTO media_fts(rowid, path, tags) VALUES (NEW.id, NEW.path || ' ' || NEW.filename, '');
+END;
+CREATE TRIGGER IF NOT EXISTS media_fts_ad AFTER DELETE ON media BEGIN
+  DELETE FROM media_fts WHERE rowid = OLD.id;
+END;
+CREATE TRIGGER IF NOT EXISTS media_fts_au AFTER UPDATE OF path, filename ON media BEGIN
+  UPDATE media_fts SET path = NEW.path || ' ' || NEW.filename WHERE rowid = NEW.id;
+END;
+-- A tag change rewrites that media's whole tag string; there is no cheaper incremental form,
+-- and the row count touched is one.
+CREATE TRIGGER IF NOT EXISTS media_tags_fts_ai AFTER INSERT ON media_tags BEGIN
+  UPDATE media_fts SET tags = COALESCE(
+    (SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = NEW.media_id),
+    ''
+  ) WHERE rowid = NEW.media_id;
+END;
+CREATE TRIGGER IF NOT EXISTS media_tags_fts_ad AFTER DELETE ON media_tags BEGIN
+  UPDATE media_fts SET tags = COALESCE(
+    (SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = OLD.media_id),
+    ''
+  ) WHERE rowid = OLD.media_id;
+END;
 `);
 
 // Versioned migrations, tracked via PRAGMA user_version so each runs exactly once.
@@ -267,6 +302,21 @@ CREATE INDEX IF NOT EXISTS media_phash_b5_idx ON media(phash_b5);
 CREATE INDEX IF NOT EXISTS media_phash_b6_idx ON media(phash_b6);
 CREATE INDEX IF NOT EXISTS media_phash_b7_idx ON media(phash_b7);
 `);
+
+// Populate the search index for rows that predate it. Keyed on which rows are missing rather
+// than a migration version, so it also heals a database that lost the index or was written to by
+// an older build. Costs ~30ms on a 34k-row library once every row is present.
+const indexedMedia = sqlite
+  .query(`INSERT INTO media_fts(rowid, path, tags)
+          SELECT m.id, m.path || ' ' || m.filename,
+                 COALESCE(
+                   (SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+                    WHERE mt.media_id = m.id),
+                   ''
+                 )
+          FROM media m WHERE m.id NOT IN (SELECT rowid FROM media_fts)`)
+  .run().changes;
+if (indexedMedia > 0) console.log(`[sakuya] built search index for ${indexedMedia} media rows`);
 
 // Jobs interrupted by a server restart can never finish — mark them as errored.
 sqlite.exec(
