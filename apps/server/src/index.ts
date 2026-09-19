@@ -1,5 +1,5 @@
 import express from 'express';
-import { PORT, DATA_DIR } from './lib/config';
+import { PORT, HOST, DATA_DIR } from './lib/config';
 import './db';
 import { librariesRouter } from './routes/libraries';
 import { mediaRouter } from './routes/media';
@@ -43,8 +43,9 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(status).json({ error: err?.message ?? 'Internal error', issues: err?.issues });
 });
 
-app.listen(PORT, () => {
-  console.log(`Sakuya server listening on http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Sakuya server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  if (HOST === '127.0.0.1') console.log('Bound to loopback only. Set SAKUYA_HOST=0.0.0.0 to serve other machines.');
   console.log(`Data dir: ${DATA_DIR}`);
   initScheduler();
 });

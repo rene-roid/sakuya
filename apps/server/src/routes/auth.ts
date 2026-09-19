@@ -31,7 +31,7 @@ authRouter.post('/api/auth/login', loginLimiter, (req, res) => {
     return;
   }
 
-  setAuthCookie(res, secret);
+  setAuthCookie(res);
   res.json({ ok: true });
 });
 

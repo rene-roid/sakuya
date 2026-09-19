@@ -53,5 +53,7 @@ No config is required to start. Env vars, if you need them:
 |---|---|---|
 | `PORT` | `3777` | Server port |
 | `SAKUYA_DATA_DIR` | `~/.sakuya` if it exists, else `apps/server/data` | Where DB/thumbnails/uploads/models live. Unset, the location is autodetected on boot from whether `~/.sakuya` exists — no config file. Setting it wins over both and disables the in-app move. |
+| `SAKUYA_HOST` | `127.0.0.1` | Interface to bind. Loopback by default, so a fresh install isn't exposed to the network: the server serves your whole library and can open a file manager on the host, and auth is off unless you turn it on. Set to `0.0.0.0` to reach it from other machines — preferably with `AUTH_ENABLED=true`. Docker images set this to `0.0.0.0` already, since a container must bind all interfaces for its published port to work. |
 | `AUTH_ENABLED` | unset | Set to `true` to require login |
-| `AUTH_SECRET` | unset | Required if `AUTH_ENABLED=true` |
+| `AUTH_SECRET` | unset | Required if `AUTH_ENABLED=true`. Changing it signs every logged-in session out. |
+| `SAKUYA_HTTPS` | unset | Set to `true` when serving over HTTPS, to mark the auth cookie `Secure`. Off by default because a `Secure` cookie is silently dropped over plain HTTP, which is a supported LAN setup. |

@@ -24,6 +24,9 @@ COPY apps/server apps/server
 COPY packages/shared packages/shared
 WORKDIR /app/apps/server
 ENV NODE_ENV=production
+# The server binds loopback by default. Inside a container that makes the published port
+# unreachable, so bind all interfaces here — the container boundary is the isolation.
+ENV SAKUYA_HOST=0.0.0.0
 EXPOSE 3777
 
 # /api/health is registered before requireAuth in src/index.ts, so this keeps working

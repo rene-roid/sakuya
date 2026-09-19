@@ -30,6 +30,23 @@ export const DOWNLOADER_BIN_DIR = path.join(DOWNLOADER_DIR, 'bin');
 export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
 
 export const PORT = Number(process.env.PORT ?? 3777);
+
+/**
+ * Interface to bind. Defaults to loopback: the server exposes the whole library and
+ * POST /api/media/:id/reveal, which spawns a file manager on the host, and AUTH_ENABLED is off by
+ * default — none of that should be reachable from the LAN because someone started the server.
+ *
+ * Containers must bind 0.0.0.0 or published ports never reach the process, so the Dockerfile and
+ * docker-compose.yml both set SAKUYA_HOST=0.0.0.0. Set it yourself to serve other machines
+ * directly, ideally with AUTH_ENABLED=true.
+ */
+export const HOST = process.env.SAKUYA_HOST ?? '127.0.0.1';
+
+/**
+ * Marks the auth cookie Secure. Off by default because serving plain HTTP over a LAN is a
+ * supported setup, and a Secure cookie is silently dropped there, which would lock users out.
+ */
+export const AUTH_COOKIE_SECURE = process.env.SAKUYA_HTTPS === 'true';
 /**
  * The root package.json is the one source of truth for the app version: Settings > System reads
  * this, and the bundled release notes in apps/web/src/releases drive the update toast. They used
