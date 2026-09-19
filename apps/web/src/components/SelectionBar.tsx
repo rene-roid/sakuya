@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Copy,
@@ -20,6 +20,7 @@ import { useToast } from './Toast';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
 import { BulkTagDialog } from './BulkTagDialog';
 import { BulkRenameDialog } from './BulkRenameDialog';
+import { MenuItem, MenuPanel } from './Menu';
 import type { SelectionApi } from '../hooks/useSelection';
 
 type Action = 'tags' | 'rename' | 'boards' | 'like' | 'unlike' | 'delete' | 'retag' | 'thumbnails' | 'board-remove';
@@ -239,53 +240,50 @@ export function SelectionBar({
               <MoreHorizontal size={14} />
             </button>
             {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-[70]" onClick={() => setMenuOpen(false)} />
-                <div className="absolute bottom-[calc(100%+6px)] right-0 z-[71] w-[230px] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+              <MenuPanel side="top" onClose={() => setMenuOpen(false)}>
+                <MenuItem
+                  icon={<HeartOff size={13} />}
+                  label="Unlike"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAction('unlike');
+                  }}
+                />
+                {boardId !== undefined && (
                   <MenuItem
-                    icon={<HeartOff size={13} />}
-                    label="Unlike"
+                    icon={<Images size={13} />}
+                    label="Remove from this board"
                     onClick={() => {
                       setMenuOpen(false);
-                      setAction('unlike');
+                      setAction('board-remove');
                     }}
                   />
-                  {boardId !== undefined && (
-                    <MenuItem
-                      icon={<Images size={13} />}
-                      label="Remove from this board"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        setAction('board-remove');
-                      }}
-                    />
-                  )}
-                  <MenuItem
-                    icon={<RotateCw size={13} />}
-                    label="AI re-tag"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setAction('retag');
-                    }}
-                  />
-                  <MenuItem
-                    icon={<RefreshCw size={13} />}
-                    label="Regenerate thumbnails"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setAction('thumbnails');
-                    }}
-                  />
-                  <MenuItem
-                    icon={<Copy size={13} />}
-                    label="Copy file paths"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      copyPaths.mutate();
-                    }}
-                  />
-                </div>
-              </>
+                )}
+                <MenuItem
+                  icon={<RotateCw size={13} />}
+                  label="AI re-tag"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAction('retag');
+                  }}
+                />
+                <MenuItem
+                  icon={<RefreshCw size={13} />}
+                  label="Regenerate thumbnails"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setAction('thumbnails');
+                  }}
+                />
+                <MenuItem
+                  icon={<Copy size={13} />}
+                  label="Copy file paths"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    copyPaths.mutate();
+                  }}
+                />
+              </MenuPanel>
             )}
           </div>
 
@@ -421,18 +419,6 @@ export function SelectionBar({
         />
       )}
     </>
-  );
-}
-
-function MenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
-  return (
-    <div
-      onClick={onClick}
-      className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[12.5px] font-semibold text-zinc-300 hover:bg-white/5 hover:text-zinc-100"
-    >
-      <span className="flex-none text-zinc-500">{icon}</span>
-      {label}
-    </div>
   );
 }
 
