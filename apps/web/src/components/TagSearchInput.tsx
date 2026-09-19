@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
@@ -25,6 +26,10 @@ interface TagSearchInputProps {
  *
  * With `showChips` off the box stays exactly one line tall however many tags are selected,
  * and the caller is responsible for showing (and removing) them somewhere it has room for.
+ *
+ * The suggestion list is portalled to the body rather than positioned inside the box: the filter
+ * toolbar clips its own row (`overflow-hidden`, so controls can collapse), which would cut the
+ * list off, and anything the caller renders under the box would paint over what's left.
  */
 export function TagSearchInput({
   tags,
@@ -40,6 +45,8 @@ export function TagSearchInput({
   const [highlight, setHighlight] = useState(-1);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [anchor, setAnchor] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Tags never contain a space or a comma, so either character closes off whatever was
   // typed before it as literal free text. Only the token after the last one is a tag
@@ -57,6 +64,27 @@ export function TagSearchInput({
   });
   const visible = (suggestions ?? []).filter((s) => !tags.includes(s.name));
   const showDropdown = focused && segment.trim().length > 0 && visible.length > 0;
+
+  // The list is fixed-positioned, so it has to follow the box: the toolbar it sits in is sticky,
+  // and both page scroll and a resize move the box out from under a stale measurement.
+  useLayoutEffect(() => {
+    if (!showDropdown) return;
+    const measure = () => {
+      const box = boxRef.current;
+      if (box) {
+        const r = box.getBoundingClientRect();
+        setAnchor({ top: r.bottom + 4, left: r.left, width: r.width });
+      }
+    };
+    measure();
+    // Capture phase: the box can sit inside a scrolling panel, whose scroll never reaches window.
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [showDropdown]);
 
   // Keeps the free text typed before the completed token; only the token becomes a chip.
   const commit = (tag: string) => {
@@ -96,6 +124,7 @@ export function TagSearchInput({
   return (
     <div className="relative w-full">
       <div
+        ref={boxRef}
         className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 focus-within:border-zinc-600"
         onClick={() => inputRef.current?.focus()}
       >
@@ -132,26 +161,34 @@ export function TagSearchInput({
           className="min-w-[80px] flex-1 bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
         />
       </div>
-      {showDropdown && (
-        <div className="absolute inset-x-0 top-[calc(100%+4px)] z-30 overflow-hidden rounded-lg border border-zinc-600 bg-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
-          {visible.map((s, i) => (
-            <div
-              key={s.name}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                commit(s.name);
-              }}
-              onMouseEnter={() => setHighlight(i)}
-              className={`flex cursor-pointer items-center justify-between px-3 py-2 text-[12.5px] ${
-                i === highlight ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-200'
-              }`}
-            >
-              <span>{s.name}</span>
-              <span className="text-[11px] text-zinc-500">{s.count}</span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* z-[97]: above dialogs (95) and the confetti canvas (96), since the box can live inside
+          one, but below toasts (100). */}
+      {showDropdown &&
+        anchor &&
+        createPortal(
+          <div
+            style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
+            className="fixed z-[97] overflow-hidden rounded-lg border border-zinc-600 bg-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+          >
+            {visible.map((s, i) => (
+              <div
+                key={s.name}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(s.name);
+                }}
+                onMouseEnter={() => setHighlight(i)}
+                className={`flex cursor-pointer items-center justify-between px-3 py-2 text-[12.5px] ${
+                  i === highlight ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-200'
+                }`}
+              >
+                <span>{s.name}</span>
+                <span className="text-[11px] text-zinc-500">{s.count}</span>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
