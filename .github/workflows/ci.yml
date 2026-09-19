@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# A second push to the same branch makes the earlier run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      # Lint is errors-only by design: the baseline carries warnings
+      # (no-explicit-any, exhaustive-deps) that are tracked, not blocking.
+      - run: bun run lint
+
+      - run: bun run typecheck
+
+      # --isolate is required: each server test file boots its own server and
+      # sqlite singleton, so they cannot share a process.
+      - run: bun test --isolate
+
+      # The web build is the only check that exercises Vite and the release-notes
+      # glob, so a broken import here would otherwise only surface on deploy.
+      - run: bun run build

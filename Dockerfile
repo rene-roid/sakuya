@@ -25,4 +25,10 @@ COPY packages/shared packages/shared
 WORKDIR /app/apps/server
 ENV NODE_ENV=production
 EXPOSE 3777
+
+# /api/health is registered before requireAuth in src/index.ts, so this keeps working
+# with AUTH_ENABLED=true. Shell form on purpose: $PORT is expanded at run time, not build time.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD bun -e "const r = await fetch('http://127.0.0.1:' + (process.env.PORT ?? 3777) + '/api/health'); process.exit(r.ok ? 0 : 1)"
+
 CMD ["bun", "src/index.ts"]
