@@ -231,7 +231,11 @@ export const api = {
   regenerateAllThumbnails: () => request<{ ok: true }>('/api/system/regenerate-thumbnails', { method: 'POST' }),
   transcodeVideos: () => request<{ ok: true }>('/api/system/transcode-videos', { method: 'POST' }),
   reclassifyGifs: () => request<Job>('/api/system/reclassify-gifs', { method: 'POST' }),
-  cleanupData: () => request<{ removedThumbs: number; resetTagCounts: number }>('/api/system/cleanup', { method: 'POST' }),
+  cleanupData: () =>
+    request<{ removedThumbs: number; resetTagCounts: number; prunedJobs: number; prunedDownloadLogs: number }>(
+      '/api/system/cleanup',
+      { method: 'POST' },
+    ),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
   taggerTagAll: () => request<{ job: Job }>('/api/tagger/tag-all', { method: 'POST' }),

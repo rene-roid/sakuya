@@ -1,43 +1,69 @@
 import fs from 'node:fs';
-import { eq } from 'drizzle-orm';
 import { sqlite, db, schema } from '../db';
 import { THUMBS_DIR } from '../lib/config';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 
-export function performCleanup(): { removedThumbs: number; resetTagCounts: number } {
+/**
+ * How long finished jobs and the logs of finished downloads are kept.
+ *
+ * Retention is by age rather than "everything that finished": /api/downloader/items/:id/logs
+ * still serves the logs of completed items, so dropping them the moment an item finishes would
+ * delete history the UI can display. Two weeks keeps recent runs inspectable while stopping
+ * these two append-only tables from growing without limit.
+ */
+const RETENTION_DAYS = 14;
+const RETENTION_MS = RETENTION_DAYS * 86_400_000;
+
+export interface CleanupResult {
+  removedThumbs: number;
+  resetTagCounts: number;
+  prunedJobs: number;
+  prunedDownloadLogs: number;
+}
+
+export function performCleanup(now: number = Date.now()): CleanupResult {
+  const cutoff = now - RETENTION_MS;
+
+  // Every media id once, rather than a SELECT per file on disk. A thumbnail directory holds one
+  // entry per media row, so the per-file query made this scale quadratically with library size.
+  const liveIds = new Set(db.select({ id: schema.media.id }).from(schema.media).all().map((r) => r.id));
+
   let removedThumbs = 0;
   if (fs.existsSync(THUMBS_DIR)) {
     for (const entry of fs.readdirSync(THUMBS_DIR)) {
       const match = entry.match(/^(\d+)\.webp$/);
-      if (match) {
-        const mediaId = Number(match[1]);
-        const exists = db
-          .select({ id: schema.media.id })
-          .from(schema.media)
-          .where(eq(schema.media.id, mediaId))
-          .get();
-        if (!exists) {
-          fs.rmSync(thumbPathFor(mediaId), { force: true });
-          removedThumbs++;
-        }
-      }
+      if (!match) continue;
+      const mediaId = Number(match[1]);
+      if (liveIds.has(mediaId)) continue;
+      fs.rmSync(thumbPathFor(mediaId), { force: true });
+      removedThumbs++;
     }
   }
 
-  const allTagIds = db.select({ id: schema.tags.id }).from(schema.tags).all().map((r) => r.id);
-  let resetTagCounts = 0;
-  if (allTagIds.length > 0) {
-    const placeholders = allTagIds.map(() => '?').join(',');
-    sqlite
-      .query(
-        `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
-      )
-      .run(...allTagIds);
-    resetTagCounts = allTagIds.length;
-  }
+  // Recompute every tag's usage_count. This used to bind one parameter per tag for an
+  // `WHERE id IN (...)` listing every id in the table — equivalent to no WHERE at all, and on a
+  // course to hit SQLite's 32766 parameter ceiling as the tag vocabulary grew.
+  const resetTagCounts = sqlite
+    .query(`UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id)`)
+    .run().changes;
 
-  return { removedThumbs, resetTagCounts };
+  const prunedJobs = sqlite
+    .query(`DELETE FROM jobs WHERE status IN ('done', 'error') AND created_at < ?`)
+    .run(cutoff).changes;
+
+  // Logs are pruned by when their parent item finished, so a long-running download keeps its
+  // whole log no matter how long it has been going.
+  const prunedDownloadLogs = sqlite
+    .query(
+      `DELETE FROM download_logs WHERE item_id IN (
+         SELECT id FROM download_items
+         WHERE status IN ('done', 'error', 'skipped') AND updated_at < ?
+       )`,
+    )
+    .run(cutoff).changes;
+
+  return { removedThumbs, resetTagCounts, prunedJobs, prunedDownloadLogs };
 }
 
 export function enqueueCleanupJob() {
@@ -45,9 +71,14 @@ export function enqueueCleanupJob() {
     'cleanup',
     'Cleanup orphan data',
     async (job: JobHandle) => {
-      job.update({ log: 'Cleaning up orphan thumbnails and tag counts…' });
+      job.update({ log: 'Cleaning up orphan thumbnails, tag counts and old history…' });
       const result = performCleanup();
-      return `Removed ${result.removedThumbs} orphan thumbnails, recomputed usage count for ${result.resetTagCounts} tags.`;
+      return (
+        `Removed ${result.removedThumbs} orphan thumbnails, ` +
+        `recomputed usage count for ${result.resetTagCounts} tags, ` +
+        `pruned ${result.prunedJobs} finished jobs and ${result.prunedDownloadLogs} download log lines ` +
+        `older than ${RETENTION_DAYS} days.`
+      );
     },
     null,
   );

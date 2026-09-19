@@ -33,6 +33,16 @@ export function untaggedMediaIds(): number[] {
     .map((r) => r.id);
 }
 
+/**
+ * Count untagged rows without materialising their ids. taggerStatus is polled by the Settings
+ * UI, and pulling every untagged id into JS just to read .length made that poll scale with the
+ * size of the backlog. Callers that genuinely need the ids still use untaggedMediaIds().
+ */
+export function untaggedCount(): number {
+  const row = sqlite.query(`SELECT COUNT(*) AS c FROM media WHERE tagged_at IS NULL`).get() as { c: number };
+  return row.c;
+}
+
 export function selectedModelId(): string {
   return getSetting('tagger_model') || DEFAULT_MODEL_ID;
 }
@@ -45,17 +55,19 @@ function unhashedImageCount(): number {
 }
 
 export function taggerStatus(): TaggerStatus {
-  const untaggedCount = untaggedMediaIds().length;
+  const untagged = untaggedCount();
   const unhashedCount = unhashedImageCount();
   const model = selectedModelId();
-  if (downloading) return { status: 'downloading', model, modelSizeBytes: null, tagCount: null, untaggedCount, unhashedCount };
-  if (!modelReady()) return { status: 'absent', model, modelSizeBytes: null, tagCount: null, untaggedCount, unhashedCount };
+  if (downloading)
+    return { status: 'downloading', model, modelSizeBytes: null, tagCount: null, untaggedCount: untagged, unhashedCount };
+  if (!modelReady())
+    return { status: 'absent', model, modelSizeBytes: null, tagCount: null, untaggedCount: untagged, unhashedCount };
   return {
     status: 'ready',
     model,
     modelSizeBytes: fs.statSync(MODEL_PATH).size,
     tagCount: loadLabels().length,
-    untaggedCount,
+    untaggedCount: untagged,
     unhashedCount,
   };
 }

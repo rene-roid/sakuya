@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import { db, schema } from '../db';
 import type { Job, JobType } from '@sakuya/shared';
 
@@ -101,9 +101,7 @@ export function enqueueJob(
 }
 
 export function listJobs(limit = 50): Job[] {
-  const rows = db.select().from(schema.jobs).all();
-  return rows
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .slice(0, limit)
-    .map(rowToJob);
+  // Ordering and slicing belong in SQL: this used to pull the entire jobs table into JS and sort
+  // it there to hand back 50 rows, and jobs is append-only, so the cost grew with every scan.
+  return db.select().from(schema.jobs).orderBy(desc(schema.jobs.createdAt)).limit(limit).all().map(rowToJob);
 }

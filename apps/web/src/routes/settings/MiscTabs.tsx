@@ -112,7 +112,10 @@ export function SystemTab() {
   const cleanupMutation = useMutation({
     mutationFn: api.cleanupData,
     onSuccess: (res) => {
-      showToast(`Removed ${res.removedThumbs} orphan thumbnails · reset ${res.resetTagCounts} tag counts`);
+      showToast(
+        `Removed ${res.removedThumbs} orphan thumbnails · reset ${res.resetTagCounts} tag counts · ` +
+          `pruned ${res.prunedJobs} old jobs and ${res.prunedDownloadLogs} log lines`,
+      );
       queryClient.invalidateQueries({ queryKey: ['system'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
     },
