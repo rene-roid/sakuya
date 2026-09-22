@@ -196,6 +196,32 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     };
   }, [item?.id, item?.type, item?.filename]);
 
+  // Tear the player down by hand when the item changes or the viewer closes. The <video> is keyed
+  // by id, so React just drops the old element — but a detached media element that was never
+  // paused stays "potentially playing", which keeps its decoder, its buffered media and its
+  // request for /file alive and uncollectable. With `loop` it never even reaches an end event to
+  // settle on its own, so stepping through a folder of large videos strands one downloading
+  // player per item and the tab grows by the bitrate of everything ever opened.
+  // removeAttribute + load() is what actually aborts the fetch and frees the buffer; pause alone
+  // leaves the download running.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !item) return;
+    // StrictMode runs setup → cleanup → setup in dev, which would leave a player the teardown
+    // below just emptied. Re-assert the src instead of trusting the JSX attribute: the prop
+    // hasn't changed from React's side, so it won't rewrite it for us.
+    const src = fileUrl(item.id);
+    if (video.getAttribute('src') !== src) {
+      video.setAttribute('src', src);
+      video.load();
+    }
+    return () => {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [item?.id]);
+
   useEffect(() => {
     setRenaming(false);
     setShowDeleteConfirm(false);

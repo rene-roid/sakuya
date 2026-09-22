@@ -10,6 +10,9 @@ import { enqueueJob, type JobHandle } from './jobQueue';
 
 const ffmpegPath: string = (ffmpegStatic as unknown as string) ?? 'ffmpeg';
 
+/** Comfortably more than the 300 characters reported on failure, small enough to never matter. */
+const STDERR_TAIL = 4_000;
+
 const SAFE_CONTAINERS = new Set(['.mp4', '.webm', '.m4v']);
 const SAFE_VIDEO_CODECS = new Set(['h264', 'vp8', 'vp9', 'av1']);
 const SAFE_AUDIO_CODECS = new Set(['aac', 'mp3', 'opus', 'vorbis']);
@@ -48,8 +51,11 @@ async function transcodeVideo(sourcePath: string, mediaId: number): Promise<stri
       tmp,
     ];
     const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    // Keep only the tail: ffmpeg emits a progress line every few hundred ms and transcoding a
+    // large video runs for hours, so appending the whole stream grew a string for the life of
+    // the job when all that is ever read back is the last few hundred characters.
     let stderr = '';
-    proc.stderr.on('data', (d) => (stderr += d));
+    proc.stderr.on('data', (d) => (stderr = (stderr + d).slice(-STDERR_TAIL)));
     proc.on('error', reject);
     proc.on('close', (code) => {
       if (code === 0 && fs.existsSync(tmp)) resolve();
