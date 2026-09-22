@@ -5,6 +5,7 @@ import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, DEFAULT_MODEL_ID, MODEL_REGISTRY } from '../lib/config';
 import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
+import { LIMITS } from '../lib/limits';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -114,8 +115,10 @@ async function getSession(): Promise<any> {
     graphOptimizationLevel: 'all',
     // Cap threads so bulk tagging can't monopolize every core and starve
     // request handling (thumbnail/video serving) or other host services.
-    intraOpNumThreads: 2,
-    interOpNumThreads: 1,
+    // Tunable via SAKUYA_MAX_CPUS / SAKUYA_ONNX_THREADS; the defaults are the 2/1 this used
+    // to hardcode.
+    intraOpNumThreads: LIMITS.onnxIntraOpThreads,
+    interOpNumThreads: LIMITS.onnxInterOpThreads,
   });
   return session;
 }

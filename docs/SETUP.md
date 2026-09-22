@@ -57,3 +57,46 @@ No config is required to start. Env vars, if you need them:
 | `AUTH_ENABLED` | unset | Set to `true` to require login |
 | `AUTH_SECRET` | unset | Required if `AUTH_ENABLED=true`. Changing it signs every logged-in session out. |
 | `SAKUYA_HTTPS` | unset | Set to `true` when serving over HTTPS, to mark the auth cookie `Secure`. Off by default because a `Secure` cookie is silently dropped over plain HTTP, which is a supported LAN setup. |
+| `SAKUYA_MAX_CPUS` | unset | CPU budget in cores, fractions allowed — the non-Docker counterpart to compose's `cpus`. Derives job concurrency and the ffmpeg / onnxruntime / libvips thread pools together. See [Resource limits](#resource-limits). |
+| `SAKUYA_MAX_MEMORY` | unset | Memory ceiling (`2g`, `512m`, a byte count). **Not enforced by the app itself** — only by `./run.sh` on a systemd host. See [Resource limits](#resource-limits). |
+| `SAKUYA_HARD_LIMIT` | unset | Set to `false` to keep the in-app limits but never wrap the process in a systemd scope. |
+| `SAKUYA_JOB_CONCURRENCY` | `2` | Background jobs (scan/tag/thumbnail/transcode) allowed to run at once. Overrides what `SAKUYA_MAX_CPUS` derives. |
+| `SAKUYA_FFMPEG_THREADS` | unset (ffmpeg picks) | `-threads` while transcoding. Thumbnail extraction is always 1 — a single frame gains nothing from more. |
+| `SAKUYA_ONNX_THREADS` | `2` | onnxruntime threads within one operator, while AI tagging. The first knob to lower if tagging starves everything else. |
+| `SAKUYA_SHARP_CONCURRENCY` | unset (sharp's own default, 1 on glibc Linux) | libvips worker pool for sharp (thumbnails, tagger preprocessing). Clamped to sharp's default — it can lower the pool, never raise it. |
+
+Start from [`.env.example`](../.env.example) — Bun loads `.env` on its own, so there is nothing to
+install and no flag to pass.
+
+## Resource limits
+
+`docker-compose.yml` caps the server with `cpus: "2.0"` and `mem_limit: "3g"`. Running outside
+Docker you can get most, but not all, of that from a `.env`.
+
+**CPU can be capped properly.** `SAKUYA_MAX_CPUS=2` bounds the things that actually consume cores:
+how many background jobs run at once, and how many threads ffmpeg, onnxruntime and libvips each
+spawn underneath them. Unset, libx264 sizes its own pool from the detected core count — which
+inside a container is the *host's* core count, not the container's share, since `nproc` doesn't
+know about the cgroup. (libvips is the exception: sharp already defaults it to 1 on glibc Linux.
+The libvips knob is clamped so it can only ever lower that, never raise it.)
+
+**Memory cannot, from inside the process.** Docker's `mem_limit` is a kernel cgroup: the kernel
+refuses the allocation and OOM-kills at the boundary. Nothing a process sets on itself is
+equivalent, and `--max-old-space-size` would be actively misleading here, because most of this
+app's memory is not JS heap — it is libvips buffers, onnxruntime arenas, ffmpeg child processes and
+SQLite page cache. So `SAKUYA_MAX_MEMORY` is **not** read by the server. What it does instead:
+
+- `./run.sh` reads it and re-execs the process inside a transient systemd scope with a real
+  `MemoryMax`, which is a genuine cgroup ceiling — the same mechanism Docker uses.
+- That needs Linux with systemd. It fails soft everywhere else (macOS, Windows, containers without
+  systemd, or when the cpu controller isn't delegated to user slices, which is common): you get a
+  note on stdout and the in-app limits still apply.
+- The boot log states which of the two you got, so a `SAKUYA_MAX_MEMORY` that isn't binding says so
+  out loud instead of quietly implying a cap that isn't there.
+
+What the in-app limits *do* give you for memory is indirect but real: peak RSS is roughly
+concurrency × per-task peak, so halving `SAKUYA_JOB_CONCURRENCY` roughly halves the worst case.
+
+Unset, every one of these keeps the value it had when the numbers were hardcoded across the
+services, so adding a `.env` without them changes nothing. At `SAKUYA_MAX_CPUS=2` the derivations
+reproduce those old constants exactly — `apps/server/src/limits.test.ts` pins that.

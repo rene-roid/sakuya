@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process';
 import ffmpegStatic from 'ffmpeg-static';
 import { eq } from 'drizzle-orm';
 import { TRANSCODES_DIR } from '../lib/config';
+import { LIMITS } from '../lib/limits';
 import { db, schema } from '../db';
 import { probeVideo } from './scanner';
 import { enqueueJob, type JobHandle } from './jobQueue';
@@ -42,6 +43,11 @@ async function transcodeVideo(sourcePath: string, mediaId: number): Promise<stri
   await new Promise<void>((resolve, reject) => {
     const args = [
       '-y',
+      // Unset, this stays absent and libx264 keeps taking a thread per core, which is what it
+      // did before these were configurable. Under a CPU budget it is the single biggest thing
+      // to bound: a transcode is the longest-running job here and the only one that scales
+      // itself across every core it can see.
+      ...(LIMITS.ffmpegThreads ? ['-threads', String(LIMITS.ffmpegThreads)] : []),
       '-i', sourcePath,
       '-c:v', 'libx264',
       '-preset', 'veryfast',

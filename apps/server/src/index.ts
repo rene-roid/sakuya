@@ -1,5 +1,7 @@
 import express from 'express';
+import sharp from 'sharp';
 import { PORT, HOST, DATA_DIR } from './lib/config';
+import { LIMITS, describeLimits } from './lib/limits';
 import './db';
 import { librariesRouter } from './routes/libraries';
 import { mediaRouter } from './routes/media';
@@ -16,6 +18,17 @@ import { boardsRouter } from './routes/boards';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { initScheduler } from './services/jobScheduler';
+
+// Set once here, before any thumbnail or tagger preprocessing can touch it — sharp is a singleton
+// and this is a runtime setter.
+//
+// Clamped so it can only ever lower the pool. sharp's own default is not always the core count:
+// on glibc Linux without jemalloc it ships as 1 to limit memory fragmentation, which is what this
+// deployment actually gets. Without the clamp, "limit me to 2 CPUs" would *raise* libvips from 1
+// to 2 — the opposite of what was asked for.
+if (LIMITS.sharpConcurrency !== null) {
+  sharp.concurrency(Math.min(sharp.concurrency(), LIMITS.sharpConcurrency));
+}
 
 const app = express();
 app.use(express.json({ limit: '2mb' }));
@@ -47,5 +60,7 @@ app.listen(PORT, HOST, () => {
   console.log(`Sakuya server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
   if (HOST === '127.0.0.1') console.log('Bound to loopback only. Set SAKUYA_HOST=0.0.0.0 to serve other machines.');
   console.log(`Data dir: ${DATA_DIR}`);
+  const limits = describeLimits();
+  if (limits) console.log(limits);
   initScheduler();
 });

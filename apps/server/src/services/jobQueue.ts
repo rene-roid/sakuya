@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { eq, desc } from 'drizzle-orm';
 import { db, schema } from '../db';
+import { LIMITS } from '../lib/limits';
 import type { Job, JobType } from '@sakuya/shared';
 
 export const jobEvents = new EventEmitter();
@@ -18,7 +19,6 @@ interface QueuedJob {
   fn: JobFn;
 }
 
-const CONCURRENCY = 2;
 const queue: QueuedJob[] = [];
 let running = 0;
 
@@ -51,7 +51,7 @@ function patchJob(id: number, patch: Partial<typeof schema.jobs.$inferInsert>) {
 }
 
 function pump() {
-  while (running < CONCURRENCY && queue.length > 0) {
+  while (running < LIMITS.jobConcurrency && queue.length > 0) {
     const next = queue.shift()!;
     running++;
     patchJob(next.id, { status: 'running' });
