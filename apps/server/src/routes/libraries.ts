@@ -9,8 +9,8 @@ import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
-import { thumbPathFor } from '../services/thumbnailer';
-import { transcodePathFor } from '../services/transcoder';
+import { removeMediaRows } from '../services/mediaRemoval';
+import { isUnder } from '../lib/paths';
 import { UPLOADS_DIR } from '../lib/config';
 import type { LibraryWithStats } from '@sakuya/shared';
 
@@ -123,17 +123,20 @@ librariesRouter.delete(
   '/api/libraries/:id',
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
-    const mediaRows = db.select().from(schema.media).where(eq(schema.media.libraryId, id)).all();
-    for (const m of mediaRows) {
-      fs.rmSync(thumbPathFor(m.id), { force: true });
-      fs.rmSync(transcodePathFor(m.id), { force: true });
-      if (m.source === 'upload') fs.rmSync(m.path, { force: true });
-      db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, m.id)).run();
-    }
-    db.delete(schema.media).where(eq(schema.media.libraryId, id)).run();
-    db.delete(schema.folders).where(eq(schema.folders.libraryId, id)).run();
-    db.delete(schema.libraries).where(eq(schema.libraries.id, id)).run();
-    sqlite.exec('UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE tag_id = tags.id)');
+    const mediaRows = db
+      .select({ id: schema.media.id, path: schema.media.path, source: schema.media.source })
+      .from(schema.media)
+      .where(eq(schema.media.libraryId, id))
+      .all();
+    removeMediaRows(mediaRows.map((m) => m.id));
+    for (const m of mediaRows) if (m.source === 'upload') fs.rm(m.path, { force: true }, () => {});
+    db.transaction((tx) => {
+      tx.delete(schema.folders).where(eq(schema.folders.libraryId, id)).run();
+      tx.delete(schema.jobSchedules).where(eq(schema.jobSchedules.libraryId, id)).run();
+      tx.delete(schema.libraries).where(eq(schema.libraries.id, id)).run();
+    });
+    // Drop this library's interval timers; left armed they tried to scan a missing library forever.
+    scheduleAll();
     res.json({ ok: true });
   }),
 );
@@ -184,20 +187,12 @@ librariesRouter.delete(
     if (!folder) return res.status(404).json({ error: 'Not found' });
     // Remove indexed media that lives under this folder root.
     const rows = db
-      .select()
+      .select({ id: schema.media.id, path: schema.media.path })
       .from(schema.media)
       .where(and(eq(schema.media.libraryId, folder.libraryId), eq(schema.media.source, 'folder')))
       .all();
-    for (const m of rows) {
-      if (m.path.startsWith(folder.path + path.sep) || m.path === folder.path) {
-        fs.rmSync(thumbPathFor(m.id), { force: true });
-        fs.rmSync(transcodePathFor(m.id), { force: true });
-        db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, m.id)).run();
-        db.delete(schema.media).where(eq(schema.media.id, m.id)).run();
-      }
-    }
+    removeMediaRows(rows.filter((m) => isUnder(m.path, folder.path)).map((m) => m.id));
     db.delete(schema.folders).where(eq(schema.folders.id, id)).run();
-    sqlite.exec('UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE tag_id = tags.id)');
     res.json({ ok: true });
   }),
 );

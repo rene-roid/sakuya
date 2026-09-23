@@ -8,7 +8,8 @@ import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
-import { playablePathFor, transcodePathFor } from '../services/transcoder';
+import { playablePathFor } from '../services/transcoder';
+import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -256,19 +257,8 @@ mediaRouter.post(
 
     // Rows go first and atomically: a half-applied delete would leave media_tags pointing at
     // rows that no longer exist. Files are unlinked only once that commit succeeded.
-    const apply = sqlite.transaction(() => {
-      for (const part of chunkIds(found)) {
-        db.delete(schema.mediaTags).where(inArray(schema.mediaTags.mediaId, part)).run();
-        db.delete(schema.media).where(inArray(schema.media.id, part)).run();
-      }
-    });
-    apply();
-
-    for (const id of found) {
-      fs.unlink(rows.get(id)!.path, () => {});
-      fs.unlink(thumbPathFor(id), () => {});
-      fs.unlink(transcodePathFor(id), () => {});
-    }
+    removeMediaRows(found);
+    for (const id of found) fs.unlink(rows.get(id)!.path, () => {});
     res.json({ ok: true, deleted: found.length });
   }),
 );
@@ -574,11 +564,8 @@ mediaRouter.delete(
     const id = intParam(req.params.id);
     const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
     if (!row) return res.status(404).json({ error: 'Not found' });
-    db.delete(schema.mediaTags).where(eq(schema.mediaTags.mediaId, id)).run();
-    db.delete(schema.media).where(eq(schema.media.id, id)).run();
+    removeMediaRows([id]);
     fs.unlink(row.path, () => {});
-    fs.unlink(thumbPathFor(id), () => {});
-    fs.unlink(transcodePathFor(id), () => {});
     res.json({ ok: true });
   }),
 );

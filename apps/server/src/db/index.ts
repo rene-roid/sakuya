@@ -7,6 +7,13 @@ import { phashBands } from '../lib/phashBands';
 export const sqlite = new Database(DB_PATH, { create: true });
 sqlite.exec('PRAGMA journal_mode = WAL;');
 sqlite.exec('PRAGMA foreign_keys = ON;');
+// NORMAL is the recommended pairing with WAL: commits no longer fsync, only checkpoints do. The
+// database can't be corrupted by a crash either way; a power cut can at worst lose the last few
+// commits, which here are progress ticks and job updates.
+sqlite.exec('PRAGMA synchronous = NORMAL;');
+// A scan or tag job writing on the same connection can briefly hold the write lock; wait for it
+// rather than failing a request with SQLITE_BUSY.
+sqlite.exec('PRAGMA busy_timeout = 5000;');
 
 // A discarded downloader prototype used group_id-based download_groups/download_items tables.
 // The current schema is batch_id-based (download_batches/download_items); drop the legacy pair
@@ -75,8 +82,12 @@ CREATE TABLE IF NOT EXISTS media (
   phash_b7 INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
-CREATE INDEX IF NOT EXISTS media_library_idx ON media(library_id);
+-- (library_id, created_at) rather than library_id alone: browsing a library sorts by created_at,
+-- and with only the single-column index every page (and every library card's cover lookup) sorted
+-- the whole library in a temp b-tree — 28ms a page on a 15k-item library, 0.14ms with this.
+CREATE INDEX IF NOT EXISTS media_library_created_idx ON media(library_id, created_at);
 CREATE INDEX IF NOT EXISTS media_created_idx ON media(created_at);
+CREATE INDEX IF NOT EXISTS media_last_viewed_idx ON media(last_viewed_at);
 CREATE INDEX IF NOT EXISTS media_type_idx ON media(type);
 CREATE INDEX IF NOT EXISTS media_hash_idx ON media(content_hash);
 CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked);
@@ -95,7 +106,6 @@ CREATE TABLE IF NOT EXISTS media_tags (
   PRIMARY KEY (media_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags(tag_id);
-CREATE INDEX IF NOT EXISTS media_tags_media_idx ON media_tags(media_id);
 CREATE TABLE IF NOT EXISTS boards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -242,6 +252,10 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 17, sql: 'ALTER TABLE media ADD COLUMN phash_b5 INTEGER' },
   { version: 18, sql: 'ALTER TABLE media ADD COLUMN phash_b6 INTEGER' },
   { version: 19, sql: 'ALTER TABLE media ADD COLUMN phash_b7 INTEGER' },
+  // Both superseded: media_library_created_idx has library_id as its prefix, and the media_tags
+  // primary key (media_id, tag_id) already serves every media_id lookup.
+  { version: 20, sql: 'DROP INDEX IF EXISTS media_library_idx' },
+  { version: 21, sql: 'DROP INDEX IF EXISTS media_tags_media_idx' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;

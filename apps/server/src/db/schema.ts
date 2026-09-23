@@ -62,8 +62,9 @@ export const media = sqliteTable(
   },
   (t) => [
     uniqueIndex('media_path_idx').on(t.path),
-    index('media_library_idx').on(t.libraryId),
+    index('media_library_created_idx').on(t.libraryId, t.createdAt),
     index('media_created_idx').on(t.createdAt),
+    index('media_last_viewed_idx').on(t.lastViewedAt),
     index('media_type_idx').on(t.type),
     index('media_hash_idx').on(t.contentHash),
     index('media_liked_idx').on(t.liked),
@@ -89,11 +90,7 @@ export const mediaTags = sqliteTable(
     confidence: real('confidence'),
     source: text('source', { enum: ['ai', 'user'] }).notNull().default('user'),
   },
-  (t) => [
-    primaryKey({ columns: [t.mediaId, t.tagId] }),
-    index('media_tags_tag_idx').on(t.tagId),
-    index('media_tags_media_idx').on(t.mediaId),
-  ],
+  (t) => [primaryKey({ columns: [t.mediaId, t.tagId] }), index('media_tags_tag_idx').on(t.tagId)],
 );
 
 export const boards = sqliteTable('boards', {

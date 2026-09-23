@@ -140,3 +140,31 @@ test('a like is reflected in the next feed rather than waiting out the profile c
   const after = await json(fetch(`${BASE}/api/discover?surprise=0`));
   expect(after.items.find((m: { id: number }) => m.id === unrelated.id).reasonTag).toBe('spreadsheet');
 });
+
+test('a scroll keeps its ordering when the profile changes between pages', async () => {
+  const seenIds: number[] = [];
+  const first = await json(fetch(`${BASE}/api/discover?limit=2&surprise=0`));
+  seenIds.push(...first.items.map((m: { id: number }) => m.id));
+
+  // Opening a first-page item in the viewer marks it seen, which sinks its score. Re-scored with
+  // the new profile, the rest of this scroll would rank it below the cursor and serve it again.
+  await fetch(`${BASE}/api/media/${first.items[0].id}/progress`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ progress: 0, view: true }),
+  });
+
+  let cursor = first.nextCursor;
+  while (cursor) {
+    const page = await json(fetch(`${BASE}/api/discover?limit=2&surprise=0&cursor=${cursor}`));
+    expect(page.total).toBeNull();
+    seenIds.push(...page.items.map((m: { id: number }) => m.id));
+    cursor = page.nextCursor;
+  }
+  expect(new Set(seenIds).size).toBe(seenIds.length);
+  expect(seenIds).toHaveLength(first.total);
+
+  // A fresh feed does pick up the view: the item sinks from the top.
+  const fresh = await json(fetch(`${BASE}/api/discover?limit=2&surprise=0`));
+  expect(fresh.items[0].id).not.toBe(first.items[0].id);
+});

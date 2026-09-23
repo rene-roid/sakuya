@@ -48,7 +48,7 @@ interface ProfileTag {
  * outranks what's merely common. Co-occurring tags are folded in at a discount so adjacent
  * content can surface.
  *
- * Expensive: two aggregates over the whole media_tags table. Go through tasteProfile() rather
+ * Expensive: two aggregates over the whole media_tags table. Go through currentSnapshot() rather
  * than calling this directly, so the result is cached between requests.
  */
 function buildProfile(): ProfileTag[] {
@@ -120,47 +120,104 @@ function buildProfile(): ProfileTag[] {
  * Two guards, because they fail in different directions: the version counter catches writes that
  * went through the API and makes them visible immediately, and the TTL catches everything else —
  * a scan, a tag job, a direct database edit — so a stale profile can never outlive a minute.
+ *
+ * Each build gets a snapshot id, and a page cursor carries the id of the snapshot that ordered
+ * it. Without that, the next page was ranked by whatever profile was current: a like, or a video
+ * playing in the viewer (progress writes bump the version every few seconds), or the TTL expiring
+ * mid-scroll re-scored the feed, and the cursor pointed into a different ordering — items
+ * repeated or were skipped. Recent snapshots are kept so an in-flight scroll finishes on the
+ * ordering it started with; a fresh first page always gets the current one.
  */
 const PROFILE_TTL_MS = 60_000;
-let cache: { profile: ProfileTag[]; builtAt: number; version: number } | null = null;
+const KEPT_SNAPSHOTS = 8;
 
-function tasteProfile(): ProfileTag[] {
-  const version = tasteVersion();
-  if (cache && cache.version === version && Date.now() - cache.builtAt < PROFILE_TTL_MS) {
-    return cache.profile;
-  }
+interface ProfileSnapshot {
+  id: number;
+  /** Best raw score any item reaches under this profile; normalises taste into 0..1. */
+  maxScore: number;
+  builtAt: number;
+  version: number;
+}
+
+const snapshots = new Map<number, ProfileSnapshot>();
+let latest: ProfileSnapshot | null = null;
+let nextSnapshotId = 1;
+
+/**
+ * Per-item taste scores, one set of rows per live snapshot. Scoring is an aggregate over every
+ * media_tags row carrying a profile tag — ~100ms on a 34k-item library — and it used to run on
+ * every page. It depends only on the snapshot, so it's computed once when the snapshot is built
+ * and pages join against it.
+ *
+ * TEMP: connection-local and gone on restart, which is what a cache wants; the snapshot ids it's
+ * keyed by don't survive a restart either.
+ */
+sqlite.exec(`CREATE TEMP TABLE IF NOT EXISTS discover_scores (
+  snapshot INTEGER NOT NULL,
+  media_id INTEGER NOT NULL,
+  raw REAL NOT NULL,
+  best REAL NOT NULL,
+  reason TEXT,
+  related INTEGER,
+  PRIMARY KEY (snapshot, media_id)
+)`);
+
+function buildSnapshot(): ProfileSnapshot {
   const profile = buildProfile();
-  cache = { profile, builtAt: Date.now(), version };
-  return profile;
+  const id = nextSnapshotId++;
+  // The placeholder keeps one SQL path when nothing has been liked or viewed yet: no item scores,
+  // so the feed is pure random, which is the right cold start anyway.
+  const rows = profile.length ? profile : [{ tagId: -1, name: '', weight: 0, related: false }];
+  // MAX(p.weight) is what makes the bare p.name/p.related columns resolve to the winning row
+  // (SQLite's documented min/max aggregate behaviour) — that name is the tag the card credits.
+  sqlite
+    .query(
+      `WITH profile(tag_id, weight, name, related) AS (VALUES ${rows.map(() => '(?, ?, ?, ?)').join(', ')})
+       INSERT INTO discover_scores (snapshot, media_id, raw, best, reason, related)
+       SELECT ?, mt.media_id, SUM(p.weight), MAX(p.weight), p.name, p.related
+       FROM media_tags mt JOIN profile p ON p.tag_id = mt.tag_id
+       GROUP BY mt.media_id`,
+    )
+    .run(...rows.flatMap((t) => [t.tagId, t.weight, t.name, t.related ? 1 : 0]), id);
+  // Scale scores by the best-matching item so the taste half of the mix is comparable to the
+  // random half (which is already 0..1).
+  const best = (
+    sqlite.query(`SELECT MAX(raw) AS best FROM discover_scores WHERE snapshot = ?`).get(id) as { best: number | null }
+  ).best;
+  return { id, maxScore: best || 1, builtAt: Date.now(), version: tasteVersion() };
+}
+
+function currentSnapshot(): ProfileSnapshot {
+  if (latest && latest.version === tasteVersion() && Date.now() - latest.builtAt < PROFILE_TTL_MS) return latest;
+  latest = buildSnapshot();
+  snapshots.set(latest.id, latest);
+  // Map iteration is insertion order, so the first key is always the oldest snapshot.
+  while (snapshots.size > KEPT_SNAPSHOTS) {
+    const oldest = snapshots.keys().next().value!;
+    snapshots.delete(oldest);
+    sqlite.query(`DELETE FROM discover_scores WHERE snapshot = ?`).run(oldest);
+  }
+  return latest;
 }
 
 discoverRouter.get(
   '/api/discover',
   wrap(async (req, res) => {
     const query = discoverQuerySchema.parse(req.query);
-    const profile = tasteProfile();
 
-    // A single-row placeholder keeps one SQL path when nothing has been liked or viewed yet:
-    // every score is 0, so the feed is pure random — which is the right cold start anyway.
-    const rows = profile.length ? profile : [{ tagId: -1, name: '', weight: 0, related: false }];
-    const profileValues = rows.map(() => '(?, ?, ?, ?)').join(', ');
-    const profileParams = rows.flatMap((t) => [t.tagId, t.weight, t.name, t.related ? 1 : 0]);
-    const withProfile = `WITH profile(tag_id, weight, name, related) AS (VALUES ${profileValues})`;
-
-    // Scale scores by the best-matching item so the taste half of the mix is comparable to the
-    // random half (which is already 0..1).
-    const maxScore =
-      ((
-        sqlite
-          .query(
-            `${withProfile}
-             SELECT MAX(raw) AS best FROM (
-               SELECT SUM(p.weight) AS raw FROM media_tags mt
-               JOIN profile p ON p.tag_id = mt.tag_id GROUP BY mt.media_id
-             )`,
-          )
-          .get(...profileParams) as { best: number | null }
-      ).best ?? 0) || 1;
+    let cursor: { key: number; id: number; snapshot: number } | null = null;
+    if (query.cursor) {
+      try {
+        const [key, id, snapshot] = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
+        cursor = { key, id, snapshot };
+      } catch {
+        throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+      }
+    }
+    // A cursor whose snapshot has aged out falls back to the current one: the rest of that scroll
+    // may repeat or miss a few items, which is the old behaviour, but only after 8 rebuilds.
+    const snap = (cursor && snapshots.get(cursor.snapshot)) || currentSnapshot();
+    const { maxScore } = snap;
 
     const conds: string[] = [];
     const params: unknown[] = [];
@@ -172,54 +229,62 @@ discoverRouter.get(
     // One deterministic sort key blends taste score with a seeded per-item random value, so the
     // surprise slider is just a mix ratio and cursor pagination stays stable across pages.
     const seed = query.seed % 2147483647;
-    const taste = `MIN(COALESCE(s.raw, 0) / ${maxScore}, 1.0) * (CASE WHEN m.view_count > 0 OR m.last_viewed_at IS NOT NULL THEN ${SEEN_FACTOR} ELSE 1.0 END)`;
+    // "Seen" is judged as of the snapshot too. Read live, opening a feed item in the viewer sank
+    // it below the cursor and the same scroll served it a second time. Items viewed since only
+    // ever score higher under this rule, and those were opened from pages already served.
+    const seen = `(m.last_viewed_at <= ${snap.builtAt} OR (m.last_viewed_at IS NULL AND m.view_count > 0))`;
+    const taste = `MIN(COALESCE(s.raw, 0) / ${maxScore}, 1.0) * (CASE WHEN ${seen} THEN ${SEEN_FACTOR} ELSE 1.0 END)`;
     const random = `((((m.id + ${seed}) * 2654435761) % 2147483647) / 2147483647.0)`;
     const keyExpr = `(${1 - query.surprise} * ${taste} + ${query.surprise} * ${random})`;
 
-    const countRow = sqlite
-      .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-      .get(...(params as any[])) as { c: number };
+    // Only the first page pays for the count; the client keeps the total from page one, the same
+    // as /api/media.
+    const total = cursor
+      ? null
+      : (
+          sqlite
+            .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
+            .get(...(params as any[])) as { c: number }
+        ).c;
 
     const pageConds = [...conds];
     const pageParams = [...params];
-    if (query.cursor) {
-      try {
-        const [key, id] = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
-        pageConds.push(`(${keyExpr}, m.id) < (?, ?)`);
-        pageParams.push(key, id);
-      } catch {
-        throw Object.assign(new Error('Invalid cursor'), { status: 400 });
-      }
+    if (cursor) {
+      pageConds.push(`(${keyExpr}, m.id) < (?, ?)`);
+      pageParams.push(cursor.key, cursor.id);
     }
 
-    // MAX(p.weight) is what makes the bare p.name/p.related columns resolve to the winning row
-    // (SQLite's documented min/max aggregate behaviour) — that name is the tag the card credits.
+    // Rank on narrow rows, then fetch full rows for the page only. The sort key covers every media
+    // row, and ranking with m.* and the tag_count subquery in the select list made SQLite build all
+    // of them before LIMIT threw away all but 60.
     const sql = `
-      ${withProfile},
-      scored AS (
-        SELECT mt.media_id AS media_id, SUM(p.weight) AS raw, MAX(p.weight) AS best,
-               p.name AS reason, p.related AS related
-        FROM media_tags mt JOIN profile p ON p.tag_id = mt.tag_id
-        GROUP BY mt.media_id
+      WITH page AS (
+        SELECT m.id AS id, ${keyExpr} AS sort_key,
+               CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason_tag,
+               CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS reason_related
+        -- Every row is ranked, so a plain table scan is the right plan. Left to itself, SQLite
+        -- walked a phash band index instead and fetched each row out of rowid order: 63ms
+        -- against 22ms on a 34k-item library.
+        FROM media m NOT INDEXED
+        LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
+        ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
+        ORDER BY sort_key DESC, m.id DESC
+        LIMIT ?
       )
-      SELECT m.*, ${keyExpr} AS sort_key, l.name AS library_name,
-             CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason_tag,
-             CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS reason_related,
+      SELECT m.*, page.sort_key, page.reason_tag, page.reason_related, l.name AS library_name,
              (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-      FROM media m
+      FROM page
+      JOIN media m ON m.id = page.id
       LEFT JOIN libraries l ON l.id = m.library_id
-      LEFT JOIN scored s ON s.media_id = m.id
-      ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
-      ORDER BY sort_key DESC, m.id DESC
-      LIMIT ?`;
-    const items = sqlite.query(sql).all(...profileParams, ...(pageParams as any[]), query.limit) as any[];
+      ORDER BY page.sort_key DESC, m.id DESC`;
+    const items = sqlite.query(sql).all(...(pageParams as any[]), query.limit) as any[];
 
     let nextCursor: string | null = null;
     if (items.length === query.limit) {
       const last = items[items.length - 1];
-      nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id])).toString('base64url');
+      nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id, snap.id])).toString('base64url');
     }
-    const body: MediaListResponse = { items: items.map(rowToMedia), nextCursor, total: countRow.c };
+    const body: MediaListResponse = { items: items.map(rowToMedia), nextCursor, total };
     res.json(body);
   }),
 );

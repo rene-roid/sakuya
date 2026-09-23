@@ -2,12 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { eq, and, gt } from 'drizzle-orm';
+import { eq, and, gt, inArray } from 'drizzle-orm';
 import ffmpegStatic from 'ffmpeg-static';
 import { db, schema } from '../db';
 import { downloaderConcurrency } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
+import { removeMediaRows } from './mediaRemoval';
+import { chunkIds } from '../lib/mediaByIds';
 import { parseShellArgs } from '../lib/shellArgs';
 import type { DownloadBatchWithItems, DownloadBatch, DownloadItem, DownloadLogLine } from '@sakuya/shared';
 
@@ -114,7 +116,15 @@ function maybeCompleteBatch(batchId: number) {
   const items = db.select().from(schema.downloadItems).where(eq(schema.downloadItems.batchId, batchId)).all();
   if (items.length === 0) return;
   const allTerminal = items.every((i) => i.status === 'done' || i.status === 'error' || i.status === 'skipped');
-  if (allTerminal) enqueueScanJob(batch.libraryId);
+  if (!allTerminal) return;
+  // This runs from a child process's 'close' handler, where a throw is an uncaught exception that
+  // takes the whole server down — and enqueueScanJob throws if the library was deleted while the
+  // batch was still downloading into it.
+  try {
+    enqueueScanJob(batch.libraryId);
+  } catch (err) {
+    console.error(`[downloader] post-batch scan for library ${batch.libraryId} failed:`, err);
+  }
 }
 
 function removeEmptyDirsUpTo(startDir: string, stopAt: string) {
@@ -368,13 +378,16 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
       fs.rmSync(f.path, { force: true });
       parentDirs.add(path.dirname(f.path));
     }
-    if (batch) {
-      for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
-      // The batch-completion scan already indexed these into `media` with thumbnails;
-      // a rescan prunes the now-missing files and their thumbnails the same way any
-      // other externally-deleted file would be cleaned up.
-      if (files.length > 0) enqueueScanJob(batch.libraryId);
+    if (batch) for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
+    // The batch-completion scan already indexed these into `media`. They're dropped here by path
+    // rather than by a rescan: a rescan that finds the folder empty keeps its rows, taking it for
+    // an unmounted drive (see pruneMissing), and deleting a whole batch empties the folder.
+    const ids: number[] = [];
+    for (const part of chunkIds(files.map((f) => f.path))) {
+      const rows = db.select({ id: schema.media.id }).from(schema.media).where(inArray(schema.media.path, part)).all();
+      for (const row of rows) ids.push(row.id);
     }
+    removeMediaRows(ids);
   }
 
   db.delete(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).run();

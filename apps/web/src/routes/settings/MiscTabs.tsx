@@ -113,7 +113,7 @@ export function SystemTab() {
     mutationFn: api.cleanupData,
     onSuccess: (res) => {
       showToast(
-        `Removed ${res.removedThumbs} orphan thumbnails · reset ${res.resetTagCounts} tag counts · ` +
+        `Removed ${res.removedThumbs} orphan thumbnails and ${res.removedTranscodes} transcodes · reset ${res.resetTagCounts} tag counts · ` +
           `pruned ${res.prunedJobs} old jobs and ${res.prunedDownloadLogs} log lines`,
       );
       queryClient.invalidateQueries({ queryKey: ['system'] });

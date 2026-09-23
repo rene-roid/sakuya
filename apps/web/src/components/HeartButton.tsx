@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Heart } from 'lucide-react';
 import { api } from '../lib/api';
+import { isLikedMediaList, patchCachedMedia } from '../lib/mediaCache';
 
 export function HeartButton({
   mediaId,
@@ -16,9 +17,11 @@ export function HeartButton({
   const queryClient = useQueryClient();
   const mutation = useMutation({
     mutationFn: (next: boolean) => api.likeMedia(mediaId, next),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['media'] });
-      queryClient.invalidateQueries({ queryKey: ['media-detail', mediaId] });
+    onSuccess: (detail) => {
+      queryClient.setQueryData(['media-detail', mediaId], detail);
+      patchCachedMedia(queryClient, mediaId, { liked: detail.liked, likedAt: detail.likedAt });
+      queryClient.invalidateQueries({ predicate: (query) => isLikedMediaList(query.queryKey) });
+      // Only the liked count and cover need the server; the rows were patched above.
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
