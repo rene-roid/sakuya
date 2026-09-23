@@ -13,6 +13,11 @@ const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
 /** Flipping past an image with the arrow keys isn't interest — anything shorter is discarded. */
 const MIN_DWELL_SECONDS = 1;
+/**
+ * Watched seconds are batched to this many before a progress write. At 1s, playing a video sent
+ * a PATCH (and a database write) every second for as long as it played.
+ */
+const WATCHED_FLUSH_SECONDS = 10;
 
 interface MediaViewerProps {
   items: Media[];
@@ -145,7 +150,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       if (completedRef.current) return;
       const progress = Math.min(video.currentTime / video.duration, 1);
       const shouldSend =
-        force || progress >= 0.98 || Math.abs(progress - lastSavedProgress.current) >= 0.03 || pendingWatchedSeconds.current >= 1;
+        force || progress >= 0.98 || Math.abs(progress - lastSavedProgress.current) >= 0.03 || pendingWatchedSeconds.current >= WATCHED_FLUSH_SECONDS;
       if (!shouldSend) return;
       if (progress >= 0.98) completedRef.current = true;
       lastSavedProgress.current = progress;
@@ -215,7 +220,20 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       video.setAttribute('src', src);
       video.load();
     }
+    const mediaId = item.id;
     return () => {
+      // Send watch time the batching in saveProgress hasn't flushed yet; stepping to the next item
+      // would otherwise drop up to WATCHED_FLUSH_SECONDS of it. This can't go through
+      // saveProgress: by cleanup time videoRef already points at the next item's element.
+      // Gated on pending seconds so StrictMode's mount-time cleanup (nothing played) can't write
+      // progress 0 over the resume point.
+      const delta = video.currentTime - lastPlayedTime.current;
+      if (delta > 0 && delta < 2) pendingWatchedSeconds.current += delta;
+      if (!completedRef.current && pendingWatchedSeconds.current > 0 && video.duration) {
+        const progress = Math.min(video.currentTime / video.duration, 1);
+        api.saveProgress(mediaId, progress, { watchedDelta: pendingWatchedSeconds.current }).catch(() => {});
+        pendingWatchedSeconds.current = 0;
+      }
       video.pause();
       video.removeAttribute('src');
       video.load();

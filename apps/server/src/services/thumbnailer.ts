@@ -42,8 +42,7 @@ async function ffmpegFrameToWebp(sourcePath: string, dest: string, seekSeconds: 
   });
 }
 
-export async function generateImageThumbnail(sourcePath: string, mediaId: number): Promise<string> {
-  const dest = thumbPathFor(mediaId);
+async function generateImageThumbnail(sourcePath: string, dest: string): Promise<void> {
   try {
     await sharp(sourcePath, { animated: false })
       .rotate()
@@ -54,29 +53,48 @@ export async function generateImageThumbnail(sourcePath: string, mediaId: number
     // sharp/libvips can't decode this format — fall back to ffmpeg, which reads far more formats.
     await ffmpegFrameToWebp(sourcePath, dest, 0);
   }
-  return dest;
 }
 
-export async function generateVideoThumbnail(
-  sourcePath: string,
-  mediaId: number,
-  durationSeconds: number | null,
-): Promise<string> {
-  const dest = thumbPathFor(mediaId);
+async function generateVideoThumbnail(sourcePath: string, dest: string, durationSeconds: number | null): Promise<void> {
   const seek = durationSeconds && durationSeconds > 1 ? durationSeconds * 0.3 : 0;
   await ffmpegFrameToWebp(sourcePath, dest, seek);
-  return dest;
 }
 
-export async function generateThumbnail(
+const inFlight = new Map<number, Promise<string>>();
+
+/**
+ * Concurrent calls for one media id share a single generation. A grid and a dashboard row asking
+ * for the same missing thumbnail used to start two encoders writing the same file, and whichever
+ * request finished first could send the other's half-written output.
+ *
+ * Output goes to a temp name and is renamed into place, so a request serving the thumbnail
+ * mid-regeneration sends the old file or the new one, never a truncated mix.
+ */
+export function generateThumbnail(
   sourcePath: string,
   mediaId: number,
   type: 'image' | 'video',
   durationSeconds: number | null,
 ): Promise<string> {
-  return type === 'video'
-    ? generateVideoThumbnail(sourcePath, mediaId, durationSeconds)
-    : generateImageThumbnail(sourcePath, mediaId);
+  const pending = inFlight.get(mediaId);
+  if (pending) return pending;
+  const dest = thumbPathFor(mediaId);
+  const tmp = `${dest}.${process.pid}.part`;
+  const work = (async () => {
+    try {
+      if (type === 'video') await generateVideoThumbnail(sourcePath, tmp, durationSeconds);
+      else await generateImageThumbnail(sourcePath, tmp);
+      await fs.promises.rename(tmp, dest);
+      return dest;
+    } catch (err) {
+      await fs.promises.rm(tmp, { force: true });
+      throw err;
+    } finally {
+      inFlight.delete(mediaId);
+    }
+  })();
+  inFlight.set(mediaId, work);
+  return work;
 }
 
 /** Shared worker for both "regenerate everything" and "regenerate this selection". */

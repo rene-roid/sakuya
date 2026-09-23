@@ -9,6 +9,7 @@ import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { phashColumns } from '../lib/phashBands';
+import { chunkIds } from '../lib/mediaByIds';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
@@ -194,12 +195,15 @@ export function upsertTag(name: string, category: TagCategory): number {
 
 export function refreshUsageCounts(tagIds: number[]): void {
   if (!tagIds.length) return;
-  const placeholders = tagIds.map(() => '?').join(',');
-  sqlite
-    .query(
-      `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
-    )
-    .run(...tagIds);
+  // Chunked: a library delete can touch most of the tag vocabulary at once.
+  for (const part of chunkIds(tagIds)) {
+    const placeholders = part.map(() => '?').join(',');
+    sqlite
+      .query(
+        `UPDATE tags SET usage_count = (SELECT COUNT(*) FROM media_tags WHERE media_tags.tag_id = tags.id) WHERE id IN (${placeholders})`,
+      )
+      .run(...part);
+  }
   // Every path that changes which tags are on which media lands here, including the AI tag job,
   // so this is the one place the Discover taste profile needs invalidating for tag writes.
   bumpTasteVersion();
@@ -225,27 +229,32 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
     }
   }
 
-  const oldAi = db
-    .select({ tagId: schema.mediaTags.tagId })
-    .from(schema.mediaTags)
-    .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
-    .all()
-    .map((r) => r.tagId);
-  db.delete(schema.mediaTags)
-    .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
-    .run();
-
-  const touched = new Set<number>(oldAi);
-  for (const tag of predicted) {
-    const tagId = upsertTag(tag.name, tag.category);
-    touched.add(tagId);
-    db.insert(schema.mediaTags)
-      .values({ mediaId, tagId, confidence: tag.confidence, source: 'ai' })
-      .onConflictDoNothing()
+  // One transaction for the swap: the old AI tags and the new ones commit together, so a reader
+  // never sees the item momentarily untagged, and the ~30 inserts (each rewriting the item's
+  // search-index row via trigger) share one commit instead of paying one each.
+  const touched = new Set<number>();
+  sqlite.transaction(() => {
+    const oldAi = db
+      .select({ tagId: schema.mediaTags.tagId })
+      .from(schema.mediaTags)
+      .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
+      .all();
+    for (const r of oldAi) touched.add(r.tagId);
+    db.delete(schema.mediaTags)
+      .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
       .run();
-  }
-  db.update(schema.media).set({ taggedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
-  refreshUsageCounts([...touched]);
+
+    for (const tag of predicted) {
+      const tagId = upsertTag(tag.name, tag.category);
+      touched.add(tagId);
+      db.insert(schema.mediaTags)
+        .values({ mediaId, tagId, confidence: tag.confidence, source: 'ai' })
+        .onConflictDoNothing()
+        .run();
+    }
+    db.update(schema.media).set({ taggedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
+    refreshUsageCounts([...touched]);
+  })();
   return predicted.length;
 }
 

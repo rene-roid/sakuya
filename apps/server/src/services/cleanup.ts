@@ -1,7 +1,8 @@
 import fs from 'node:fs';
 import { sqlite, db, schema } from '../db';
-import { THUMBS_DIR } from '../lib/config';
+import { THUMBS_DIR, TRANSCODES_DIR } from '../lib/config';
 import { thumbPathFor } from './thumbnailer';
+import { transcodePathFor } from './transcoder';
 import { enqueueJob, type JobHandle } from './jobQueue';
 
 /**
@@ -17,6 +18,7 @@ const RETENTION_MS = RETENTION_DAYS * 86_400_000;
 
 export interface CleanupResult {
   removedThumbs: number;
+  removedTranscodes: number;
   resetTagCounts: number;
   prunedJobs: number;
   prunedDownloadLogs: number;
@@ -38,6 +40,20 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
       if (liveIds.has(mediaId)) continue;
       fs.rmSync(thumbPathFor(mediaId), { force: true });
       removedThumbs++;
+    }
+  }
+
+  // Transcodes are the same one-file-per-media-id layout, and far larger; an orphan here is often
+  // hundreds of megabytes.
+  let removedTranscodes = 0;
+  if (fs.existsSync(TRANSCODES_DIR)) {
+    for (const entry of fs.readdirSync(TRANSCODES_DIR)) {
+      const match = entry.match(/^(\d+)\.mp4$/);
+      if (!match) continue;
+      const mediaId = Number(match[1]);
+      if (liveIds.has(mediaId)) continue;
+      fs.rmSync(transcodePathFor(mediaId), { force: true });
+      removedTranscodes++;
     }
   }
 
@@ -63,7 +79,7 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
     )
     .run(cutoff).changes;
 
-  return { removedThumbs, resetTagCounts, prunedJobs, prunedDownloadLogs };
+  return { removedThumbs, removedTranscodes, resetTagCounts, prunedJobs, prunedDownloadLogs };
 }
 
 export function enqueueCleanupJob() {
@@ -71,10 +87,10 @@ export function enqueueCleanupJob() {
     'cleanup',
     'Cleanup orphan data',
     async (job: JobHandle) => {
-      job.update({ log: 'Cleaning up orphan thumbnails, tag counts and old history…' });
+      job.update({ log: 'Cleaning up orphan thumbnails, transcodes, tag counts and old history…' });
       const result = performCleanup();
       return (
-        `Removed ${result.removedThumbs} orphan thumbnails, ` +
+        `Removed ${result.removedThumbs} orphan thumbnails and ${result.removedTranscodes} orphan transcodes, ` +
         `recomputed usage count for ${result.resetTagCounts} tags, ` +
         `pruned ${result.prunedJobs} finished jobs and ${result.prunedDownloadLogs} download log lines ` +
         `older than ${RETENTION_DAYS} days.`

@@ -4,11 +4,14 @@ import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 import ffprobeStatic from 'ffprobe-static';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { db, schema } from '../db';
 import { IMAGE_EXTS, VIDEO_EXTS } from '../lib/config';
 import { gifsAsVideos } from '../lib/settings';
-import { generateThumbnail, thumbPathFor } from './thumbnailer';
+import { generateThumbnail } from './thumbnailer';
+import { transcodePathFor } from './transcoder';
+import { removeMediaRows } from './mediaRemoval';
+import { isUnder } from '../lib/paths';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { dispatchAfterScan } from './jobScheduler';
 import { tryConvertUgoiraZip } from './ugoira';
@@ -163,7 +166,14 @@ export async function indexFile(
 
   let mediaId: number;
   if (existing) {
-    db.update(schema.media).set(values).where(eq(schema.media.id, existing.id)).run();
+    // The file's content changed under the same path: its AI tags and any transcode describe the
+    // old content, so clear the markers that let the after-scan tag/transcode jobs skip it.
+    const contentChanged = existing.contentHash !== contentHash;
+    db.update(schema.media)
+      .set(contentChanged ? { ...values, taggedAt: null, transcodedAt: null } : values)
+      .where(eq(schema.media.id, existing.id))
+      .run();
+    if (contentChanged) await fs.rm(transcodePathFor(existing.id), { force: true });
     mediaId = existing.id;
   } else {
     const row = db.insert(schema.media).values({ ...values, createdAt: now }).returning().get();
@@ -188,29 +198,38 @@ export async function indexFile(
   return mediaId;
 }
 
-async function pruneMissing(libraryId: number, rootPath: string): Promise<number> {
+/**
+ * Drop rows for files under `rootPath` that no longer exist.
+ *
+ * `rootHasFiles` is whether this scan's walk found any media under the root. When it found none
+ * and every indexed file there is missing too, the likelier story is an unmounted drive, a
+ * missing Docker volume or a server started with different paths, not a user who deleted a whole
+ * folder. Pruning then would erase every item's tags, likes and watch history with nothing to
+ * restore them from, so those rows are withheld and the folder is flagged instead. A folder that
+ * really was emptied can be detached from its library, which removes its rows.
+ */
+async function pruneMissing(
+  libraryId: number,
+  rootPath: string,
+  rootHasFiles: boolean,
+): Promise<{ removed: number; withheld: number }> {
   const rows = db
     .select({ id: schema.media.id, path: schema.media.path })
     .from(schema.media)
     .where(and(eq(schema.media.libraryId, libraryId), eq(schema.media.source, 'folder')))
-    .all();
+    .all()
+    .filter((row) => isUnder(row.path, rootPath));
   const gone: number[] = [];
   for (const row of rows) {
-    if (!row.path.startsWith(rootPath + path.sep)) continue;
     try {
       await fs.access(row.path);
     } catch {
       gone.push(row.id);
     }
   }
-  if (gone.length) {
-    db.delete(schema.media).where(inArray(schema.media.id, gone)).run();
-    db.delete(schema.mediaTags).where(inArray(schema.mediaTags.mediaId, gone)).run();
-    for (const id of gone) {
-      fs.unlink(thumbPathFor(id)).catch(() => {});
-    }
-  }
-  return gone.length;
+  if (!rootHasFiles && gone.length > 0 && gone.length === rows.length) return { removed: 0, withheld: gone.length };
+  removeMediaRows(gone);
+  return { removed: gone.length, withheld: 0 };
 }
 
 /**
@@ -285,7 +304,12 @@ export function enqueueScanJob(libraryId: number) {
       }
 
       const files: string[] = [];
-      for (const folder of libFolders) await walk(folder.path, files);
+      const rootHasFiles = new Map<number, boolean>();
+      for (const folder of libFolders) {
+        const before = files.length;
+        await walk(folder.path, files);
+        rootHasFiles.set(folder.id, files.length > before);
+      }
       job.update({ total: files.length, log: `Found ${files.length} files, indexing…` });
 
       for (let i = 0; i < files.length; i++) {
@@ -302,17 +326,31 @@ export function enqueueScanJob(libraryId: number) {
         }
       }
 
+      const unreachable: string[] = [];
+      let withheld = 0;
       for (const folder of libFolders) {
-        pruned += await pruneMissing(libraryId, folder.path);
+        const result = await pruneMissing(libraryId, folder.path, rootHasFiles.get(folder.id) ?? false);
+        pruned += result.removed;
+        withheld += result.withheld;
+        if (result.withheld) unreachable.push(folder.path);
         db.update(schema.folders)
-          .set({ status: errors > 0 ? 'error' : 'indexed' })
+          .set({ status: errors > 0 || result.withheld ? 'error' : 'indexed' })
           .where(eq(schema.folders.id, folder.id))
           .run();
       }
 
       dispatchAfterScan(libraryId);
 
-      return `Completed. ${indexed} indexed, ${skipped} unchanged, ${pruned} removed${errors ? `, ${errors} errors` : ''}.`;
+      const summary = `${indexed} indexed, ${skipped} unchanged, ${pruned} removed${errors ? `, ${errors} errors` : ''}`;
+      if (unreachable.length) {
+        // Thrown so the job lands as an error and the UI toasts it, rather than a quiet "done".
+        throw new Error(
+          `${summary}. Kept ${withheld} items: every file under ${unreachable.join(', ')} is missing, ` +
+            `which looks like an unmounted drive or wrong path rather than deleted files. ` +
+            `If they really are gone, remove the folder from the library.`,
+        );
+      }
+      return `Completed. ${summary}.`;
     },
     libraryId,
   );
