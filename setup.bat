@@ -54,5 +54,8 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo Setup complete. Run run.bat to start the dev server.
+bun apps\server\src\launch.ts --init
+
+echo.
+echo Setup complete. Edit sakuya.config.json to configure Sakuya, then run run.bat.
 pause

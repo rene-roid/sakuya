@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import { useTestConfig } from './testConfig';
 
 // Throwaway data dir before anything opens the real database. No server is started: performCleanup
 // is called directly so the retention cutoff can be driven from the test.
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-cleanup-'));
+useTestConfig('cleanup');
 
 const { db, sqlite, schema } = await import('./db');
 const { THUMBS_DIR } = await import('./lib/config');

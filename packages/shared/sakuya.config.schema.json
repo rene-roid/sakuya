@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Sakuya configuration",
+  "description": "sakuya.config.json, at the repository root. The only place Sakuya is configured; every key is optional. Restart after editing.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "Port the API server listens on. The web dev server proxies /api here. Ignored in Docker, which pins 3777.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 3777
+        },
+        "host": {
+          "description": "Interface to bind, for both the API and the web dev server. 127.0.0.1 = this machine only. 0.0.0.0 = reachable from your network; turn auth on first, since the server exposes your whole library and can open a file manager on this machine. Ignored in Docker, which must bind 0.0.0.0.",
+          "type": "string",
+          "default": "127.0.0.1"
+        },
+        "dataDir": {
+          "description": "Where the database, thumbnails, uploads and models live. null = autodetect: ~/.sakuya if that folder exists, else apps/server/data. A relative path is relative to this file. Setting it disables the move button in Settings > System. Ignored in Docker, which mounts the data dir at /data.",
+          "type": ["string", "null"],
+          "default": null
+        },
+        "https": {
+          "description": "Mark the login cookie Secure. Only turn on when serving over HTTPS: browsers silently drop Secure cookies over plain HTTP, which would lock you out.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "web": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "description": "Port of the web interface (the Vite dev server). In Docker the web interface is served by nginx; change its published port in docker-compose.yml.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "default": 5173
+        }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "Require a password to use Sakuya.",
+          "type": "boolean",
+          "default": false
+        },
+        "secret": {
+          "description": "The password. Required when auth is enabled. Changing it signs every session out.",
+          "type": "string",
+          "default": ""
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "description": "CPU budget in cores; fractions allowed (1.5). Sizes background job concurrency and the ffmpeg / AI tagger / image-processing thread pools, and is enforced as a hard cap on Linux (systemd) and Windows (job object). In Docker, set `cpus` in docker-compose.yml instead; the app detects it. null = no limit.",
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0,
+          "default": null
+        },
+        "memory": {
+          "description": "Memory ceiling: \"2g\", \"512m\", \"1.5g\", or a byte count. Enforced as a hard cap on Linux (systemd) and Windows (job object): past it, allocations fail rather than the machine swapping. Not enforceable on macOS. In Docker, set `mem_limit` in docker-compose.yml instead. null = no limit.",
+          "type": ["string", "integer", "null"],
+          "pattern": "^\\s*\\d+(\\.\\d+)?\\s*([kKmMgGtT][bB]?|[bB])?\\s*$",
+          "default": null
+        }
+      }
+    }
+  }
+}

@@ -7,6 +7,8 @@ apps/server/data
 tray
 *.log
 .env
+# Mounted at run time by docker-compose.yml, never baked into the image.
+sakuya.config.json
 run.sh
 run.bat
 run-hoyovault-upload.sh

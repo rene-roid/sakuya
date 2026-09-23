@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { useTestConfig } from './testConfig';
 
 // Importing lib/config has a side effect: it mkdirs the whole data tree. Point it at a temp dir
 // so running the suite doesn't create ~/.sakuya on a machine that has never run the app.
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-version-'));
+useTestConfig('version');
 
 /**
  * The app version lives in three places that used to drift apart: the root package.json, the

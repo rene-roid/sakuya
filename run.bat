@@ -23,9 +23,9 @@ if not exist "node_modules\" (
     )
 )
 
+rem Ports, bind address, login and resource limits all come from sakuya.config.json (created with
+rem the defaults on first run). The server and web URLs are printed below once each is up.
 echo Starting development server...
-echo   Backend  : http://localhost:3777
-echo   Frontend : http://localhost:5173
 echo.
 
 bun dev

@@ -1,19 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { useTestConfig } from './testConfig';
 
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-auth-'));
-process.env.AUTH_ENABLED = 'true';
-process.env.AUTH_SECRET = 'correct horse battery staple';
-process.env.PORT = '38778';
+const SECRET = 'correct horse battery staple';
+useTestConfig('auth', { port: 38778, auth: { enabled: true, secret: SECRET } });
 const BASE = 'http://localhost:38778';
 
 const { issueToken, verifyToken } = await import('./lib/auth');
 await import('./index');
 
-const SECRET = process.env.AUTH_SECRET;
 const DAY = 86_400_000;
 
 describe('session tokens', () => {

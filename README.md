@@ -82,10 +82,15 @@ Open `http://localhost:5173`. No configuration required to start — everything 
 `apps/server/data/` by default, or in `~/.sakuya/` if that folder exists (`./setup.sh` offers to create
 it, and Settings > System can move an existing library there).
 
+To change ports, open Sakuya to your network, turn on the login or cap CPU and memory, edit
+**`sakuya.config.json`** in the repository root — one file for the server, the web app and Docker,
+created with the defaults on first run. [`sakuya.config.example.json`](sakuya.config.example.json)
+lists every setting.
+
 Prefer scripts? `./setup.sh` installs Bun for you if it's missing, `./run.sh` starts dev, and
 `./update.sh` pulls + reinstalls. `.bat` equivalents exist for Windows.
 
-See **[docs/SETUP.md](docs/SETUP.md)** for the full workspace layout, environment variables,
+See **[docs/SETUP.md](docs/SETUP.md)** for the full workspace layout, every configuration setting,
 and which folders you should never touch by hand (looking at you, `apps/server/data/`).
 
 ## API

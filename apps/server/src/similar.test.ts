@@ -1,12 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { useTestConfig } from './testConfig';
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-similar-'));
-process.env.SAKUYA_DATA_DIR = dataDir;
-process.env.PORT = '38776';
+const dataDir = useTestConfig('similar', { port: 38776 });
 const BASE = 'http://localhost:38776';
 
 // Seed the database *before* importing ./db, so these rows look like ones hashed by a build that

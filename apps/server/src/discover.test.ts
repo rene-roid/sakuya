@@ -1,12 +1,9 @@
 import { expect, test } from 'bun:test';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import { useTestConfig } from './testConfig';
 
 // Point the server at a throwaway data dir before anything opens the real database.
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-discover-'));
-process.env.PORT = '38772';
+useTestConfig('discover', { port: 38772 });
 const BASE = 'http://localhost:38772';
 
 const { db, schema } = await import('./db');

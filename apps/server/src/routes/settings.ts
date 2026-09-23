@@ -6,7 +6,7 @@ import { eq, isNotNull, isNull } from 'drizzle-orm';
 import { sqlite, db, schema } from '../db';
 import { wrap } from '../lib/http';
 import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
-import { THUMBS_DIR, DB_PATH, APP_VERSION, DATA_DIR, HOME_DATA_DIR, LOCAL_DATA_DIR } from '../lib/config';
+import { THUMBS_DIR, DB_PATH, APP_VERSION, DATA_DIR, DATA_DIR_PINNED, HOME_DATA_DIR, LOCAL_DATA_DIR } from '../lib/config';
 import { migrateDataDir } from '../lib/storage';
 import { enqueueBulkThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueBulkTranscodeCheck } from '../services/transcoder';
@@ -92,7 +92,7 @@ settingsRouter.get(
       home: HOME_DATA_DIR,
       local: LOCAL_DATA_DIR,
       usingHome: DATA_DIR === HOME_DATA_DIR,
-      locked: Boolean(process.env.SAKUYA_DATA_DIR),
+      locked: DATA_DIR_PINNED,
     };
     res.json(info);
   }),
@@ -102,8 +102,8 @@ settingsRouter.post(
   '/api/system/storage/migrate',
   wrap(async (req, res) => {
     const { target } = z.object({ target: z.enum(['home', 'local']) }).parse(req.body);
-    if (process.env.SAKUYA_DATA_DIR) {
-      return res.status(400).json({ error: 'SAKUYA_DATA_DIR is set — change that env var instead (Docker sets it).' });
+    if (DATA_DIR_PINNED) {
+      return res.status(400).json({ error: 'server.dataDir is set in sakuya.config.json — change it there instead.' });
     }
     const to = target === 'home' ? HOME_DATA_DIR : LOCAL_DATA_DIR;
     if (to === DATA_DIR) return res.status(400).json({ error: 'Data is already stored there.' });

@@ -1,25 +1,50 @@
+# Settings live in sakuya.config.json next to this file, same as outside Docker — create it first:
+# `cp sakuya.config.example.json sakuya.config.json`, or run ./setup.sh.
+#
+# Docker is the one place settings can be overridden: any SAKUYA_* variable under `environment:`
+# wins over the file (SAKUYA_AUTH_ENABLED, SAKUYA_AUTH_SECRET, SAKUYA_HTTPS, ...). The image already
+# pins host, port and data dir, which are container plumbing.
+#
+# Machine-specific additions — your media folders, other ports, resource limits — go in
+# docker-compose.override.yml, which compose merges in automatically and git ignores. For example:
+#
+#   services:
+#     server:
+#       cpus: "2.0"
+#       mem_limit: "3g"
+#       volumes:
+#         - /path/to/your/Pictures:/path/to/your/Pictures
+#     web:
+#       ports: !override
+#         - "3000:80"
+#
+# Library folders must be mounted at the SAME absolute path the database references (visible via
+# GET /api/libraries), or scanning and original file serving can't find them.
 services:
   server:
     build:
       context: .
       target: server
     restart: unless-stopped
-    environment:
-      PORT: "3777"
-      SAKUYA_DATA_DIR: /data
+    # The hard resource ceiling in Docker, instead of limits.* in sakuya.config.json: a container's
+    # limits can only be set from outside it. The app detects the CPU quota and sizes its job
+    # concurrency and thread pools to it, so it isn't restated anywhere else. Uncomment here, or set
+    # them in docker-compose.override.yml.
+    # cpus: "2.0"
+    # mem_limit: "3g"
     volumes:
-      # Reuses the existing apps/server/data folder, so the DB, downloaded tagger
-      # model, thumbnails, and uploads already on disk carry straight over.
+      # Long syntax so a missing file is an error. Short syntax would silently create a *directory*
+      # named sakuya.config.json on the host.
+      - type: bind
+        source: ./sakuya.config.json
+        target: /app/sakuya.config.json
+        read_only: true
+        bind:
+          create_host_path: false
+      # Data (DB, downloaded tagger model, thumbnails, uploads).
       - ./apps/server/data:/data
-      # Library folders must be mounted at the SAME absolute path the DB already
-      # references (visible via GET /api/libraries), otherwise scanning/original
-      # file serving can't find them. Edit these to match the absolute paths
-      # your libraries were added under:
-      - /path/to/your/Pictures:/path/to/your/Pictures
-      - /path/to/your/Videos:/path/to/your/Videos
     ports:
       - "3777:3777"
-
   web:
     build:
       context: .
@@ -27,9 +52,9 @@ services:
     restart: unless-stopped
     depends_on:
       - server
+    volumes:
+      # nginx serves thumbnails straight off disk (see docker/nginx.conf),
+      # so it needs the same data dir mounted as the server container.
+      - ./apps/server/data:/data:ro
     ports:
       - "8080:80"
-    volumes:
-      # Read-only so nginx serves thumbnails (/data/thumbnails) straight from
-      # disk, bypassing the proxy for grid loading.
-      - ./apps/server/data:/data:ro

@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import { useTestConfig } from './testConfig';
 
 // Point the server at a throwaway data dir before anything opens the real database.
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-batch-'));
-process.env.PORT = '38774';
+useTestConfig('batch', { port: 38774 });
 const BASE = 'http://localhost:38774';
 
 const { db, sqlite, schema } = await import('./db');

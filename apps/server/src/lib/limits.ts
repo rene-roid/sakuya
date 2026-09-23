@@ -1,26 +1,24 @@
 /**
- * Resource limits for running outside Docker.
+ * In-app resource limits: how many jobs run at once, and how many threads each native library
+ * underneath them may spawn.
  *
- * `docker-compose.yml` caps this app with `cpus` and `mem_limit`, which are kernel cgroup limits:
- * the kernel itself refuses to schedule past the quota and OOM-kills past the memory bound. A
- * process cannot impose that on itself, so what this module does instead is cap the *parallelism
- * that drives* the consumption — how many jobs run at once, and how many threads each of the
- * native libraries underneath them is allowed to spawn.
+ * These are the *soft* half. The hard ceiling — the kernel refusing CPU time past a quota and
+ * allocations past a memory bound — is applied from outside the process: by the launcher
+ * (src/launch.ts, systemd scope on Linux, job object on Windows) or by Docker's cpus / mem_limit.
+ * A ceiling alone isn't enough, though: libvips, libx264 and onnxruntime size their thread pools
+ * from the core count they can see, and inside a quota they'd still spawn one per *host* core and
+ * then fight over the share they actually get. So the budget drives both.
  *
- * For CPU that lands very close to `cpus: "2.0"`. For memory it is an influence rather than a
- * ceiling: peak RSS is roughly concurrency x per-task peak, and most of it lives outside the JS
- * heap anyway (libvips buffers, onnxruntime arenas, ffmpeg children), which is exactly why
- * SAKUYA_MAX_MEMORY is *not* read here. It is consumed by run.sh, which can hand it to systemd as
- * a real MemoryMax. Enforcing it from inside the process would be theatre.
- *
- * Unset, every value below is what it was when these numbers were hardcoded across the services —
- * upgrading without a .env changes nothing. Note that at SAKUYA_MAX_CPUS=2 the derivations
- * reproduce those old constants exactly; see limits.test.ts.
+ * With no budget, every value is what it was when these numbers were hardcoded across the services.
+ * At 2 CPUs the derivation reproduces those constants exactly; see limits.test.ts.
  */
+import fs from 'node:fs';
 import os from 'node:os';
+import path from 'node:path';
+import { formatBytes } from '@sakuya/shared/config';
 
 export interface Limits {
-  /** Effective CPU budget, or null when unset (no derivation happens). */
+  /** Effective CPU budget, or null when there is none (no derivation happens). */
   maxCpus: number | null;
   /** How many background jobs (scan/tag/thumbnail/transcode) may run at once. */
   jobConcurrency: number;
@@ -30,7 +28,7 @@ export interface Limits {
   onnxIntraOpThreads: number;
   /** onnxruntime threads across independent operators. */
   onnxInterOpThreads: number;
-  /** libvips worker pool for sharp, or null for its default (one thread per core). */
+  /** libvips worker pool for sharp, or null for its default. */
   sharpConcurrency: number | null;
 }
 
@@ -44,115 +42,121 @@ const UNCONFIGURED: Limits = {
   sharpConcurrency: null,
 };
 
-const MEMORY_UNITS: Record<string, number> = {
-  b: 1,
-  k: 1024,
-  kb: 1024,
-  m: 1024 ** 2,
-  mb: 1024 ** 2,
-  g: 1024 ** 3,
-  gb: 1024 ** 3,
-  t: 1024 ** 4,
-  tb: 1024 ** 4,
-};
-
-/**
- * Accepts what Docker accepts — "2g", "512m", "1.5G" — plus a bare byte count. Returns null for
- * anything unparseable rather than throwing: a typo in a limit should not stop the server from
- * booting, it should fall back to being unlimited and say so.
- */
-export function parseMemory(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const match = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(raw);
-  if (!match) return null;
-  const value = Number(match[1]);
-  const unit = match[2].toLowerCase();
-  const multiplier = unit === '' ? 1 : MEMORY_UNITS[unit];
-  if (!multiplier || !Number.isFinite(value) || value <= 0) return null;
-  return Math.floor(value * multiplier);
-}
-
-/** Positive, finite CPU count. Fractional is allowed ("1.5") to mirror Docker's `cpus`. */
-function parseCpus(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) return null;
-  return value;
-}
-
-/** A granular override: positive integer, or null to fall through to the derived value. */
-function parseCount(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) return null;
-  return value;
-}
-
-/**
- * Resolve the limits from an environment. Pure and env-injected so the derivation can be tested
- * without a server or a real .env.
- */
-export function resolveLimits(env: NodeJS.ProcessEnv = process.env): Limits {
-  const maxCpus = parseCpus(env.SAKUYA_MAX_CPUS);
-
-  // Derive from the CPU budget, or keep the old hardcoded constants when there is no budget.
-  // Every derived value floors at 1: a budget of "0.5" still has to be able to run one job.
-  const derived: Limits = maxCpus
-    ? (() => {
-        const jobConcurrency = Math.max(1, Math.floor(maxCpus));
-        return {
-          maxCpus,
-          jobConcurrency,
-          // Split the budget across the jobs that may run concurrently, so N transcodes at
-          // N threads each can't add up to more than the budget.
-          ffmpegThreads: Math.max(1, Math.floor(maxCpus / jobConcurrency)),
-          onnxIntraOpThreads: Math.max(1, Math.floor(maxCpus)),
-          onnxInterOpThreads: 1,
-          sharpConcurrency: Math.max(1, Math.floor(maxCpus)),
-        };
-      })()
-    : UNCONFIGURED;
-
-  // Granular overrides always win, so one noisy subsystem can be tuned without abandoning the dial.
+/** Derive every knob from one CPU budget. Each floors at 1: a budget of 0.5 still has to run one job. */
+export function resolveLimits(maxCpus: number | null): Limits {
+  if (!maxCpus) return UNCONFIGURED;
+  const jobConcurrency = Math.max(1, Math.floor(maxCpus));
   return {
-    ...derived,
-    jobConcurrency: parseCount(env.SAKUYA_JOB_CONCURRENCY) ?? derived.jobConcurrency,
-    ffmpegThreads: parseCount(env.SAKUYA_FFMPEG_THREADS) ?? derived.ffmpegThreads,
-    onnxIntraOpThreads: parseCount(env.SAKUYA_ONNX_THREADS) ?? derived.onnxIntraOpThreads,
-    sharpConcurrency: parseCount(env.SAKUYA_SHARP_CONCURRENCY) ?? derived.sharpConcurrency,
+    maxCpus,
+    jobConcurrency,
+    // Split across the jobs that may run concurrently, so N transcodes at N threads each can't add
+    // up to more than the budget.
+    ffmpegThreads: Math.max(1, Math.floor(maxCpus / jobConcurrency)),
+    onnxIntraOpThreads: Math.max(1, Math.floor(maxCpus)),
+    onnxInterOpThreads: 1,
+    sharpConcurrency: Math.max(1, Math.floor(maxCpus)),
   };
 }
 
-export const LIMITS: Limits = resolveLimits();
+export type CpuSource = 'config' | 'quota';
+
+export const cpuLabel = (cpus: number): string => `${cpus} CPU${cpus === 1 ? '' : 's'}`;
 
 /**
- * One line for the boot log, or null when nothing is configured and there is nothing to say.
- *
- * Worth printing because the memory half of this is easy to misread: SAKUYA_MAX_MEMORY only binds
- * if the launcher put the process in a cgroup, so the log states which of the two is actually in
- * force rather than letting the variable's presence imply a cap that isn't there.
+ * The tighter of the configured budget and the quota the process is already running under — a
+ * Docker `cpus`, a systemd CPUQuota, an affinity mask. Taking the minimum means a container's quota
+ * sizes the pools without being restated in the config file.
  */
-export function describeLimits(env: NodeJS.ProcessEnv = process.env, limits: Limits = LIMITS): string | null {
-  const configured =
-    limits.maxCpus !== null ||
-    Boolean(env.SAKUYA_JOB_CONCURRENCY || env.SAKUYA_FFMPEG_THREADS || env.SAKUYA_ONNX_THREADS || env.SAKUYA_SHARP_CONCURRENCY);
-  const memory = parseMemory(env.SAKUYA_MAX_MEMORY);
-  if (!configured && memory === null) return null;
+export function effectiveCpus(
+  configured: number | null,
+  quota: number | null,
+): { cpus: number; source: CpuSource } | null {
+  if (configured !== null && (quota === null || configured <= quota)) return { cpus: configured, source: 'config' };
+  if (quota !== null) return { cpus: quota, source: 'quota' };
+  return null;
+}
 
-  const parts = [
-    `${limits.jobConcurrency} concurrent job${limits.jobConcurrency === 1 ? '' : 's'}`,
-    `ffmpeg ${limits.ffmpegThreads ?? 'auto'}`,
-    `onnx ${limits.onnxIntraOpThreads}/${limits.onnxInterOpThreads}`,
-    `libvips ${limits.sharpConcurrency ?? 'auto'}`,
-  ];
-  const cpus = limits.maxCpus === null ? `${os.cpus().length} detected cores` : `${limits.maxCpus} CPUs`;
-  let line = `Limits: ${cpus} -> ${parts.join(', ')}`;
-  if (memory !== null) {
-    // SAKUYA_HARD_LIMIT_APPLIED is exported by run.sh once it has re-exec'd under systemd.
-    line +=
-      env.SAKUYA_HARD_LIMIT_APPLIED === 'true'
-        ? `. Memory capped at ${env.SAKUYA_MAX_MEMORY} by the launcher.`
-        : `. SAKUYA_MAX_MEMORY=${env.SAKUYA_MAX_MEMORY} is NOT enforced: start via run.sh on a systemd host, or use Docker's mem_limit.`;
+/**
+ * Bun's availableParallelism() honours the cgroup CPU quota and affinity, while os.cpus() lists
+ * every core on the host; a gap between them is a quota. (Measured: 1 inside a CPUQuota=100% scope
+ * on a 4-core host.) Windows job-object CPU rates don't show up here, but on Windows the budget
+ * comes from the config file anyway.
+ */
+export function detectCpuQuota(): number | null {
+  const available = os.availableParallelism();
+  return available < os.cpus().length ? available : null;
+}
+
+/**
+ * The tightest cgroup v2 memory.max on the path from this process to the root — whatever actually
+ * binds, whether set by Docker's mem_limit or by the launcher's systemd scope. Linux only; null
+ * when nothing is set or the host is on cgroup v1.
+ */
+export function detectCgroupMemoryLimit(): number | null {
+  if (process.platform !== 'linux') return null;
+  let entry: string | undefined;
+  try {
+    entry = fs
+      .readFileSync('/proc/self/cgroup', 'utf8')
+      .split('\n')
+      .find((line) => line.startsWith('0::'));
+  } catch {
+    return null;
   }
-  return line;
+  if (!entry) return null;
+  let tightest: number | null = null;
+  for (let rel = entry.slice(3).trim() || '/'; ; rel = path.posix.dirname(rel)) {
+    try {
+      const value = fs.readFileSync(path.posix.join('/sys/fs/cgroup', rel, 'memory.max'), 'utf8').trim();
+      const bytes = Number(value);
+      if (value !== 'max' && Number.isFinite(bytes) && (tightest === null || bytes < tightest)) tightest = bytes;
+    } catch {
+      // Not every level has a memory controller file; keep walking up.
+    }
+    if (rel === '/') break;
+  }
+  return tightest;
+}
+
+export interface LimitsReport {
+  limits: Limits;
+  cpuSource: CpuSource | null;
+  /** limits.memory from the config file. */
+  configuredMemory: number | null;
+  /** The ceiling the kernel actually enforces on this process, if one could be found. */
+  enforcedMemory: number | null;
+}
+
+/**
+ * One line for the boot log, or null when nothing is configured or detected. It reports what is
+ * *enforced*, not what was asked for, so a memory limit that isn't binding says so out loud rather
+ * than being implied by a clean boot.
+ */
+export function describeLimits({ limits, cpuSource, configuredMemory, enforcedMemory }: LimitsReport): string | null {
+  if (limits.maxCpus === null && configuredMemory === null && enforcedMemory === null) return null;
+
+  const parts: string[] = [];
+  if (limits.maxCpus !== null) {
+    const knobs = [
+      `${limits.jobConcurrency} concurrent job${limits.jobConcurrency === 1 ? '' : 's'}`,
+      `ffmpeg ${limits.ffmpegThreads ?? 'auto'}`,
+      `onnx ${limits.onnxIntraOpThreads}/${limits.onnxInterOpThreads}`,
+      `libvips ${limits.sharpConcurrency ?? 'auto'}`,
+    ];
+    const from = cpuSource === 'quota' ? 'detected quota' : 'config';
+    parts.push(`${cpuLabel(limits.maxCpus)} (${from}) -> ${knobs.join(', ')}`);
+  }
+
+  // The kernel rounds a ceiling *down* to a page, so an enforced limit never reads as larger than asked.
+  if (configuredMemory !== null && (enforcedMemory === null || enforcedMemory > configuredMemory)) {
+    const note = enforcedMemory === null ? '' : `; the actual ceiling is ${formatBytes(enforcedMemory)}`;
+    parts.push(
+      `memory ${formatBytes(configuredMemory)} is NOT enforced${note}. The launcher applies it (bun dev, ` +
+        'run.sh / run.bat, bun run start) on Linux with systemd and on Windows; in Docker, set mem_limit',
+    );
+  } else if (enforcedMemory !== null) {
+    parts.push(`memory capped at ${formatBytes(enforcedMemory)}`);
+  }
+
+  return `Limits: ${parts.join('; ')}`;
 }

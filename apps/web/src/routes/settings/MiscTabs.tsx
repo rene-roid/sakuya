@@ -139,7 +139,8 @@ export function SystemTab() {
             </div>
             {storage?.locked && (
               <div className="mt-1 text-[11.5px] text-amber-500">
-                Set by the SAKUYA_DATA_DIR environment variable (Docker) — change it there.
+                Pinned by <code>server.dataDir</code> in <code>sakuya.config.json</code> (Docker pins it to{' '}
+                <code>/data</code>) — change it there.
               </div>
             )}
             {movedTo && (

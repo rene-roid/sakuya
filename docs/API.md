@@ -325,12 +325,12 @@ Response (`SystemInfo`): `{ version, mediaCount, mediaBytes, dbBytes, thumbBytes
 
 ### `GET /api/system/storage`
 Response (`StorageInfo`): `{ current, home, local, usingHome, locked }` — where the data dir resolved
-to this boot, the two candidates, and whether `SAKUYA_DATA_DIR` pins it.
+to this boot, the two candidates, and whether `server.dataDir` in `sakuya.config.json` pins it.
 
 ### `POST /api/system/storage/migrate`
 Body: `{ target: 'home' | 'local' }`. Closes the DB, copies the whole data dir to the target, deletes
 the original, responds `{ movedTo }`, then exits the process — the new location is only picked up on
-restart. 400 if `SAKUYA_DATA_DIR` is set, the target is already in use, or a database already exists
+restart. 400 if `server.dataDir` is set, the target is already in use, or a database already exists
 there.
 
 ### `POST /api/system/clear-thumbnails`
