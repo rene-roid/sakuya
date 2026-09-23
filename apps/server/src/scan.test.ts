@@ -35,6 +35,8 @@ const mediaCount = () => db.select().from(schema.media).where(eq(schema.media.li
 fs.mkdirSync(root);
 await writeImage('a.png', '#ff0000');
 await writeImage('b.png', '#00ff00');
+// TypeScript, not an MPEG transport stream: must be skipped, not probed and logged as an error.
+fs.writeFileSync(path.join(root, 'main.ts'), 'export const x = 1;\n'.repeat(20));
 const lib = db.insert(schema.libraries).values({ name: 'scan', createdAt: Date.now() }).returning().get();
 const folder = db
   .insert(schema.folders)
@@ -45,6 +47,7 @@ const folder = db
 test('a scan indexes the folder', async () => {
   const job = await scan();
   expect(job.status).toBe('done');
+  expect(job.log).not.toContain('error');
   expect(mediaCount()).toBe(2);
 });
 

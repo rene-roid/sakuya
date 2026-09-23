@@ -88,6 +88,22 @@ export function mediaTypeForExt(ext: string): 'image' | 'video' | null {
   return null;
 }
 
+/**
+ * `.ts` is both MPEG transport stream and TypeScript, and folders like Wallpaper Engine's workshop
+ * are full of the latter. A transport stream is 188-byte packets that each start with 0x47.
+ */
+export async function isTransportStream(filePath: string): Promise<boolean> {
+  const handle = await fs.open(filePath, 'r').catch(() => null);
+  if (!handle) return false;
+  try {
+    const buf = Buffer.alloc(189);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return bytesRead === buf.length && buf[0] === 0x47 && buf[188] === 0x47;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function walk(dir: string, out: string[]): Promise<void> {
   let entries;
   try {
@@ -109,6 +125,7 @@ async function walk(dir: string, out: string[]): Promise<void> {
       if (gif) out.push(gif);
       continue;
     }
+    if (ext.toLowerCase() === '.ts' && !(await isTransportStream(full))) continue;
     if (mediaTypeForExt(ext)) out.push(full);
   }
 }

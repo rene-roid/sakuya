@@ -23,6 +23,49 @@ let session: any = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
+// The loaded model holds ~800 MB of native memory. Tagging comes in bursts (after a scan, an upload),
+// so free it once nothing has used it for a while; the next tag reloads it in a second or two.
+const SESSION_IDLE_MS = 60_000;
+let sessionIdleTimer: ReturnType<typeof setTimeout> | null = null;
+let inFlight = 0;
+
+/**
+ * glibc keeps freed memory in its arenas instead of returning it to the OS: after release() the
+ * process still held ~620 of the model's ~790 MB (measured). malloc_trim hands it back. No-op where
+ * there is no glibc (macOS, Windows, musl).
+ */
+async function trimNativeHeap(): Promise<void> {
+  if (process.platform !== 'linux') return;
+  try {
+    const { dlopen, FFIType } = await import('bun:ffi');
+    const libc = dlopen('libc.so.6', { malloc_trim: { args: [FFIType.u64], returns: FFIType.i32 } });
+    libc.symbols.malloc_trim(0);
+    libc.close();
+  } catch {
+    // Not glibc.
+  }
+}
+
+/** Free the model's native memory now. Dropping the reference alone leaves it to a GC finalizer. */
+function releaseSession(): void {
+  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
+  sessionIdleTimer = null;
+  const old = session;
+  session = null;
+  old
+    ?.release()
+    .then(trimNativeHeap)
+    .catch((err: unknown) => console.error('tagger: failed to release model session:', err));
+}
+
+function scheduleSessionRelease(): void {
+  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
+  sessionIdleTimer = setTimeout(() => {
+    if (inFlight === 0) releaseSession();
+  }, SESSION_IDLE_MS);
+  sessionIdleTimer.unref();
+}
+
 export function modelReady(): boolean {
   return fs.existsSync(MODEL_PATH) && fs.existsSync(MODEL_TAGS_PATH);
 }
@@ -82,7 +125,7 @@ export function selectModel(modelId: string): void {
   if (selectedModelId() === modelId) return;
   setSetting('tagger_model', modelId);
   // Model files are shared paths; a switch invalidates the currently-downloaded model.
-  session = null;
+  releaseSession();
   labels = null;
   fs.rmSync(MODEL_PATH, { force: true });
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
@@ -151,12 +194,19 @@ export interface PredictedTag {
 export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   if (!modelReady()) throw new Error('Tagger model not downloaded');
   const ort = await import('onnxruntime-node');
-  const sess = await getSession();
+  let probs: Float32Array;
+  inFlight++;
+  try {
+    const sess = await getSession();
+    const input = await preprocess(imagePath);
+    const tensor = new ort.Tensor('float32', input, [1, INPUT_SIZE, INPUT_SIZE, 3]);
+    const results = await sess.run({ [sess.inputNames[0]]: tensor });
+    probs = results[sess.outputNames[0]].data as Float32Array;
+  } finally {
+    inFlight--;
+    scheduleSessionRelease();
+  }
   const allLabels = loadLabels();
-  const input = await preprocess(imagePath);
-  const tensor = new ort.Tensor('float32', input, [1, INPUT_SIZE, INPUT_SIZE, 3]);
-  const results = await sess.run({ [sess.inputNames[0]]: tensor });
-  let probs = results[sess.outputNames[0]].data as Float32Array;
 
   // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
   let needsSigmoid = false;
@@ -373,7 +423,7 @@ export function enqueueModelDownload() {
         }
       });
       labels = null;
-      session = null;
+      releaseSession();
       setSetting('model_status', 'ready');
       return 'Model downloaded and ready.';
     } catch (err) {

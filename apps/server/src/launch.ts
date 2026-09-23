@@ -53,13 +53,15 @@ const wanted = [memory !== null && `memory ${formatBytes(memory)}`, cpus !== nul
 function systemdScope(): { prefix: string[]; applied: string[] } | null {
   if (!Bun.which('systemd-run')) return null;
   const base = ['systemd-run', '--user', '--scope', '--collect', '--quiet'];
-  const props: [string, string][] = [];
-  if (memory !== null) props.push([`MemoryMax=${memory}`, `memory ${formatBytes(memory)}`]);
+  const props: [string[], string][] = [];
+  // MemorySwapMax=0: without it the scope pages out past MemoryMax instead of failing allocations,
+  // which on a host with swap turns the ceiling into a slowdown rather than a limit.
+  if (memory !== null) props.push([[`MemoryMax=${memory}`, 'MemorySwapMax=0'], `memory ${formatBytes(memory)}`]);
   // systemd counts a core as 100%, so 1.5 CPUs is CPUQuota=150%.
-  if (cpus !== null) props.push([`CPUQuota=${Math.round(cpus * 100)}%`, cpuLabel(cpus)]);
+  if (cpus !== null) props.push([[`CPUQuota=${Math.round(cpus * 100)}%`], cpuLabel(cpus)]);
   const attempts = props.length > 1 ? [props, ...props.map((p) => [p])] : [props];
   for (const attempt of attempts) {
-    const args = [...base, ...attempt.flatMap(([prop]) => ['-p', prop])];
+    const args = [...base, ...attempt.flatMap(([prop]) => prop.flatMap((p) => ['-p', p]))];
     if (Bun.spawnSync([...args, 'true'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0) {
       return { prefix: args, applied: attempt.map(([, label]) => label) };
     }
