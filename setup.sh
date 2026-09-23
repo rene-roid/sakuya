@@ -47,4 +47,7 @@ echo "Installing dependencies..."
 bun install
 
 echo ""
-echo "Setup complete. Run ./run.sh to start the dev server."
+bun apps/server/src/launch.ts --init
+
+echo ""
+echo "Setup complete. Edit sakuya.config.json to configure Sakuya, then run ./run.sh."

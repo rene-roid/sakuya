@@ -1,11 +1,8 @@
 import { expect, test } from 'bun:test';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { useTestConfig } from './testConfig';
 
 // Point the server at a throwaway data dir before anything opens the real database.
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-liborder-'));
-process.env.PORT = '38773';
+useTestConfig('liborder', { port: 38773 });
 const BASE = 'http://localhost:38773';
 
 await import('./index'); // starts listening on PORT

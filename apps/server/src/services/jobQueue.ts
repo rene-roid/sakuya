@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { eq, desc } from 'drizzle-orm';
 import { db, schema } from '../db';
-import { LIMITS } from '../lib/limits';
+import { LIMITS } from '../lib/config';
 import type { Job, JobType } from '@sakuya/shared';
 
 export const jobEvents = new EventEmitter();

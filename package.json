@@ -10,6 +10,7 @@
     "dev": "bun run --filter '*' dev",
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
+    "start": "bun run --cwd apps/server start",
     "build": "bun run --cwd apps/web build",
     "lint": "eslint .",
     "format": "prettier --write .",

@@ -3,9 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
+import { useTestConfig } from './testConfig';
 
-process.env.SAKUYA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-search-'));
-process.env.PORT = '38777';
+useTestConfig('search', { port: 38777 });
 const BASE = 'http://localhost:38777';
 
 const { db, schema } = await import('./db');

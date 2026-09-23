@@ -24,14 +24,21 @@ COPY apps/server apps/server
 COPY packages/shared packages/shared
 WORKDIR /app/apps/server
 ENV NODE_ENV=production
-# The server binds loopback by default. Inside a container that makes the published port
-# unreachable, so bind all interfaces here — the container boundary is the isolation.
-ENV SAKUYA_HOST=0.0.0.0
+# Settings come from sakuya.config.json, mounted at /app/sakuya.config.json by docker-compose.yml.
+# SAKUYA_DOCKER is what lets SAKUYA_* environment variables override it — only inside this image.
+# The three pinned here are container plumbing the file can't know about:
+#   - host: loopback would make the published port unreachable; the container boundary is the isolation
+#   - port: docker/nginx.conf proxies to server:3777
+#   - data dir: wherever the host keeps it, it is mounted at /data
+ENV SAKUYA_DOCKER=1 \
+    SAKUYA_HOST=0.0.0.0 \
+    SAKUYA_PORT=3777 \
+    SAKUYA_DATA_DIR=/data
 EXPOSE 3777
 
-# /api/health is registered before requireAuth in src/index.ts, so this keeps working
-# with AUTH_ENABLED=true. Shell form on purpose: $PORT is expanded at run time, not build time.
+# /api/health is registered before requireAuth in src/index.ts, so this keeps working with auth on.
+# Shell form on purpose: $SAKUYA_PORT is expanded at run time, not build time.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD bun -e "const r = await fetch('http://127.0.0.1:' + (process.env.PORT ?? 3777) + '/api/health'); process.exit(r.ok ? 0 : 1)"
+  CMD bun -e "const r = await fetch('http://127.0.0.1:' + (process.env.SAKUYA_PORT ?? 3777) + '/api/health'); process.exit(r.ok ? 0 : 1)"
 
 CMD ["bun", "src/index.ts"]

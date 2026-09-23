@@ -1,7 +1,7 @@
 import express from 'express';
 import sharp from 'sharp';
-import { PORT, HOST, DATA_DIR } from './lib/config';
-import { LIMITS, describeLimits } from './lib/limits';
+import { PORT, HOST, DATA_DIR, CONFIG_FILE, LIMITS, LIMITS_REPORT } from './lib/config';
+import { describeLimits } from './lib/limits';
 import './db';
 import { librariesRouter } from './routes/libraries';
 import { mediaRouter } from './routes/media';
@@ -58,9 +58,10 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
 
 app.listen(PORT, HOST, () => {
   console.log(`Sakuya server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  if (HOST === '127.0.0.1') console.log('Bound to loopback only. Set SAKUYA_HOST=0.0.0.0 to serve other machines.');
+  if (HOST === '127.0.0.1') console.log('Bound to loopback only. Set server.host to 0.0.0.0 to serve other machines.');
+  console.log(`Config: ${CONFIG_FILE}`);
   console.log(`Data dir: ${DATA_DIR}`);
-  const limits = describeLimits();
+  const limits = describeLimits(LIMITS_REPORT);
   if (limits) console.log(limits);
   initScheduler();
 });

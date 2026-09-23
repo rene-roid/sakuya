@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { Database } from 'bun:sqlite';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+import { useTestConfig } from './testConfig';
 
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-migrations-'));
-process.env.SAKUYA_DATA_DIR = dataDir;
+const dataDir = useTestConfig('migrations');
 
 // A DB last booted before the transcode release: it has every column up to v8, no transcoded_at,
 // and (like every DB from that era) user_version 0. Docker users who skipped that release hit this.

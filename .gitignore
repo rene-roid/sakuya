@@ -7,6 +7,9 @@ yarn-debug.log*
 yarn-error.log*
 *.log
 .env
+# Local configuration and Docker customisation; created on first run / by you.
+sakuya.config.json
+docker-compose.override.yml
 .vscode/*
 /tmp
 /out-tsc

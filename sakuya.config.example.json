@@ -1,0 +1,20 @@
+{
+  "$schema": "./packages/shared/sakuya.config.schema.json",
+  "server": {
+    "port": 3777,
+    "host": "127.0.0.1",
+    "dataDir": null,
+    "https": false
+  },
+  "web": {
+    "port": 5173
+  },
+  "auth": {
+    "enabled": false,
+    "secret": ""
+  },
+  "limits": {
+    "cpus": null,
+    "memory": null
+  }
+}
