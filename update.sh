@@ -15,6 +15,10 @@ echo "Pulling latest changes..."
 git pull
 
 echo ""
+echo "Updating Bun..."
+bun upgrade
+
+echo ""
 echo "Updating dependencies..."
 bun install
 

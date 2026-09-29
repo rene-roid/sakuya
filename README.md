@@ -78,6 +78,9 @@ collection with an AI booru-style tagger, then gets out of your way.
 
 ## Quick Start
 
+Needs **Bun 1.4.2 or newer** (`bun upgrade`) — older versions crash while thumbnailing and leak memory
+while playing video on Windows.
+
 ```bash
 bun install   # install deps for all workspaces
 bun dev       # server on :3777, web on :5173 (Vite proxies /api)

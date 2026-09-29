@@ -102,8 +102,21 @@ export function joinLimitedJob(memoryBytes: number | null, cpus: number | null, 
   }
 }
 
-/** The memory limit of the job this process is in, if any. A null handle means "my own job". */
-export function currentJobMemoryLimit(): number | null {
+/**
+ * Launcher → server handoff of the memory limit it applied. Internal, not a setting: the server
+ * can't read the limit back itself (see currentJobMemoryLimit).
+ */
+export const JOB_MEMORY_ENV = 'SAKUYA_LAUNCHER_JOB_MEMORY';
+
+/**
+ * The memory limit of the job this process is in, if any. A null handle means "my own job" — but
+ * that is the *innermost* job, and Bun (libuv) spawns every child into a job of its own nested
+ * inside the launcher's. The launcher's limit still binds; it just can't be queried from here, so
+ * the launcher passes it down and that wins when present.
+ */
+export function currentJobMemoryLimit(env: Record<string, string | undefined> = process.env): number | null {
+  const handedDown = Number(env[JOB_MEMORY_ENV]);
+  if (handedDown > 0) return handedDown;
   try {
     const buf = Buffer.alloc(EXTENDED_LIMIT_SIZE);
     const ok = kernel32().QueryInformationJobObject(0n, JobObjectExtendedLimitInformation, buf, buf.length, null);

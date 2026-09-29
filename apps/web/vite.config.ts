@@ -4,6 +4,12 @@ import tailwindcss from '@tailwindcss/vite';
 // Relative, not @sakuya/shared/config: Vite bundles relative imports of its config, while a bare
 // workspace import would be handed to Node as raw TypeScript.
 import { loadConfig } from '../../packages/shared/src/config';
+import { unsupportedBunMessage } from '../../packages/shared/src/runtime';
+
+// Under an old Bun the /api proxy below buffers video without bound (see runtime.ts). Node-hosted
+// Vite has no Bun version and passes.
+const tooOld = unsupportedBunMessage();
+if (tooOld) throw new Error(tooOld);
 
 // Same sakuya.config.json as the server, so changing server.port or server.host there can't leave
 // the proxy pointing at the old address. Read-only: the server side creates the file.

@@ -18,7 +18,7 @@ import { Settings } from './routes/settings';
 import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
 export function App() {
-  const { loading, unlocked } = useAuth();
+  const { loading, enabled, unlocked } = useAuth();
   const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.settings,
@@ -33,7 +33,9 @@ export function App() {
   }, [settings?.accent_color]);
 
   if (loading) return null;
-  if (!unlocked) return <LoginGate />;
+  // Only gate when the server says login is on. An unreachable server has no auth status at all,
+  // and showing a password prompt for it sends people hunting for a password that doesn't exist.
+  if (enabled && !unlocked) return <LoginGate />;
 
   return (
     <JobsProvider>

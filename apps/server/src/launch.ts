@@ -22,10 +22,18 @@
 import os from 'node:os';
 import path from 'node:path';
 import { ConfigError, formatBytes, loadConfig, type LoadedConfig } from '@sakuya/shared/config';
+import { unsupportedBunMessage } from '@sakuya/shared/runtime';
 import { cpuLabel } from './lib/limits';
-import { joinLimitedJob } from './lib/windowsJob';
+import { JOB_MEMORY_ENV, joinLimitedJob } from './lib/windowsJob';
 
 const serverRoot = path.resolve(import.meta.dir, '..');
+
+// Before anything else, --init included: setup scripts run that, and it's the earliest point to say so.
+const tooOld = unsupportedBunMessage();
+if (tooOld) {
+  console.error(`[sakuya] ${tooOld}`);
+  process.exit(1);
+}
 
 let loaded: LoadedConfig;
 try {
@@ -70,6 +78,7 @@ function systemdScope(): { prefix: string[]; applied: string[] } | null {
 }
 
 let prefix: string[] = [];
+const childEnv: Record<string, string | undefined> = { ...process.env };
 if (wanted.length && !loaded.docker) {
   if (process.platform === 'linux') {
     const scope = systemdScope();
@@ -89,6 +98,7 @@ if (wanted.length && !loaded.docker) {
   } else if (process.platform === 'win32') {
     const job = joinLimitedJob(memory, cpus, os.cpus().length);
     const applied = [job.memory && `memory ${formatBytes(memory!)}`, job.cpu && cpuLabel(cpus!)].filter(Boolean);
+    if (job.memory) childEnv[JOB_MEMORY_ENV] = String(memory);
     console.log(
       applied.length
         ? `[sakuya] Hard limits via Windows job object: ${applied.join(', ')}`
@@ -104,6 +114,7 @@ const child = Bun.spawn(
   [...prefix, process.execPath, ...(watch ? ['--watch'] : []), path.join(import.meta.dir, 'index.ts')],
   {
     cwd: serverRoot,
+    env: childEnv,
     stdio: ['inherit', 'inherit', 'inherit'],
   },
 );

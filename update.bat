@@ -22,6 +22,15 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo Updating Bun...
+bun upgrade
+if %errorlevel% neq 0 (
+    echo Failed to update Bun. Run "bun upgrade" yourself, then run this script again.
+    pause
+    exit /b 1
+)
+
+echo.
 echo Updating dependencies...
 bun install
 if %errorlevel% neq 0 (
