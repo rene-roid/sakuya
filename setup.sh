@@ -18,9 +18,15 @@ if ! command -v bun &>/dev/null; then
     export BUN_INSTALL="$HOME/.bun"
     export PATH="$BUN_INSTALL/bin:$PATH"
     echo "Bun installed successfully."
-else
-    echo "Bun found: $(bun --version)"
 fi
+
+# Older Bun crashes while thumbnailing and leaks memory playing video; the minimum lives in
+# packages/shared/src/runtime.ts, the same check the server launcher refuses to start on.
+if ! bun -e "import { unsupportedBunMessage } from './packages/shared/src/runtime'; process.exit(unsupportedBunMessage() ? 1 : 0)"; then
+    echo "Your Bun ($(bun --version)) is too old for Sakuya. Upgrading Bun..."
+    bun upgrade
+fi
+echo "Bun found: $(bun --version)"
 
 echo ""
 if [ -d "$HOME/.sakuya" ]; then
