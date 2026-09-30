@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { sqlite } from '../db';
 import { wrap } from '../lib/http';
-import { rowToMedia } from '../lib/rowToMedia';
+import type { SQLQueryBindings } from 'bun:sqlite';
+import { rowToMedia, type MediaSqlRow } from '../lib/rowToMedia';
 import { tasteVersion } from '../lib/tasteVersion';
 import type { MediaListResponse } from '@sakuya/shared';
 
@@ -220,7 +221,7 @@ discoverRouter.get(
     const { maxScore } = snap;
 
     const conds: string[] = [];
-    const params: unknown[] = [];
+    const params: SQLQueryBindings[] = [];
     if (query.type) {
       conds.push('m.type = ?');
       params.push(query.type);
@@ -244,7 +245,7 @@ discoverRouter.get(
       : (
           sqlite
             .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-            .get(...(params as any[])) as { c: number }
+            .get(...params) as { c: number }
         ).c;
 
     const pageConds = [...conds];
@@ -277,7 +278,7 @@ discoverRouter.get(
       JOIN media m ON m.id = page.id
       LEFT JOIN libraries l ON l.id = m.library_id
       ORDER BY page.sort_key DESC, m.id DESC`;
-    const items = sqlite.query(sql).all(...(pageParams as any[]), query.limit) as any[];
+    const items = sqlite.query(sql).all(...pageParams, query.limit) as MediaSqlRow[];
 
     let nextCursor: string | null = null;
     if (items.length === query.limit) {

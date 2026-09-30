@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq, and, asc } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
-import { wrap, intParam } from '../lib/http';
+import { wrap, intParam, readFormData } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { removeMediaRows } from '../services/mediaRemoval';
@@ -144,18 +144,22 @@ librariesRouter.delete(
 const folderBodySchema = z.object({ path: z.string().min(1) });
 
 /** Attach a folder to a library, reusing an already-attached row if one exists at that exact path. */
-export function attachFolder(libraryId: number, folderPath: string): typeof schema.folders.$inferSelect {
+export function attachFolder(
+  libraryId: number,
+  folderPath: string,
+): { folder: typeof schema.folders.$inferSelect; created: boolean } {
   const existing = db
     .select()
     .from(schema.folders)
     .where(and(eq(schema.folders.libraryId, libraryId), eq(schema.folders.path, folderPath)))
     .get();
-  if (existing) return existing;
-  return db
+  if (existing) return { folder: existing, created: false };
+  const folder = db
     .insert(schema.folders)
     .values({ libraryId, path: folderPath, status: 'pending', createdAt: Date.now() })
     .returning()
     .get();
+  return { folder, created: true };
 }
 
 librariesRouter.post(
@@ -168,14 +172,9 @@ librariesRouter.post(
     if (!fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
       return res.status(400).json({ error: `Not a directory: ${folderPath}` });
     }
-    const dup = db
-      .select()
-      .from(schema.folders)
-      .where(and(eq(schema.folders.libraryId, libraryId), eq(schema.folders.path, folderPath)))
-      .get();
-    if (dup) return res.status(409).json({ error: 'Folder already attached' });
-    const row = attachFolder(libraryId, folderPath);
-    res.status(201).json(row);
+    const { folder, created } = attachFolder(libraryId, folderPath);
+    if (!created) return res.status(409).json({ error: 'Folder already attached' });
+    res.status(201).json(folder);
   }),
 );
 
@@ -225,20 +224,12 @@ librariesRouter.post(
     const lib = db.select().from(schema.libraries).where(eq(schema.libraries.id, id)).get();
     if (!lib) return res.status(404).json({ error: 'Not found' });
 
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
-    const request = new Request('http://localhost/api/libraries/cover', {
-      method: 'POST',
-      headers: { 'content-type': req.headers['content-type'] ?? '' },
-      body: Buffer.concat(chunks),
-    });
-    const form = await request.formData();
-    const file = form.get('file');
+    const file = (await readFormData(req)).get('file');
     if (!file || typeof file === 'string') return res.status(400).json({ error: 'No file provided' });
 
-    const ext = (path.extname((file as any).name || '') || '.jpg').toLowerCase();
+    const ext = (path.extname(file.name || '') || '.jpg').toLowerCase();
     const dest = path.join(UPLOADS_DIR, `cover-${id}-${crypto.randomBytes(4).toString('hex')}${ext}`);
-    await fsp.writeFile(dest, Buffer.from(await (file as any).arrayBuffer()));
+    await fsp.writeFile(dest, Buffer.from(await file.arrayBuffer()));
 
     // Remove any previous custom cover file.
     if (lib.customImagePath) await fsp.unlink(lib.customImagePath).catch(() => {});

@@ -334,11 +334,11 @@ function ItemRow({ item }: { item: DownloadItem }) {
     staleTime: Infinity,
   });
 
-  const liveLogs = logs[item.id] ?? [];
+  const liveLogs = logs[item.id];
   const merged = useMemo(() => {
     const map = new Map<number, string>();
     for (const l of historyLogs ?? []) map.set(l.id, l.line);
-    for (const l of liveLogs) map.set(l.id, l.line);
+    for (const l of liveLogs ?? []) map.set(l.id, l.line);
     return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, line]) => line);
   }, [historyLogs, liveLogs]);
 

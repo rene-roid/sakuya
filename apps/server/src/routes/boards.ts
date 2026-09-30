@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
+import { chunkIds } from '../lib/mediaByIds';
 import type { BoardWithStats } from '@sakuya/shared';
 
 export const boardsRouter = Router();
@@ -76,10 +77,18 @@ boardsRouter.post(
     if (!board) return res.status(404).json({ error: 'Not found' });
     const { mediaIds } = mediaIdsBody.parse(req.body);
     const now = Date.now();
-    db.insert(schema.boardMedia)
-      .values(mediaIds.map((mediaId) => ({ boardId: id, mediaId, addedAt: now })))
-      .onConflictDoNothing()
-      .run();
+    // Selected from media rather than inserted as given: an id deleted since the client loaded it
+    // would otherwise fail the foreign key and 500 the whole add.
+    sqlite.transaction(() => {
+      for (const part of chunkIds(mediaIds)) {
+        sqlite
+          .query(
+            `INSERT OR IGNORE INTO board_media (board_id, media_id, added_at)
+             SELECT ?, id, ? FROM media WHERE id IN (${part.map(() => '?').join(',')})`,
+          )
+          .run(id, now, ...part);
+      }
+    })();
     res.json(boardWithStats(board));
   }),
 );
@@ -93,14 +102,13 @@ boardsRouter.post(
     const board = db.select().from(schema.boards).where(eq(schema.boards.id, id)).get();
     if (!board) return res.status(404).json({ error: 'Not found' });
     const { mediaIds } = mediaIdsBody.parse(req.body);
-    const remove = sqlite.transaction(() => {
-      for (const mediaId of mediaIds) {
+    sqlite.transaction(() => {
+      for (const part of chunkIds(mediaIds)) {
         db.delete(schema.boardMedia)
-          .where(and(eq(schema.boardMedia.boardId, id), eq(schema.boardMedia.mediaId, mediaId)))
+          .where(and(eq(schema.boardMedia.boardId, id), inArray(schema.boardMedia.mediaId, part)))
           .run();
       }
-    });
-    remove();
+    })();
     res.json(boardWithStats(board));
   }),
 );
