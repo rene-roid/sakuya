@@ -61,7 +61,7 @@ function ScheduleSelect({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as SelectValue)}
-      className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
+      className="rounded-field border border-line bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
     >
       {showInherit && <option value="inherit">Use global</option>}
       <option value="off">Off</option>
@@ -108,7 +108,7 @@ export function JobsConfigureTab() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="rounded-xl border border-line bg-surface p-[18px]">
         <div className="mb-1 text-[13.5px] font-bold">Global defaults</div>
         <div className="mb-3 text-[12px] text-zinc-500">
           Apply to every library that doesn't set its own override.
@@ -120,7 +120,7 @@ export function JobsConfigureTab() {
             return (
               <div
                 key={jt.key}
-                className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2"
+                className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2"
               >
                 <div>
                   <div className="text-[13px] font-semibold text-zinc-200">{jt.label}</div>
@@ -137,7 +137,7 @@ export function JobsConfigureTab() {
                   <button
                     disabled={runNowMutation.isPending}
                     onClick={() => runNowMutation.mutate({ scope: 'global', jobType: jt.key })}
-                    className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+                    className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
                   >
                     Run all now
                   </button>
@@ -146,7 +146,7 @@ export function JobsConfigureTab() {
             );
           })}
 
-          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
             <div>
               <div className="text-[13px] font-semibold text-zinc-200">Thumbnails</div>
               <div className="text-[11px] text-zinc-500">Regenerate all cached thumbnails across every library</div>
@@ -154,7 +154,7 @@ export function JobsConfigureTab() {
             <button
               disabled={regenerateThumbnailsMutation.isPending}
               onClick={() => regenerateThumbnailsMutation.mutate()}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
             >
               Regenerate all
             </button>
@@ -162,7 +162,7 @@ export function JobsConfigureTab() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="rounded-xl border border-line bg-surface p-[18px]">
         <div className="mb-1 text-[13.5px] font-bold">Per-library</div>
         <div className="mb-3 text-[12px] text-zinc-500">
           Override the global defaults per library. Leave as “Use global” to inherit.
@@ -213,7 +213,7 @@ function LibraryScheduleCard({
   const [expanded, setExpanded] = useState(() => hasCustom);
 
   return (
-    <div className={`rounded-[10px] border bg-zinc-900/60 p-3 ${hasCustom ? 'border-l-[3px] border-l-amber-600/70 border-zinc-800' : 'border-zinc-800'}`}>
+    <div className={`rounded-panel border bg-zinc-900/60 p-3 ${hasCustom ? 'border-l-[3px] border-l-amber-600/70 border-line' : 'border-line'}`}>
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full cursor-pointer items-center gap-2.5 text-left"
@@ -257,7 +257,7 @@ function LibraryScheduleCard({
               return (
                 <div
                   key={jt.key}
-                  className={`flex items-center justify-between rounded-[7px] px-2.5 py-1.5 transition-colors ${isCustom ? 'bg-amber-600/5' : ''}`}
+                  className={`flex items-center justify-between rounded-field px-2.5 py-1.5 transition-colors ${isCustom ? 'bg-amber-600/5' : ''}`}
                 >
                   <div className="flex items-center gap-2">
                     <JobIcon type={jt.key} />
@@ -285,7 +285,7 @@ function LibraryScheduleCard({
             <button
               disabled={runPending}
               onClick={onRunAll}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40 transition-colors"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40 transition-colors"
             >
               Run all for this library
             </button>

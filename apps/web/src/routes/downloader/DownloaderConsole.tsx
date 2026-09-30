@@ -76,7 +76,7 @@ export function DownloaderConsole() {
   };
 
   return (
-    <div className="rounded-xl border border-zinc-800 bg-[#111113] p-4">
+    <div className="rounded-xl border border-line bg-surface p-4">
       <div className="mb-3 flex items-center justify-between">
         <div className="text-[13.5px] font-bold">gallery-dl console</div>
         <div className="flex items-center gap-2">
@@ -86,7 +86,7 @@ export function DownloaderConsole() {
           {running && (
             <button
               onClick={() => stopMutation.mutate()}
-              className="flex cursor-pointer items-center gap-1 rounded-[7px] border border-zinc-800 px-2.5 py-1 text-[11.5px] text-zinc-400 hover:text-red-400"
+              className="flex cursor-pointer items-center gap-1 rounded-field border border-line px-2.5 py-1 text-[11.5px] text-zinc-400 hover:text-red-400"
             >
               <Square size={12} /> Stop
             </button>
@@ -102,7 +102,7 @@ export function DownloaderConsole() {
       </div>
       <pre
         ref={outputRef}
-        className="mb-3 h-[360px] overflow-y-auto whitespace-pre-wrap break-all rounded-[7px] border border-zinc-800 bg-black/40 p-3 font-mono text-[12px] leading-relaxed text-zinc-300"
+        className="mb-3 h-[360px] overflow-y-auto whitespace-pre-wrap break-all rounded-field border border-line bg-black/40 p-3 font-mono text-[12px] leading-relaxed text-zinc-300"
       >
         {buffer || 'No output yet.'}
       </pre>
@@ -115,13 +115,13 @@ export function DownloaderConsole() {
             if (e.key === 'Enter') submit();
           }}
           placeholder={running ? 'Type a response…' : 'e.g. oauth:pixiv'}
-          className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
+          className="flex-1 rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
         />
         {!running && (
           <button
             onClick={submit}
             disabled={!input.trim() || startMutation.isPending}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[7px] bg-accent px-3.5 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="flex cursor-pointer items-center gap-1.5 rounded-field bg-accent px-3.5 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             <Play size={13} /> Run
           </button>
@@ -130,7 +130,7 @@ export function DownloaderConsole() {
           onClick={sendAsInput}
           disabled={!input || inputMutation.isPending}
           title="Send this text straight to the running process's stdin — never runs it as a new gallery-dl command"
-          className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border border-zinc-800 px-3.5 py-[7px] text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+          className="flex cursor-pointer items-center gap-1.5 rounded-field border border-line px-3.5 py-[7px] text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
         >
           <CornerDownLeft size={13} /> Send as input
         </button>

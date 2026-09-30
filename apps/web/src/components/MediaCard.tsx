@@ -8,7 +8,7 @@ import { HeartButton } from './HeartButton';
 export function TypeBadge({ type }: { type: 'image' | 'video' }) {
   return (
     <div
-      className={`absolute left-1.5 top-1.5 rounded px-1.5 py-px text-[9px] font-bold tracking-wide text-white backdrop-blur ${
+      className={`absolute left-1.5 top-1.5 rounded px-1.5 py-px text-[9px] glass:left-2 glass:top-2 glass:rounded-full glass:px-2 glass:py-0.5 font-bold tracking-wide text-white backdrop-blur ${
         type === 'video' ? 'bg-accent/85' : 'bg-black/60'
       }`}
     >
@@ -21,7 +21,7 @@ export function DurationBadge({ seconds }: { seconds: number | null }) {
   const label = formatDuration(seconds);
   if (!label) return null;
   return (
-    <div className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-px text-[10px] font-semibold text-zinc-100">
+    <div className="absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1.5 py-px text-[10px] glass:bottom-2 glass:right-2 glass:rounded-full glass:bg-black/60 glass:px-2 glass:py-0.5 glass:backdrop-blur font-semibold text-zinc-100">
       {label}
     </div>
   );
@@ -52,15 +52,15 @@ export const MediaCard = memo(function MediaCard({
   return (
     <div className="cursor-pointer select-none" onClick={(e) => onActivate(index, e)}>
       <div
-        className={`group relative aspect-square w-full overflow-hidden rounded-[10px] border bg-zinc-900 ${
-          selected ? 'border-accent ring-2 ring-accent' : 'border-zinc-800'
+        className={`group relative aspect-square w-full overflow-hidden rounded-panel border bg-zinc-900 glass:rounded-xl glass:bg-white/[0.03] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_48px_rgba(0,0,0,0.16)] glass:transition-colors ${
+          selected ? 'border-accent ring-2 ring-accent' : 'border-line glass:hover:border-white/20'
         }`}
       >
         <img
           src={thumbUrl(item.id)}
           alt={item.filename}
           loading="lazy"
-          className="h-full w-full object-cover"
+          className="h-full w-full object-cover glass:transition-transform glass:duration-300 glass:group-hover:scale-[1.03]"
         />
         {item.type === 'video' && <TypeBadge type={item.type} />}
         <DurationBadge seconds={item.durationSeconds} />
@@ -71,7 +71,7 @@ export const MediaCard = memo(function MediaCard({
                 ? `Related to tags you like: "${item.reasonTag}"`
                 : `Recommended because you like "${item.reasonTag}"`
             }
-            className={`absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded px-1.5 py-px text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
+            className={`absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
               item.reasonRelated ? 'bg-teal-500/85' : 'bg-accent/85'
             }`}
           >
@@ -120,9 +120,14 @@ export function WideCard({
   showProgress?: boolean;
 }) {
   return (
-    <div className="group w-[200px] flex-none cursor-pointer" onClick={onClick}>
-      <div className="relative h-[112px] w-[200px] overflow-hidden rounded-[10px] border border-zinc-800 bg-zinc-900">
-        <img src={thumbUrl(item.id)} alt={item.filename} loading="lazy" className="h-full w-full object-cover" />
+    <div className="group w-[200px] flex-none cursor-pointer glass:w-[220px]" onClick={onClick}>
+      <div className="relative h-[112px] w-[200px] overflow-hidden rounded-panel border border-line bg-zinc-900 glass:h-[124px] glass:w-[220px] glass:rounded-xl glass:bg-white/[0.03] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_48px_rgba(0,0,0,0.16)] glass:transition-colors glass:group-hover:border-white/20">
+        <img
+          src={thumbUrl(item.id)}
+          alt={item.filename}
+          loading="lazy"
+          className="h-full w-full object-cover glass:transition-transform glass:duration-300 glass:group-hover:scale-[1.04]"
+        />
         {showProgress && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15">
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />
@@ -138,8 +143,8 @@ export function WideCard({
           <HeartButton mediaId={item.id} liked={item.liked} size="sm" />
         </div>
       </div>
-      <div className="mt-[7px] truncate text-[12.5px] font-semibold text-zinc-200">{item.filename}</div>
-      <div className="mt-px text-[11px] text-zinc-500">{item.libraryName}</div>
+      <div className="mt-[7px] truncate text-[12.5px] font-semibold text-zinc-200 glass:mt-2.5 glass:px-0.5 glass:font-display glass:text-[13.5px] glass:text-zinc-100">{item.filename}</div>
+      <div className="mt-px text-[11px] text-zinc-500 glass:px-0.5 glass:text-[12px]">{item.libraryName}</div>
     </div>
   );
 }

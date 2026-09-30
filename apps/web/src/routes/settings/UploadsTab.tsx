@@ -81,7 +81,7 @@ export function UploadsTab() {
         <select
           value={effectiveLibraryId}
           onChange={(e) => setLibraryId(Number(e.target.value))}
-          className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[7px] text-[13px] text-zinc-100 outline-none"
+          className="rounded-field border border-line bg-zinc-900 px-2 py-[7px] text-[13px] text-zinc-100 outline-none"
         >
           {(libraries ?? []).map((lib) => (
             <option key={lib.id} value={lib.id}>
@@ -104,7 +104,7 @@ export function UploadsTab() {
         }}
         onClick={() => fileInput.current?.click()}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed py-10 transition-colors ${
-          dragOver ? 'border-accent bg-accent/5' : 'border-zinc-800 bg-[#111113] hover:border-zinc-700'
+          dragOver ? 'border-accent bg-accent/5' : 'border-line bg-surface hover:border-line-strong'
         }`}
       >
         <Upload className="mb-2 text-zinc-400" size={26} />
@@ -124,7 +124,7 @@ export function UploadsTab() {
       </div>
       <div className="mt-4 flex flex-col gap-2">
         {rows.map((row) => (
-          <div key={row.id} className="flex items-center gap-2.5 rounded-[9px] border border-zinc-800 bg-[#111113] px-3 py-2.5">
+          <div key={row.id} className="flex items-center gap-2.5 rounded-panel border border-line bg-surface px-3 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="truncate text-[12.5px] font-semibold text-zinc-200">{row.name}</div>
               <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-800">

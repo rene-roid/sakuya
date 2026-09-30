@@ -31,10 +31,10 @@ export function ReleaseNotesDialog() {
         onClick={close}
       >
         <div
-          className="flex max-h-[85vh] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-[#111113] shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
+          className="flex max-h-[85vh] w-full max-w-[760px] flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_24px_64px_rgba(0,0,0,0.6)]"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-3.5 border-b border-zinc-800 bg-gradient-to-b from-accent/10 to-transparent px-7 py-6">
+          <div className="flex items-center gap-3.5 border-b border-line bg-gradient-to-b from-accent/10 to-transparent px-7 py-6">
             <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-accent/15">
               <PartyPopper size={22} className="text-accent" />
             </div>
@@ -54,13 +54,13 @@ export function ReleaseNotesDialog() {
               {unseen.map((r, i) => (
                 <div
                   key={r.version}
-                  className={`release-notes ${i > 0 ? 'mt-6 border-t border-zinc-800 pt-6' : ''}`}
+                  className={`release-notes ${i > 0 ? 'mt-6 border-t border-line pt-6' : ''}`}
                   dangerouslySetInnerHTML={{ __html: r.html }}
                 />
               ))}
             </div>
           </div>
-          <div className="flex justify-end border-t border-zinc-800 px-7 py-4">
+          <div className="flex justify-end border-t border-line px-7 py-4">
             <button
               onClick={close}
               className="cursor-pointer rounded-lg bg-accent px-5 py-2 text-[13px] font-semibold text-white hover:opacity-90"

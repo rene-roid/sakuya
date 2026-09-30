@@ -17,7 +17,7 @@ function segStyle(active: boolean): string {
 
 function buttonStyle(accent?: boolean): string {
   return `flex flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-[7px] text-[13px] font-semibold ${
-    accent ? 'border-accent/40 text-accent' : 'border-zinc-800 text-zinc-400 hover:text-zinc-200'
+    accent ? 'border-accent/40 text-accent' : 'border-line text-zinc-400 hover:text-zinc-200'
   }`;
 }
 
@@ -86,7 +86,7 @@ export function FilterToolbar({
     {
       id: 'type',
       inline: (
-        <div className="flex flex-none rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
+        <div className="flex flex-none rounded-lg border border-line bg-zinc-900 p-0.5">
           {(['all', 'image', 'video'] as const).map((t) => (
             <div key={t} className={segStyle(filters.typeParam === t)} onClick={() => actions.setType(t)}>
               {t === 'all' ? 'All' : t === 'image' ? 'Images' : 'Videos'}
@@ -126,7 +126,7 @@ export function FilterToolbar({
     {
       id: 'sort',
       inline: (
-        <div className="flex flex-none rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
+        <div className="flex flex-none rounded-lg border border-line bg-zinc-900 p-0.5">
           {SORTS.map((srt) => (
             <div key={srt.key} className={segStyle(filters.sort === srt.key)} onClick={() => actions.setSort(srt.key)}>
               <span className="flex items-center gap-1">
@@ -264,7 +264,7 @@ export function FilterToolbar({
             <div
               title="More filters"
               aria-label="More filters"
-              className="relative flex cursor-pointer items-center rounded-lg border border-zinc-800 px-2 py-[7px] text-zinc-400 hover:text-zinc-200"
+              className="relative flex cursor-pointer items-center rounded-lg border border-line px-2 py-[7px] text-zinc-400 hover:text-zinc-200"
               onClick={() => setMenuOpen((open) => !open)}
             >
               <MoreVertical size={16} />
@@ -286,7 +286,7 @@ export function FilterToolbar({
             <span
               key={chip.id}
               className={`flex items-center gap-1.5 rounded-full border py-0.5 pl-2.5 pr-1.5 text-xs font-semibold ${
-                chip.tag ? 'border-accent/40 bg-accent/15 text-violet-300' : 'border-zinc-700 bg-zinc-800 text-zinc-300'
+                chip.tag ? 'border-accent/40 bg-accent/15 text-violet-300' : 'border-line-strong bg-zinc-800 text-zinc-300'
               }`}
             >
               {chip.label}
@@ -303,7 +303,7 @@ export function FilterToolbar({
           ))}
           {chips.length > CHIP_LIMIT && (
             <span
-              className="cursor-pointer rounded-full border border-zinc-700 px-2.5 py-[3px] text-xs font-semibold text-zinc-400 hover:text-zinc-200"
+              className="cursor-pointer rounded-full border border-line-strong px-2.5 py-[3px] text-xs font-semibold text-zinc-400 hover:text-zinc-200"
               onClick={() => setShowAllChips((open) => !open)}
             >
               {showAllChips ? 'Show less' : `+${chips.length - CHIP_LIMIT} more`}

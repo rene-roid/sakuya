@@ -90,7 +90,7 @@ export function BulkTagDialog({
       onClick={onCancel}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-[520px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[80vh] w-full max-w-[520px] flex-col rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 text-[15px] font-bold">Edit tags on {ids.length} files</div>
@@ -125,7 +125,7 @@ export function BulkTagDialog({
         />
 
         <div className="mb-1.5 mt-5 text-xs font-bold tracking-[0.4px] text-zinc-500">REMOVE</div>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40 p-2">
           {(present ?? []).length === 0 && (
             <div className="px-1 py-2 text-[11.5px] text-zinc-600">No tags on the selected files.</div>
           )}
@@ -141,7 +141,7 @@ export function BulkTagDialog({
                   className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${
                     staged
                       ? 'border-rose-500/50 bg-rose-500/15 text-rose-300 line-through'
-                      : 'border-zinc-700 bg-zinc-800 text-zinc-300 hover:border-zinc-600'
+                      : 'border-line-strong bg-zinc-800 text-zinc-300 hover:border-line-hover'
                   }`}
                 >
                   <span>{tag.name}</span>
@@ -156,14 +156,14 @@ export function BulkTagDialog({
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
           >
             Cancel
           </button>
           <button
             disabled={!hasChanges}
             onClick={() => setConfirming(true)}
-            className="cursor-pointer rounded-[7px] bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
           >
             Review changes
           </button>

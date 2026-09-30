@@ -431,7 +431,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           />
         )}
       </div>
-      <div className="w-full flex-none overflow-y-auto border-t border-zinc-800 bg-[#111113] p-[18px] sm:w-[340px] sm:border-l sm:border-t-0 sm:p-[22px]">
+      <div className="w-full flex-none overflow-y-auto border-t border-line bg-surface p-[18px] sm:w-[340px] sm:border-l sm:border-t-0 sm:p-[22px]">
         <div className="mb-0.5 flex items-center gap-1.5">
           {renaming ? (
             <input
@@ -444,7 +444,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
                 else if (e.key === 'Escape') setRenaming(false);
               }}
               onBlur={() => setRenaming(false)}
-              className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-base font-bold text-zinc-100 outline-none focus:border-accent"
+              className="min-w-0 flex-1 rounded-md border border-line-strong bg-zinc-900 px-1.5 py-0.5 text-base font-bold text-zinc-100 outline-none focus:border-accent"
             />
           ) : (
             <span className="min-w-0 flex-1 truncate break-all text-base font-bold" title={displayName}>
@@ -553,7 +553,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
             }
           }}
           placeholder={`Add ${addCategory} tag, press Enter…`}
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+          className="w-full rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
         />
         <BoardsSection mediaId={item.id} boards={detail?.id === item.id ? detail.boards : []} />
       </div>
@@ -650,7 +650,7 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
           }}
           onBlur={() => setCreating(false)}
           placeholder="New board name, press Enter…"
-          className="w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+          className="w-full rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
         />
       ) : (
         <select
@@ -659,7 +659,7 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
             if (e.target.value === 'new') setCreating(true);
             else if (e.target.value) addMutation.mutate(Number(e.target.value));
           }}
-          className="w-full cursor-pointer rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none focus:border-zinc-600"
+          className="w-full cursor-pointer rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none focus:border-line-hover"
         >
           <option value="">Add to board…</option>
           {addable.map((board) => (
@@ -716,7 +716,7 @@ function TagPill({
         <X size={11} />
       </button>
       {menuOpen && (
-        <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-xl">
+        <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-line-strong bg-zinc-900 shadow-xl">
           {(['general', 'character', 'rating', 'user'] as TagCategory[]).map((c) => (
             <div
               key={c}
@@ -748,7 +748,7 @@ function SimilarPanel({
 }) {
   const [collapsed, setCollapsed] = useState(true);
   return (
-    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-zinc-800 bg-zinc-950/85 backdrop-blur">
+    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-line bg-zinc-950/85 backdrop-blur">
       <button className={`w-full flex cursor-pointer items-center justify-between ${collapsed ? 'px-3 py-2' : 'px-3 py-3 mb-2'}`} onClick={() => setCollapsed((c) => !c)}>
         <span className="text-[11px] font-bold tracking-[0.4px] text-zinc-400">SIMILAR & DUPLICATES</span>
         <ChevronRight size={16} className={`text-zinc-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
@@ -793,7 +793,7 @@ function Section({
             title={m.filename}
             onClick={() => onPick(m)}
             className={`h-12 w-12 flex-none cursor-pointer rounded-md border object-cover hover:border-accent ${
-              m.id === previousId ? 'border-2 border-accent' : 'border border-zinc-800'
+              m.id === previousId ? 'border-2 border-accent' : 'border border-line'
             }`}
           />
         ))}

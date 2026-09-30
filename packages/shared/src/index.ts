@@ -167,7 +167,11 @@ export interface Settings {
   gifs_as_videos: string;
   video_transcode_enabled: string;
   discover_enabled: string;
+  ui_style: UiStyle;
+  dashboard_hero: string;
 }
+
+export type UiStyle = 'glass' | 'classic';
 
 export interface DashboardResponse {
   libraries: LibraryWithStats[];

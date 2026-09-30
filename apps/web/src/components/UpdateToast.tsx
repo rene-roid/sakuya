@@ -42,7 +42,7 @@ export function UpdateToast() {
   };
 
   return (
-    <div className="toast-in fixed bottom-6 left-6 z-[100] flex items-center gap-3 rounded-[10px] border border-zinc-600 bg-zinc-900 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
+    <div className="toast-in fixed bottom-[calc(var(--dock-h)+24px)] left-6 z-[100] flex items-center gap-3 rounded-panel border border-line-hover bg-zinc-900 px-4 py-3 shadow-[0_8px_24px_rgba(0,0,0,0.5)]">
       <CircleArrowUp size={16} className="flex-none text-accent" />
       <div className="text-[13px] text-zinc-200">
         Sakuya <span className="font-semibold">{latest}</span> is out —{' '}

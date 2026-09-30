@@ -30,7 +30,11 @@ const EDITABLE_KEYS = new Set([
   'gifs_as_videos',
   'video_transcode_enabled',
   'discover_enabled',
+  'ui_style',
+  'dashboard_hero',
 ]);
+
+const UI_STYLES = new Set(['glass', 'classic']);
 
 settingsRouter.get(
   '/api/settings',
@@ -45,6 +49,7 @@ settingsRouter.patch(
     const body = z.record(z.string()).parse(req.body);
     for (const [key, value] of Object.entries(body)) {
       if (!EDITABLE_KEYS.has(key)) return res.status(400).json({ error: `Setting not editable: ${key}` });
+      if (key === 'ui_style' && !UI_STYLES.has(value)) return res.status(400).json({ error: `Unknown ui_style: ${value}` });
       if (key === 'gifs_as_videos' && value !== getSetting(key)) {
         enqueueGifReclassifyJob(value === '1');
       }

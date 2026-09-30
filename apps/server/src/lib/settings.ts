@@ -18,6 +18,10 @@ const DEFAULTS: Record<string, string> = {
   // Off until switched on in Settings. Engagement tracking runs regardless, so the taste profile
   // is already warm the first time it's turned on.
   discover_enabled: '0',
+  // 'glass' (Liquid Glass) or 'classic' (the original look).
+  ui_style: 'glass',
+  // The Liquid Glass dashboard banner; its close button turns this off.
+  dashboard_hero: '1',
 };
 
 export function getSetting(key: string): string {

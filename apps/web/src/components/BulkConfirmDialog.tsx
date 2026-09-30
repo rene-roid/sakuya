@@ -49,7 +49,7 @@ export function BulkConfirmDialog({
       onClick={busy ? undefined : onCancel}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 text-[15px] font-bold">{title}</div>
@@ -64,11 +64,11 @@ export function BulkConfirmDialog({
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/40">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40">
           {shown.map((row) => (
             <div
               key={row.id}
-              className={`flex items-center gap-2.5 border-b border-zinc-800/60 px-2.5 py-1.5 last:border-b-0 ${
+              className={`flex items-center gap-2.5 border-b border-line/60 px-2.5 py-1.5 last:border-b-0 ${
                 row.warning ? 'bg-rose-500/5' : ''
               }`}
             >
@@ -76,7 +76,7 @@ export function BulkConfirmDialog({
                 src={thumbUrl(row.id)}
                 alt=""
                 loading="lazy"
-                className="h-7 w-7 flex-none rounded border border-zinc-800 object-cover"
+                className="h-7 w-7 flex-none rounded border border-line object-cover"
               />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[12px] font-semibold text-zinc-200" title={row.label}>
@@ -101,14 +101,14 @@ export function BulkConfirmDialog({
           <button
             disabled={busy}
             onClick={onCancel}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
             Cancel
           </button>
           <button
             disabled={busy || rows.length === blocking}
             onClick={onConfirm}
-            className={`cursor-pointer rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40 ${
+            className={`cursor-pointer rounded-btn px-3.5 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40 ${
               danger ? 'bg-rose-600 hover:bg-rose-500' : 'bg-accent hover:opacity-90'
             }`}
           >

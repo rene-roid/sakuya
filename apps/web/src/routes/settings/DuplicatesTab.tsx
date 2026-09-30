@@ -64,7 +64,7 @@ export function DuplicatesTab() {
     <div>
       <TabHeader title="Duplicates" subtitle="Find exact duplicate files and clean them up." />
 
-      <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13.5px] font-bold">Detect duplicates</div>
@@ -79,7 +79,7 @@ export function DuplicatesTab() {
           <button
             disabled={scanMutation.isPending || isFetching}
             onClick={() => scanMutation.mutate()}
-            className="shrink-0 cursor-pointer rounded-[7px] bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             {scanMutation.isPending || isFetching ? 'Scanning…' : scanned ? 'Rescan' : 'Scan for duplicates'}
           </button>
@@ -88,18 +88,18 @@ export function DuplicatesTab() {
 
       {scanned && groups.length > 0 && (
         <>
-          <div className="mb-3.5 flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-[#111113] p-[14px]">
+          <div className="mb-3.5 flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-[14px]">
             <div className="flex items-center gap-2">
               <button
                 onClick={autoSelect}
-                className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
+                className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100"
               >
                 Select all but oldest in each group
               </button>
               {selected.size > 0 && (
                 <button
                   onClick={() => setSelected(new Set())}
-                  className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-400 hover:text-zinc-200"
+                  className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-400 hover:text-zinc-200"
                 >
                   Clear selection
                 </button>
@@ -108,7 +108,7 @@ export function DuplicatesTab() {
             <button
               disabled={selected.size === 0 || deleteMutation.isPending}
               onClick={() => setShowConfirm(true)}
-              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-[7px] bg-rose-600/90 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-rose-600 disabled:opacity-40"
+              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-field bg-rose-600/90 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-rose-600 disabled:opacity-40"
             >
               <Trash2 size={14} />
               Delete selected {selected.size > 0 ? `(${selected.size} · ${formatBytes(selectedBytes)})` : ''}
@@ -150,7 +150,7 @@ function DuplicateGroupCard({
   onToggle: (id: number) => void;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[14px]">
+    <div className="rounded-xl border border-line bg-surface p-[14px]">
       <div className="mb-2.5 text-[12px] font-semibold text-zinc-400">
         {group.items.length} copies · {formatBytes(group.wastedBytes)} wasted
       </div>
@@ -159,7 +159,7 @@ function DuplicateGroupCard({
           <label
             key={m.id}
             className={`flex w-[140px] cursor-pointer flex-col gap-1.5 rounded-lg border p-1.5 ${
-              selected.has(m.id) ? 'border-rose-700 bg-rose-950/20' : 'border-zinc-800 hover:border-zinc-700'
+              selected.has(m.id) ? 'border-rose-700 bg-rose-950/20' : 'border-line hover:border-line-strong'
             }`}
           >
             <div className="relative aspect-square overflow-hidden rounded-md bg-zinc-900">

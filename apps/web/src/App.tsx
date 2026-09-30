@@ -7,6 +7,7 @@ import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
 import { UpdateToast } from './components/UpdateToast';
 import { LoginGate } from './components/LoginGate';
 import { useAuth } from './hooks/useAuth';
+import { applyUiStyle } from './hooks/useUiStyle';
 import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
@@ -32,6 +33,10 @@ export function App() {
     }
   }, [settings?.accent_color]);
 
+  useEffect(() => {
+    if (settings?.ui_style) applyUiStyle(settings.ui_style);
+  }, [settings?.ui_style]);
+
   if (loading) return null;
   // Only gate when the server says login is on. An unreachable server has no auth status at all,
   // and showing a password prompt for it sends people hunting for a password that doesn't exist.
@@ -40,7 +45,7 @@ export function App() {
   return (
     <JobsProvider>
       <DownloaderProvider>
-        <div className="relative min-h-screen bg-zinc-950 text-zinc-100">
+        <div className="relative min-h-screen text-zinc-100">
           <ReleaseNotesDialog />
           <UpdateToast />
           <Navbar />

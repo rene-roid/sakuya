@@ -75,7 +75,7 @@ export function TaggingTab() {
     <div>
       <TabHeader title="AI Tagging" subtitle="Auto-tag new imports with the anime tagger model." />
 
-      <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13.5px] font-bold">Tagger model</div>
@@ -92,7 +92,7 @@ export function TaggingTab() {
               value={tagger?.model ?? ''}
               disabled={tagger?.status === 'downloading' || selectModelMutation.isPending}
               onChange={(e) => selectModelMutation.mutate(e.target.value)}
-              className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-2 text-[12.5px] text-zinc-100 outline-none disabled:opacity-40"
+              className="rounded-field border border-line bg-zinc-900 px-2 py-2 text-[12.5px] text-zinc-100 outline-none disabled:opacity-40"
             >
               {(models ?? []).map((m) => (
                 <option key={m.id} value={m.id}>
@@ -104,7 +104,7 @@ export function TaggingTab() {
               <button
                 disabled={tagger?.status === 'downloading' || downloadMutation.isPending}
                 onClick={() => downloadMutation.mutate()}
-                className="cursor-pointer rounded-[7px] bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+                className="cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
               >
                 {tagger?.status === 'downloading' ? 'Downloading…' : 'Download model'}
               </button>
@@ -115,7 +115,7 @@ export function TaggingTab() {
         </div>
       </div>
 
-      <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13.5px] font-bold">
@@ -147,14 +147,14 @@ export function TaggingTab() {
               tagAllMutation.isPending
             }
             onClick={() => tagAllMutation.mutate()}
-            className="shrink-0 cursor-pointer rounded-[7px] bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             {activeTagJob ? 'Tagging…' : 'Tag all'}
           </button>
         </div>
       </div>
 
-      <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-[13.5px] font-bold">
@@ -181,14 +181,14 @@ export function TaggingTab() {
           <button
             disabled={!!activeHashJob || (tagger?.unhashedCount ?? 0) === 0 || hashAllMutation.isPending}
             onClick={() => hashAllMutation.mutate()}
-            className="shrink-0 cursor-pointer rounded-[7px] bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             {activeHashJob ? 'Hashing…' : 'Hash images'}
           </button>
         </div>
       </div>
 
-      <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[13.5px] font-bold">Auto-tag on import</div>
@@ -204,7 +204,7 @@ export function TaggingTab() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="rounded-xl border border-line bg-surface p-[18px]">
         <div className="mb-1 text-[13.5px] font-bold">Confidence threshold</div>
         <div className="mb-3 text-xs text-zinc-500">Tags below this confidence are discarded.</div>
         <input

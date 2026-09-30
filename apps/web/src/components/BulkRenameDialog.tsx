@@ -12,7 +12,7 @@ function segStyle(active: boolean): string {
 }
 
 const inputClass =
-  'w-full rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600';
+  'w-full rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover';
 
 /**
  * Bulk rename with a live preview. The preview rows and the payload come from the same
@@ -79,12 +79,12 @@ export function BulkRenameDialog({
       onClick={onCancel}
     >
       <div
-        className="flex max-h-[85vh] w-full max-w-[600px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[85vh] w-full max-w-[600px] flex-col rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 text-[15px] font-bold">Rename {selected.length} files</div>
 
-        <div className="mb-3 flex w-fit rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
+        <div className="mb-3 flex w-fit rounded-lg border border-line bg-zinc-900 p-0.5">
           <div className={segStyle(opts.mode === 'pattern')} onClick={() => set({ mode: 'pattern' })}>
             Pattern
           </div>
@@ -110,7 +110,7 @@ export function BulkRenameDialog({
                   min={0}
                   value={opts.startAt}
                   onChange={(e) => set({ startAt: Number(e.target.value) || 0 })}
-                  className="w-[68px] rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-2 text-[12.5px] text-zinc-100 outline-none focus:border-zinc-600"
+                  className="w-[68px] rounded-lg border border-line bg-zinc-900 px-2 py-2 text-[12.5px] text-zinc-100 outline-none focus:border-line-hover"
                 />
               </div>
             </div>
@@ -158,11 +158,11 @@ export function BulkRenameDialog({
             {stats.errors > 0 && <span className="text-rose-400"> · {stats.errors} blocked</span>}
           </div>
         </div>
-        <div className="min-h-[120px] flex-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/40">
+        <div className="min-h-[120px] flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40">
           {plan.map((row) => (
             <div
               key={row.id}
-              className={`flex items-center gap-2 border-b border-zinc-800/60 px-2.5 py-1.5 text-[11.5px] last:border-b-0 ${
+              className={`flex items-center gap-2 border-b border-line/60 px-2.5 py-1.5 text-[11.5px] last:border-b-0 ${
                 row.error ? 'bg-rose-500/5' : ''
               }`}
             >
@@ -183,14 +183,14 @@ export function BulkRenameDialog({
         <div className="mt-4 flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
           >
             Cancel
           </button>
           <button
             disabled={stats.changed === 0}
             onClick={() => setConfirming(true)}
-            className="cursor-pointer rounded-[7px] bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90 disabled:opacity-40"
           >
             Review changes
           </button>

@@ -59,13 +59,13 @@ export function Explore() {
       <div className="min-w-0 flex-1">
         <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
           <div className="mb-1 flex items-baseline gap-3">
-            <h1 className="m-0 text-[22px] font-extrabold">Explore</h1>
+            <h1 className="m-0 text-[22px] font-extrabold glass:text-[30px] glass:font-semibold">Explore</h1>
             <span className="text-[13px] text-zinc-500">
               {media.total} item{media.total === 1 ? '' : 's'}
             </span>
           </div>
         </div>
-        <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+        <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur glass:backdrop-blur-2xl">
           <div className="px-4 sm:px-8 py-3">
             <FilterToolbar filters={filters} actions={actions} selection={selection} />
           </div>
