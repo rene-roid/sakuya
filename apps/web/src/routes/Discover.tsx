@@ -113,7 +113,7 @@ export function Discover() {
           Built from what you like, watch and linger on. Cards show the tag that earned them a spot.
         </div>
       </div>
-      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur glass:backdrop-blur-2xl">
+      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
         <div className="flex flex-wrap items-center gap-4 px-4 sm:px-8 py-3">
           <div className="flex rounded-lg border border-line bg-zinc-900 p-0.5">
             {(['all', 'image', 'video'] as const).map((t) => (

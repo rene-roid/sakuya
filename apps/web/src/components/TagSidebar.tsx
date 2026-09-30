@@ -56,7 +56,7 @@ export function TagSidebar({
   if (collapsed) {
     return (
       <button
-        className="sticky top-(--nav-h) flex h-[calc(100dvh-var(--nav-h)-var(--dock-h))] w-7 flex-none cursor-pointer items-start justify-center border-r border-line pt-[18px] text-zinc-500 hover:text-zinc-300"
+        className="sticky top-(--nav-h) hidden h-[calc(100dvh-var(--nav-h)-var(--dock-h))] w-7 flex-none cursor-pointer items-start justify-center sm:flex border-r border-line pt-[18px] text-zinc-500 hover:text-zinc-300"
         onClick={onToggle}
       >
         <ChevronRight size={18} />
@@ -66,8 +66,8 @@ export function TagSidebar({
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/60 sm:hidden" onClick={onToggle} />
-      <div className="fixed inset-y-0 left-0 z-50 h-full w-[230px] overflow-y-auto border-r border-line bg-zinc-950 px-3.5 py-[18px] sm:sticky sm:top-(--nav-h) sm:z-auto sm:h-[calc(100dvh-var(--nav-h)-var(--dock-h))] sm:flex-none sm:bg-transparent">
+      <div className="fade-in fixed inset-0 z-40 bg-black/60 sm:hidden glass:backdrop-blur-sm" onClick={onToggle} />
+      <div className="fixed inset-y-0 left-0 z-50 h-full w-[230px] overflow-y-auto border-r border-line bg-zinc-950 px-3.5 py-[18px] max-sm:w-[min(290px,85vw)] max-sm:pb-[calc(18px+env(safe-area-inset-bottom))] max-sm:glass:rounded-r-3xl max-sm:glass:bg-[#0f0f13]/90 max-sm:glass:backdrop-blur-2xl sm:sticky sm:top-(--nav-h) sm:z-auto sm:h-[calc(100dvh-var(--nav-h)-var(--dock-h))] sm:flex-none sm:bg-transparent">
       <div className="mb-2.5 flex items-center justify-between">
         <div className="text-[11px] font-bold tracking-[0.6px] text-zinc-500">LIBRARIES</div>
         <button className="cursor-pointer text-zinc-500 hover:text-zinc-300" onClick={onToggle}>

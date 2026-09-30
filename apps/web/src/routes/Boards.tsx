@@ -194,7 +194,7 @@ export function BoardView() {
           </span>
         </div>
       </div>
-      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur glass:backdrop-blur-2xl">
+      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
           <FilterToolbar filters={filters} actions={actions} selection={selection} />
         </div>

@@ -195,6 +195,36 @@ export function Navbar() {
     return () => observer.disconnect();
   }, []);
 
+  // On phones the top bar (and the sticky toolbar under it) slides away while scrolling down and
+  // comes back on any scroll up, to give the grid the whole screen.
+  useEffect(() => {
+    const phone = window.matchMedia('(max-width: 767px)');
+    const root = document.documentElement;
+    let lastY = window.scrollY;
+    const setHidden = (hidden: boolean) => root.toggleAttribute('data-nav-hidden', hidden);
+    const onScroll = () => {
+      const y = window.scrollY;
+      const bar = barRef.current;
+      if (!phone.matches || y <= (bar?.offsetHeight ?? 0) || bar?.contains(document.activeElement)) {
+        setHidden(false);
+        lastY = y;
+        return;
+      }
+      // Ignore jitter so a slow drag doesn't flicker the bar.
+      if (Math.abs(y - lastY) < 8) return;
+      setHidden(y > lastY);
+      lastY = y;
+    };
+    const onViewportChange = () => !phone.matches && setHidden(false);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    phone.addEventListener('change', onViewportChange);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      phone.removeEventListener('change', onViewportChange);
+      setHidden(false);
+    };
+  }, []);
+
   const goToExplore = (tags: string[]) => {
     navigate(tags.length ? `/explore?tags=${tags.map(encodeURIComponent).join(',')}` : '/explore');
   };
@@ -203,7 +233,7 @@ export function Navbar() {
     <>
       <div
         ref={barRef}
-        className="sticky top-0 z-40 flex flex-wrap items-center gap-x-2 gap-y-2.5 border-b border-line bg-zinc-950/75 px-4 py-2.5 backdrop-blur-xl md:h-[60px] md:flex-nowrap md:gap-x-4 md:px-5 md:py-0 glass:border-white/[0.06] glass:bg-[#0b0b0e]/70 glass:backdrop-blur-2xl lg:glass:gap-x-5 lg:glass:px-6"
+        className="sticky top-0 z-40 flex flex-wrap items-center transition-transform duration-300 max-md:nav-hidden:-translate-y-full gap-x-2 gap-y-2.5 border-b border-line bg-zinc-950/75 px-4 py-2.5 backdrop-blur-xl md:h-[60px] md:flex-nowrap md:gap-x-4 md:px-5 md:py-0 glass:border-white/[0.06] glass:bg-[#0b0b0e]/70 glass:backdrop-blur-2xl lg:glass:gap-x-5 lg:glass:px-6"
       >
         <div className="flex shrink-0 cursor-pointer items-center gap-2 glass:gap-2.5" onClick={() => navigate('/')}>
           <img src="/icon.png" alt="Sakuya" className="h-7 w-7" />

@@ -2,6 +2,8 @@
 
 /* Utilities written as `glass:…` only apply under the Liquid Glass interface style. */
 @custom-variant glass (&:where([data-ui='glass'], [data-ui='glass'] *));
+/* Set on <html> while the phone layout has slid the top bars away on scroll (see Navbar). */
+@custom-variant nav-hidden (&:where([data-nav-hidden], [data-nav-hidden] *));
 
 :root {
   --accent: #8b5cf6;
