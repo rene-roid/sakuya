@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db';
-import { wrap, intParam } from '../lib/http';
+import { wrap, intParam, readFormData, formFiles, sanitizeFilename, openEventStream } from '../lib/http';
 import { DOWNLOADER_COOKIES_DIR } from '../lib/config';
 import { detectGalleryDl, installGalleryDl } from '../services/galleryDl';
 import {
@@ -78,22 +78,14 @@ downloaderRouter.get(
 downloaderRouter.post(
   '/api/downloader/cookies',
   wrap(async (req, res) => {
-    const chunks: Buffer[] = [];
-    for await (const chunk of req) chunks.push(chunk as Buffer);
-    const request = new Request('http://localhost/api/downloader/cookies', {
-      method: 'POST',
-      headers: { 'content-type': req.headers['content-type'] ?? '' },
-      body: Buffer.concat(chunks),
-    });
-    const form = await request.formData();
-    const files = form.getAll('files').filter((f) => typeof f !== 'string');
+    const files = formFiles(await readFormData(req), 'files');
     if (files.length === 0) return res.status(400).json({ error: 'No files provided' });
 
     const created: DownloadCookie[] = [];
     for (const file of files) {
-      const filename = (file as any).name || 'cookies.txt';
+      const filename = sanitizeFilename(file.name || 'cookies.txt');
       const dest = path.join(DOWNLOADER_COOKIES_DIR, `${crypto.randomBytes(6).toString('hex')}-${filename}`);
-      await fsp.writeFile(dest, Buffer.from(await (file as any).arrayBuffer()));
+      await fsp.writeFile(dest, Buffer.from(await file.arrayBuffer()));
       const row = db
         .insert(schema.downloadCookies)
         .values({ filename, storedPath: dest, uploadedAt: Date.now() })
@@ -261,47 +253,32 @@ downloaderRouter.post(
 );
 
 downloaderRouter.get('/api/downloader/console/stream', (req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-  res.write(`data: ${JSON.stringify({ type: 'snapshot', buffer: getConsoleBuffer(), status: getConsoleStatus() })}\n\n`);
+  const stream = openEventStream(req, res);
+  stream.send({ type: 'snapshot', buffer: getConsoleBuffer(), status: getConsoleStatus() });
 
-  const onData = (chunk: string) => res.write(`data: ${JSON.stringify({ type: 'data', chunk })}\n\n`);
-  const onStatus = (status: ConsoleSessionStatus) => res.write(`data: ${JSON.stringify({ type: 'status', status })}\n\n`);
+  const onData = (chunk: string) => stream.send({ type: 'data', chunk });
+  const onStatus = (status: ConsoleSessionStatus) => stream.send({ type: 'status', status });
   consoleEvents.on('data', onData);
   consoleEvents.on('status', onStatus);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
+  stream.onClose(() => {
     consoleEvents.off('data', onData);
     consoleEvents.off('status', onStatus);
   });
 });
 
 downloaderRouter.get('/api/downloader/stream', (req, res) => {
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-  });
-  res.write(`data: ${JSON.stringify({ type: 'snapshot', batches: listBatches() })}\n\n`);
+  const stream = openEventStream(req, res);
+  stream.send({ type: 'snapshot', batches: listBatches() });
 
-  const onBatch = (batch: DownloadBatchWithItems) => res.write(`data: ${JSON.stringify({ type: 'batch', batch })}\n\n`);
-  const onItem = (item: DownloadItem) => res.write(`data: ${JSON.stringify({ type: 'item', item })}\n\n`);
-  const onLog = (log: DownloadLogLine) => res.write(`data: ${JSON.stringify({ type: 'log', log })}\n\n`);
-  const onRemoved = (payload: { id: number; batchId: number }) =>
-    res.write(`data: ${JSON.stringify({ type: 'removed', ...payload })}\n\n`);
+  const onBatch = (batch: DownloadBatchWithItems) => stream.send({ type: 'batch', batch });
+  const onItem = (item: DownloadItem) => stream.send({ type: 'item', item });
+  const onLog = (log: DownloadLogLine) => stream.send({ type: 'log', log });
+  const onRemoved = (payload: { id: number; batchId: number }) => stream.send({ type: 'removed', ...payload });
   downloaderEvents.on('batch', onBatch);
   downloaderEvents.on('item', onItem);
   downloaderEvents.on('log', onLog);
   downloaderEvents.on('removed', onRemoved);
-  const heartbeat = setInterval(() => res.write(': ping\n\n'), 25_000);
-
-  req.on('close', () => {
-    clearInterval(heartbeat);
+  stream.onClose(() => {
     downloaderEvents.off('batch', onBatch);
     downloaderEvents.off('item', onItem);
     downloaderEvents.off('log', onLog);

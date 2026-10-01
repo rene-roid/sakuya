@@ -216,7 +216,9 @@ export async function indexFile(
 }
 
 /**
- * Drop rows for files under `rootPath` that no longer exist.
+ * Drop rows for files under `rootPath` that no longer exist. `walked` is every file this scan's
+ * walk found; those are known to exist, so only the rest cost a filesystem check — a rescan of an
+ * unchanged library used to stat every indexed file a second time here.
  *
  * `rootHasFiles` is whether this scan's walk found any media under the root. When it found none
  * and every indexed file there is missing too, the likelier story is an unmounted drive, a
@@ -229,6 +231,7 @@ async function pruneMissing(
   libraryId: number,
   rootPath: string,
   rootHasFiles: boolean,
+  walked: Set<string>,
 ): Promise<{ removed: number; withheld: number }> {
   const rows = db
     .select({ id: schema.media.id, path: schema.media.path })
@@ -238,6 +241,7 @@ async function pruneMissing(
     .filter((row) => isUnder(row.path, rootPath));
   const gone: number[] = [];
   for (const row of rows) {
+    if (walked.has(row.path)) continue;
     try {
       await fs.access(row.path);
     } catch {
@@ -345,8 +349,9 @@ export function enqueueScanJob(libraryId: number) {
 
       const unreachable: string[] = [];
       let withheld = 0;
+      const walked = new Set(files);
       for (const folder of libFolders) {
-        const result = await pruneMissing(libraryId, folder.path, rootHasFiles.get(folder.id) ?? false);
+        const result = await pruneMissing(libraryId, folder.path, rootHasFiles.get(folder.id) ?? false, walked);
         pruned += result.removed;
         withheld += result.withheld;
         if (result.withheld) unreachable.push(folder.path);
