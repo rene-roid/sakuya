@@ -36,7 +36,7 @@ export function MenuPanel({
       <div className="fixed inset-0 z-[70]" onClick={onClose} />
       <div
         style={{ width }}
-        className={`absolute right-0 z-[71] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${
+        className={`absolute right-0 z-[71] overflow-hidden rounded-lg border border-line-strong bg-zinc-900 py-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] ${
           side === 'top' ? 'bottom-[calc(100%+6px)]' : 'top-[calc(100%+6px)]'
         }`}
       >

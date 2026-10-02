@@ -104,7 +104,7 @@ export function Discover() {
     <div className="fade-in">
       <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
         <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="m-0 text-[22px] font-extrabold">Discover</h1>
+          <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Discover</h1>
           <span className="text-[13px] text-zinc-500">
             picked from {feed.total} item{feed.total === 1 ? '' : 's'}
           </span>
@@ -113,9 +113,9 @@ export function Discover() {
           Built from what you like, watch and linger on. Cards show the tag that earned them a spot.
         </div>
       </div>
-      <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
         <div className="flex flex-wrap items-center gap-4 px-4 sm:px-8 py-3">
-          <div className="flex rounded-lg border border-zinc-800 bg-zinc-900 p-0.5">
+          <div className="flex rounded-lg border border-line bg-zinc-900 p-0.5">
             {(['all', 'image', 'video'] as const).map((t) => (
               <div
                 key={t}
@@ -161,7 +161,7 @@ export function Discover() {
           </button>
           <button
             onClick={() => update((p) => p.set('seed', String(randomSeed())))}
-            className="cursor-pointer rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+            className="cursor-pointer rounded-lg border border-line px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
           >
             Reshuffle
           </button>
@@ -169,7 +169,7 @@ export function Discover() {
             <button
               onClick={selection.enter}
               title="Select multiple files for bulk actions"
-              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
+              className="flex cursor-pointer items-center gap-1.5 rounded-lg border border-line px-3 py-[7px] text-[13px] font-semibold text-zinc-400 hover:text-zinc-200"
             >
               <ListChecks size={16} />
               Select

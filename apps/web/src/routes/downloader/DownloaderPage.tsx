@@ -137,7 +137,7 @@ export function DownloaderPage() {
               const v = Math.min(8, Math.max(1, Number(e.target.value) || 2));
               concurrencyMutation.mutate(v);
             }}
-            className="w-16 rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-[13px] text-zinc-100 outline-none"
+            className="w-16 rounded-field border border-line bg-zinc-900 px-2 py-1.5 text-[13px] text-zinc-100 outline-none"
           />
         </div>
       </div>
@@ -153,19 +153,19 @@ export function DownloaderPage() {
           <button
             disabled={!!installJob || installMutation.isPending}
             onClick={() => installMutation.mutate()}
-            className="cursor-pointer rounded-[7px] bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             {installJob ? 'Installing…' : 'Install'}
           </button>
         </div>
       )}
 
-      <div className="mb-6 flex gap-1 rounded-[9px] border border-zinc-800 bg-zinc-900 p-1">
+      <div className="mb-6 flex gap-1 rounded-panel border border-line bg-zinc-900 p-1">
         {(['downloads', 'console'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`flex-1 cursor-pointer rounded-[7px] py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
+            className={`flex-1 cursor-pointer rounded-btn py-1.5 text-[12.5px] font-semibold capitalize transition-colors ${
               tab === t ? 'bg-accent text-white' : 'text-zinc-500 hover:text-zinc-300'
             }`}
           >
@@ -178,14 +178,14 @@ export function DownloaderPage() {
 
       {tab === 'downloads' && (
         <>
-      <div className="mb-6 rounded-xl border border-zinc-800 bg-[#111113] p-4">
+      <div className="mb-6 rounded-xl border border-line bg-surface p-4">
         <div className="mb-3 text-[13.5px] font-bold">New download</div>
         <textarea
           value={urlsText}
           onChange={(e) => setUrlsText(e.target.value)}
           placeholder="One URL per line…"
           rows={4}
-          className="mb-3 w-full resize-y rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2 font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
+          className="mb-3 w-full resize-y rounded-field border border-line bg-zinc-900 px-3 py-2 font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
         />
         <div className="mb-3 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
           <div>
@@ -199,7 +199,7 @@ export function DownloaderPage() {
                 const lib = libraries?.find((l) => l.id === id);
                 if (lib?.folders[0]) setFolderPath(lib.folders[0].path);
               }}
-              className="w-full rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] text-[13px] text-zinc-100 outline-none disabled:opacity-60"
+              className="w-full rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] text-[13px] text-zinc-100 outline-none disabled:opacity-60"
             >
               <option value="">Select a library…</option>
               {(libraries ?? []).map((lib) => (
@@ -221,7 +221,7 @@ export function DownloaderPage() {
               value={folderPath}
               onChange={(e) => setFolderPath(e.target.value)}
               placeholder="/absolute/path/to/folder"
-              className="w-full rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
+              className="w-full rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
             />
           </div>
         </div>
@@ -232,7 +232,7 @@ export function DownloaderPage() {
               <select
                 value={cookieFileId}
                 onChange={(e) => setCookieFileId(e.target.value ? Number(e.target.value) : '')}
-                className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] text-[13px] text-zinc-100 outline-none"
+                className="flex-1 rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] text-[13px] text-zinc-100 outline-none"
               >
                 <option value="">None</option>
                 {(cookies ?? []).map((c) => (
@@ -255,7 +255,7 @@ export function DownloaderPage() {
               <button
                 onClick={() => cookieInputRef.current?.click()}
                 title="Upload cookie file"
-                className="cursor-pointer rounded-[7px] border border-zinc-800 px-2.5 py-[7px] text-zinc-400 hover:text-zinc-200"
+                className="cursor-pointer rounded-btn border border-line px-2.5 py-[7px] text-zinc-400 hover:text-zinc-200"
               >
                 <UploadIcon size={14} />
               </button>
@@ -263,7 +263,7 @@ export function DownloaderPage() {
                 disabled={cookieFileId === '' || deleteCookieMutation.isPending}
                 onClick={() => cookieFileId !== '' && deleteCookieMutation.mutate(Number(cookieFileId))}
                 title="Delete selected cookie file"
-                className="cursor-pointer rounded-[7px] border border-zinc-800 px-2.5 py-[7px] text-zinc-400 hover:text-red-400 disabled:opacity-40"
+                className="cursor-pointer rounded-btn border border-line px-2.5 py-[7px] text-zinc-400 hover:text-red-400 disabled:opacity-40"
               >
                 <X size={14} />
               </button>
@@ -275,7 +275,7 @@ export function DownloaderPage() {
               value={extraArgs}
               onChange={(e) => setExtraArgs(e.target.value)}
               placeholder="e.g. --range 1-20 --write-metadata"
-              className="w-full rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
+              className="w-full rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
             />
           </div>
         </div>
@@ -286,7 +286,7 @@ export function DownloaderPage() {
           <button
             disabled={!canSubmit || createBatchMutation.isPending || !status?.installed}
             onClick={() => createBatchMutation.mutate()}
-            className="flex cursor-pointer items-center gap-1.5 rounded-[7px] bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="flex cursor-pointer items-center gap-1.5 rounded-field bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             <Download size={14} /> Start download
           </button>
@@ -368,7 +368,7 @@ function ItemRow({ item }: { item: DownloadItem }) {
   });
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900">
+    <div className="rounded-lg border border-line bg-zinc-900">
       <div className="flex items-center gap-2.5 px-3 py-2">
         <button onClick={() => setExpanded((v) => !v)} className="cursor-pointer text-zinc-500 hover:text-zinc-300">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -412,7 +412,7 @@ function ItemRow({ item }: { item: DownloadItem }) {
         </div>
       </div>
       {expanded && (
-        <div className="max-h-[200px] overflow-y-auto border-t border-zinc-800 bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-500">
+        <div className="max-h-[200px] overflow-y-auto border-t border-line bg-black/30 px-3 py-2 font-mono text-[11px] text-zinc-500">
           {merged.length === 0 ? (
             <div className="text-zinc-700">No log output yet.</div>
           ) : (
@@ -458,7 +458,7 @@ function RemoveItemModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-[380px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="w-full max-w-[380px] rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 text-[15px] font-bold">Remove download</div>
@@ -468,19 +468,19 @@ function RemoveItemModal({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
           >
             Cancel
           </button>
           <button
             onClick={onKeep}
-            className="cursor-pointer rounded-[7px] bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90"
+            className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90"
           >
             Keep files
           </button>
           <button
             onClick={onDelete}
-            className="cursor-pointer rounded-[7px] bg-rose-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-rose-500"
+            className="cursor-pointer rounded-btn bg-rose-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-rose-500"
           >
             Delete files
           </button>

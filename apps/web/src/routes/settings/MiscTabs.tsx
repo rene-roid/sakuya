@@ -6,6 +6,8 @@ import { formatBytes } from '../../lib/format';
 import { useToast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TabHeader } from './index';
+import { applyUiStyle, useUiStyle } from '../../hooks/useUiStyle';
+import { UI_STYLES, UiStylePreview } from '../../components/UiStylePreview';
 
 const ACCENTS = ['#8b5cf6', '#14b8a6', '#f43f5e'];
 
@@ -14,13 +16,15 @@ export function AppearanceTab() {
   const showToast = useToast();
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
   const current = settings?.accent_color ?? '#8b5cf6';
+  const uiStyle = useUiStyle();
 
   const patchMutation = useMutation({
-    mutationFn: (accent: string) => api.patchSettings({ accent_color: accent }),
-    onSuccess: (data) => {
+    mutationFn: (body: Partial<Record<keyof Settings, string>>) => api.patchSettings(body),
+    onSuccess: (data, body) => {
       queryClient.setQueryData(['settings'], data);
       document.documentElement.style.setProperty('--accent', data.accent_color);
-      showToast('Accent updated');
+      applyUiStyle(data.ui_style);
+      showToast(body.accent_color ? 'Accent updated' : 'Appearance updated');
     },
     onError: (err: Error) => showToast(err.message),
   });
@@ -28,17 +32,60 @@ export function AppearanceTab() {
   return (
     <div>
       <TabHeader title="Appearance" subtitle="Visual preferences for the board." />
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
-        <div className="mb-2.5 text-[13.5px] font-bold">Accent color</div>
-        <div className="flex gap-2.5">
-          {ACCENTS.map((color) => (
-            <div
-              key={color}
-              onClick={() => patchMutation.mutate(color)}
-              className="h-[34px] w-[34px] cursor-pointer rounded-lg border-2"
-              style={{ background: color, borderColor: current === color ? '#f4f4f5' : 'transparent' }}
+      <div className="flex flex-col gap-2.5">
+        <div className="rounded-xl border border-line bg-surface p-[18px]">
+          <div className="text-[13.5px] font-bold">Interface style</div>
+          <div className="mb-3 mt-0.5 text-[12px] text-zinc-500">Switch between the original look and the frosted Liquid Glass one.</div>
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+            {UI_STYLES.map((option) => {
+              const active = uiStyle === option.key;
+              return (
+                <button
+                  key={option.key}
+                  disabled={patchMutation.isPending}
+                  onClick={() => !active && patchMutation.mutate({ ui_style: option.key })}
+                  className={`cursor-pointer rounded-panel border-2 p-2.5 text-left transition-colors disabled:cursor-wait ${
+                    active ? 'border-accent' : 'border-line hover:border-line-hover'
+                  }`}
+                >
+                  <UiStylePreview style={option.key} />
+                  <div className="mt-2.5 flex items-center justify-between px-0.5">
+                    <div className="text-[13px] font-semibold">{option.label}</div>
+                    {active && <span className="text-[11px] font-bold uppercase tracking-[0.3px] text-accent">Active</span>}
+                  </div>
+                  <div className="mt-0.5 px-0.5 text-[11.5px] text-zinc-500">{option.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="rounded-xl border border-line bg-surface p-[18px]">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-[13.5px] font-bold">Dashboard banner</div>
+              <div className="mt-0.5 max-w-[420px] text-[12px] text-zinc-500">
+                The welcome banner at the top of the dashboard. Only shown with the Liquid Glass style.
+              </div>
+            </div>
+            <ToggleSwitch
+              checked={settings?.dashboard_hero !== '0'}
+              pending={patchMutation.isPending}
+              onChange={(value) => patchMutation.mutate({ dashboard_hero: value ? '1' : '0' })}
             />
-          ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-line bg-surface p-[18px]">
+          <div className="mb-2.5 text-[13.5px] font-bold">Accent color</div>
+          <div className="flex gap-2.5">
+            {ACCENTS.map((color) => (
+              <div
+                key={color}
+                onClick={() => patchMutation.mutate({ accent_color: color })}
+                className="h-[34px] w-[34px] cursor-pointer rounded-lg border-2 glass:rounded-full"
+                style={{ background: color, borderColor: current === color ? '#f4f4f5' : 'transparent' }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -125,7 +172,7 @@ export function SystemTab() {
   return (
     <div>
       <TabHeader title="System" subtitle="Storage and maintenance." />
-      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-2.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-[13.5px] font-bold">Store data in your home folder</div>
@@ -157,7 +204,7 @@ export function SystemTab() {
           />
         </div>
       </div>
-      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-2.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[13.5px] font-bold">Thumbnail cache</div>
@@ -176,7 +223,7 @@ export function SystemTab() {
           />
         </div>
       </div>
-      <div className="mb-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="mb-2.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-[13.5px] font-bold">Video transcoding</div>
@@ -192,13 +239,13 @@ export function SystemTab() {
           />
         </div>
       </div>
-      <div className="flex flex-col gap-2.5 rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+      <div className="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-[18px]">
         <Row label="Version" value={info?.version ?? '—'} />
         <Row label="Media stored" value={info ? `${info.mediaCount} files · ${formatBytes(info.mediaBytes)}` : '—'} />
         <Row label="Database size" value={info ? formatBytes(info.dbBytes) : '—'} />
         <Row label="Thumbnail cache" value={info ? formatBytes(info.thumbBytes) : '—'} />
         <div className="mt-1.5 flex flex-col gap-2.5">
-          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
             <div>
               <div className="text-[13px] font-semibold text-zinc-200">Thumbnail cache</div>
               <div className="text-[11px] text-zinc-500">Delete all cached thumbnails to free up disk space</div>
@@ -206,13 +253,13 @@ export function SystemTab() {
             <button
               disabled={clearMutation.isPending}
               onClick={() => clearMutation.mutate()}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
             >
               Clear cache
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
             <div>
               <div className="text-[13px] font-semibold text-zinc-200">Regenerate thumbnails</div>
               <div className="text-[11px] text-zinc-500">Re-process all media files and overwrite existing thumbnails</div>
@@ -220,13 +267,13 @@ export function SystemTab() {
             <button
               disabled={regenerateMutation.isPending}
               onClick={() => setShowRegenerateWarning(true)}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
             >
               Regenerate all
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
             <div>
               <div className="text-[13px] font-semibold text-zinc-200">Transcode videos</div>
               <div className="text-[11px] text-zinc-500">Check every video and re-encode any the browser can't play</div>
@@ -234,13 +281,13 @@ export function SystemTab() {
             <button
               disabled={transcodeRunMutation.isPending}
               onClick={() => transcodeRunMutation.mutate()}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
             >
               Transcode all videos now
             </button>
           </div>
 
-          <div className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-2">
+          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
             <div>
               <div className="text-[13px] font-semibold text-zinc-200">Clean up orphan data</div>
               <div className="text-[11px] text-zinc-500">Remove thumbnail files and tag counts with no matching media</div>
@@ -248,7 +295,7 @@ export function SystemTab() {
             <button
               disabled={cleanupMutation.isPending}
               onClick={() => setShowCleanupWarning(true)}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
             >
               Clean up
             </button>
@@ -408,7 +455,7 @@ export function BehaviorTab() {
           const raw = settings?.[row.key];
           const checked = raw !== undefined ? raw === '1' : !!row.defaultOn;
           return (
-            <div key={row.key} className="rounded-xl border border-zinc-800 bg-[#111113] p-[18px]">
+            <div key={row.key} className="rounded-xl border border-line bg-surface p-[18px]">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[13.5px] font-bold">{row.label}</div>
@@ -424,7 +471,7 @@ export function BehaviorTab() {
                 <button
                   disabled={reclassifyMutation.isPending}
                   onClick={() => reclassifyMutation.mutate()}
-                  className="mt-3 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 disabled:opacity-40"
+                  className="mt-3 cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
                 >
                   Reclassify existing GIFs now
                 </button>

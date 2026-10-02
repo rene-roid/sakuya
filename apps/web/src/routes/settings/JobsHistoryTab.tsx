@@ -15,7 +15,7 @@ export function JobsHistoryTab() {
       {jobs.map((job) => {
         const pct = job.total > 0 ? Math.round((job.progress / job.total) * 100) : job.status === 'done' ? 100 : 0;
         return (
-          <div key={job.id} className="rounded-[10px] border border-zinc-800 bg-[#111113] p-3.5">
+          <div key={job.id} className="rounded-panel border border-line bg-surface p-3.5">
             <div className="mb-2 flex items-center justify-between">
               <div className="text-[13.5px] font-bold">{job.label}</div>
               <span className={`text-[11px] font-bold tracking-[0.3px] uppercase ${STATUS_COLOR[job.status]}`}>

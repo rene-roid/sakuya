@@ -33,7 +33,7 @@ export function Boards() {
 
   return (
     <div className="fade-in mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-7">
-      <h1 className="m-0 text-[22px] font-extrabold">Boards</h1>
+      <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Boards</h1>
       <div className="mb-5 mt-1 text-[13px] text-zinc-500">
         Your own collections — add any image or video to a board from its detail view.
       </div>
@@ -46,12 +46,12 @@ export function Boards() {
             if (e.key === 'Enter' && newName.trim()) createMutation.mutate();
           }}
           placeholder="New board name"
-          className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+          className="flex-1 rounded-field border border-line bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
         />
         <button
           disabled={!newName.trim() || createMutation.isPending}
           onClick={() => createMutation.mutate()}
-          className="cursor-pointer rounded-[7px] bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+          className="cursor-pointer rounded-btn bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
         >
           Create
         </button>
@@ -63,7 +63,7 @@ export function Boards() {
         ))}
       </div>
       {boards && boards.length === 0 && (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-800 py-16 text-zinc-500">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-line py-16 text-zinc-500">
           <Images size={34} className="mb-2.5 text-zinc-700" />
           <div className="text-sm font-semibold text-zinc-400">No boards yet</div>
           <div className="mt-1 text-[12.5px]">Create one above, then add media to it from the viewer.</div>
@@ -102,7 +102,7 @@ function BoardCard({ board }: { board: BoardWithStats }) {
   return (
     <div className="group">
       <div
-        className="relative aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900"
+        className="relative aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-media border border-line bg-zinc-900 glass:border-white/[0.07] glass:transition-colors glass:hover:border-white/25"
         onClick={() => navigate(`/boards/${board.id}`)}
       >
         {board.thumbMediaId ? (
@@ -127,7 +127,7 @@ function BoardCard({ board }: { board: BoardWithStats }) {
               else if (e.key === 'Escape') setRenaming(false);
             }}
             onBlur={() => setRenaming(false)}
-            className="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-1.5 py-0.5 text-[13px] font-semibold text-zinc-100 outline-none focus:border-accent"
+            className="min-w-0 flex-1 rounded-md border border-line-strong bg-zinc-900 px-1.5 py-0.5 text-[13px] font-semibold text-zinc-100 outline-none focus:border-accent"
           />
         ) : (
           <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-zinc-100" title={board.name}>
@@ -188,13 +188,13 @@ export function BoardView() {
     <div className="fade-in">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pt-6">
         <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="m-0 text-[22px] font-extrabold">{board?.name ?? '…'}</h1>
+          <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">{board?.name ?? '…'}</h1>
           <span className="text-[13px] text-zinc-500">
             {media.total} item{media.total === 1 ? '' : 's'}
           </span>
         </div>
       </div>
-      <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
           <FilterToolbar filters={filters} actions={actions} selection={selection} />
         </div>

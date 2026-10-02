@@ -19,7 +19,7 @@ export function JobsTab() {
       <div className="sticky top-0 z-10 -mt-1 bg-zinc-950 pb-2 pt-1">
         <div className="flex items-start justify-between">
           <TabHeader title="Jobs" subtitle="Configure scan, tagging, and duplicate-detection schedules." />
-          <div className="flex overflow-hidden rounded-[7px] border border-zinc-800">
+          <div className="flex overflow-hidden rounded-field border border-line">
             {(['configure', 'history'] as const).map((s) => (
               <button
                 key={s}

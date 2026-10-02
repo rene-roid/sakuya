@@ -24,7 +24,7 @@ export function ConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-[420px] rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="w-full max-w-[420px] rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 text-[15px] font-bold">{title}</div>
@@ -32,13 +32,13 @@ export function ConfirmDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`cursor-pointer rounded-[7px] px-3.5 py-1.5 text-[12.5px] font-semibold text-white ${
+            className={`cursor-pointer rounded-btn px-3.5 py-1.5 text-[12.5px] font-semibold text-white ${
               danger ? 'bg-rose-600 hover:bg-rose-500' : 'bg-accent hover:opacity-90'
             }`}
           >

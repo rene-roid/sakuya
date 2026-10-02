@@ -25,7 +25,7 @@ export function LoginGate() {
     <div className="grid min-h-screen place-items-center bg-zinc-950 px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-lg border border-zinc-800 bg-zinc-900/60 p-6 shadow-lg"
+        className="w-full max-w-sm rounded-lg border border-line bg-zinc-900/60 p-6 shadow-lg"
       >
         <h1 className="mb-1 text-lg font-semibold text-zinc-50">
           Sakuya<span className="text-accent">.</span>
@@ -37,7 +37,7 @@ export function LoginGate() {
           value={secret}
           onChange={(e) => setSecret(e.target.value)}
           placeholder="Password"
-          className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500"
+          className="w-full rounded-md border border-line-strong bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-zinc-500"
         />
         {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
         <button

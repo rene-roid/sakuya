@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
+import { Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
 
@@ -125,9 +126,10 @@ export function TagSearchInput({
     <div className="relative w-full">
       <div
         ref={boxRef}
-        className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1.5 focus-within:border-zinc-600"
+        className="flex w-full flex-wrap items-center gap-1.5 rounded-lg border border-line bg-zinc-900 px-2 py-1.5 focus-within:border-line-hover glass:min-h-9 glass:rounded-full glass:border-white/[0.07] glass:bg-white/[0.04] glass:pl-3 glass:transition-colors glass:focus-within:border-white/20 glass:focus-within:bg-white/[0.06]"
         onClick={() => inputRef.current?.focus()}
       >
+        <Search size={15} className="hidden shrink-0 text-zinc-500 glass:block" />
         {showChips &&
           tags.map((tag) => (
             <span
@@ -168,7 +170,7 @@ export function TagSearchInput({
         createPortal(
           <div
             style={{ top: anchor.top, left: anchor.left, width: anchor.width }}
-            className="fixed z-[97] overflow-hidden rounded-lg border border-zinc-600 bg-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.5)]"
+            className="fixed z-[97] overflow-hidden rounded-lg border border-line-hover bg-zinc-900 shadow-[0_8px_24px_rgba(0,0,0,0.5)] glass:rounded-panel glass:border-white/12 glass:bg-[#18181b]/95 glass:p-1 glass:shadow-[0_24px_64px_rgba(0,0,0,0.5)] glass:backdrop-blur-xl"
           >
             {visible.map((s, i) => (
               <div
@@ -178,8 +180,8 @@ export function TagSearchInput({
                   commit(s.name);
                 }}
                 onMouseEnter={() => setHighlight(i)}
-                className={`flex cursor-pointer items-center justify-between px-3 py-2 text-[12.5px] ${
-                  i === highlight ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-200'
+                className={`flex cursor-pointer items-center justify-between px-3 py-2 text-[12.5px] glass:rounded-lg ${
+                  i === highlight ? 'bg-zinc-800 text-zinc-100 glass:bg-white/10' : 'text-zinc-200'
                 }`}
               >
                 <span>{s.name}</span>

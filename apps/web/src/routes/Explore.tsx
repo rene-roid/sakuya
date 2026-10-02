@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PanelLeft } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../lib/api';
@@ -59,13 +60,21 @@ export function Explore() {
       <div className="min-w-0 flex-1">
         <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
           <div className="mb-1 flex items-baseline gap-3">
-            <h1 className="m-0 text-[22px] font-extrabold">Explore</h1>
+            <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Explore</h1>
             <span className="text-[13px] text-zinc-500">
               {media.total} item{media.total === 1 ? '' : 's'}
             </span>
+            {/* Phones get this instead of the collapsed sidebar strip, which ate a column of the grid. */}
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="ml-auto flex cursor-pointer items-center gap-1.5 self-center rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 sm:hidden glass:bg-white/[0.04] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+            >
+              <PanelLeft size={14} />
+              Libraries &amp; tags
+            </button>
           </div>
         </div>
-        <div className="sticky top-[60px] z-20 mt-3.5 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur">
+        <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
           <div className="px-4 sm:px-8 py-3">
             <FilterToolbar filters={filters} actions={actions} selection={selection} />
           </div>

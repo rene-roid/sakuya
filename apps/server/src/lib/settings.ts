@@ -18,6 +18,13 @@ const DEFAULTS: Record<string, string> = {
   // Off until switched on in Settings. Engagement tracking runs regardless, so the taste profile
   // is already warm the first time it's turned on.
   discover_enabled: '0',
+  // 'classic' (the original look) or 'glass' (Liquid Glass). Classic by default, so an update
+  // doesn't restyle anyone's install out from under them.
+  ui_style: 'classic',
+  // '1' once the one-time "pick your look" prompt has been answered. Server-wide, like ui_style.
+  ui_style_chosen: '0',
+  // The Liquid Glass dashboard banner; its close button turns this off.
+  dashboard_hero: '1',
 };
 
 export function getSetting(key: string): string {

@@ -31,8 +31,8 @@ const NEEDS_ROWS: Action[] = ['tags', 'rename', 'like', 'unlike', 'delete', 'ret
 function actionButton(danger?: boolean): string {
   return `flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-[7px] text-[12.5px] font-semibold ${
     danger
-      ? 'border-zinc-800 text-zinc-400 hover:border-rose-500/40 hover:text-rose-400'
-      : 'border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100'
+      ? 'border-line text-zinc-400 hover:border-rose-500/40 hover:text-rose-400'
+      : 'border-line text-zinc-300 hover:border-line-strong hover:text-zinc-100'
   }`;
 }
 
@@ -193,8 +193,8 @@ export function SelectionBar({
 
   return (
     <>
-      <div className="fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-5">
-        <div className="fade-in flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-zinc-700 bg-zinc-900/95 px-3 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.6)] backdrop-blur">
+      <div className="fixed inset-x-0 bottom-(--dock-h) z-[60] flex justify-center px-4 pb-5">
+        <div className="fade-in flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-line-strong bg-zinc-900/95 px-3 py-2.5 shadow-[0_8px_30px_rgba(0,0,0,0.6)] backdrop-blur">
           <span className="px-1 text-[12.5px] font-bold text-zinc-100">
             {ids.length} selected
           </span>
@@ -428,7 +428,7 @@ function LoadingDialog({ onCancel }: { onCancel: () => void }) {
       className="fade-in fixed inset-0 z-[95] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
       onClick={onCancel}
     >
-      <div className="rounded-xl border border-zinc-800 bg-[#111113] px-6 py-5 text-[12.5px] text-zinc-400">
+      <div className="rounded-xl border border-line bg-surface px-6 py-5 text-[12.5px] text-zinc-400">
         Loading selection…
       </div>
     </div>
@@ -463,11 +463,11 @@ function BoardPicker({
       onClick={onCancel}
     >
       <div
-        className="flex max-h-[70vh] w-full max-w-[420px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[70vh] w-full max-w-[420px] flex-col rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 text-[15px] font-bold">Add to board</div>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900/40">
+        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40">
           {boards.length === 0 && (
             <div className="px-3 py-3 text-[11.5px] text-zinc-600">No boards yet — create one below.</div>
           )}
@@ -475,7 +475,7 @@ function BoardPicker({
             <div
               key={board.id}
               onClick={() => onPick({ id: board.id, name: board.name })}
-              className="flex cursor-pointer items-center justify-between border-b border-zinc-800/60 px-3 py-2 last:border-b-0 hover:bg-white/5"
+              className="flex cursor-pointer items-center justify-between border-b border-line/60 px-3 py-2 last:border-b-0 hover:bg-white/5"
             >
               <span className="truncate text-[12.5px] font-semibold text-zinc-200">{board.name}</span>
               <span className="flex-none text-[11px] text-zinc-500">{board.itemCount}</span>
@@ -490,12 +490,12 @@ function BoardPicker({
               if (e.key === 'Enter' && newName.trim()) createMutation.mutate(newName.trim());
             }}
             placeholder="New board name"
-            className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-600"
+            className="flex-1 rounded-field border border-line bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
           />
           <button
             disabled={!newName.trim() || createMutation.isPending}
             onClick={() => createMutation.mutate(newName.trim())}
-            className="cursor-pointer rounded-[7px] bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             Create
           </button>

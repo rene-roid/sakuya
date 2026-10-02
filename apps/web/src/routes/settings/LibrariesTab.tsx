@@ -60,7 +60,7 @@ export function LibrariesTab() {
         <button
           disabled={!libraries?.length || scanAllMutation.isPending}
           onClick={() => scanAllMutation.mutate()}
-          className="mb-4 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
+          className="mb-4 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
         >
           Scan All
         </button>
@@ -75,19 +75,19 @@ export function LibrariesTab() {
           canMoveDown={i < (libraries?.length ?? 0) - 1}
         />
       ))}
-      <div className="rounded-xl border border-dashed border-zinc-800 p-4">
+      <div className="rounded-xl border border-dashed border-line p-4">
         <div className="mb-2.5 text-[13.5px] font-bold">New library</div>
         <div className="flex gap-2">
           <input
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Library name"
-            className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
+            className="flex-1 rounded-field border border-line bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
           />
           <select
             value={newType}
             onChange={(e) => setNewType(e.target.value)}
-            className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[7px] text-[13px] text-zinc-100 outline-none"
+            className="rounded-field border border-line bg-zinc-900 px-2 py-[7px] text-[13px] text-zinc-100 outline-none"
           >
             <option value="mixed">Mixed</option>
             <option value="image">Images</option>
@@ -96,7 +96,7 @@ export function LibrariesTab() {
           <button
             disabled={!newName.trim() || createMutation.isPending}
             onClick={() => createMutation.mutate()}
-            className="cursor-pointer rounded-[7px] bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
             Create
           </button>
@@ -207,7 +207,7 @@ function LibraryCard({
   });
 
   return (
-    <div className="mb-3.5 rounded-xl border border-zinc-800 bg-[#111113] p-4">
+    <div className="mb-3.5 rounded-xl border border-line bg-surface p-4">
       <div className="mb-2.5 flex items-center gap-2.5">
         <div className="flex flex-1 items-center gap-2.5">
           <div
@@ -248,7 +248,7 @@ function LibraryCard({
                     if (e.key === 'Enter') submitRename();
                     if (e.key === 'Escape') setRenaming(null);
                   }}
-                  className="w-full max-w-[240px] rounded-[6px] border border-zinc-700 bg-zinc-900 px-2 py-[3px] text-sm font-bold text-zinc-100 outline-none"
+                  className="w-full max-w-[240px] rounded-[6px] border border-line-strong bg-zinc-900 px-2 py-[3px] text-sm font-bold text-zinc-100 outline-none"
                 />
                 <span className="cursor-pointer text-zinc-500 hover:text-zinc-200" onMouseDown={(e) => e.preventDefault()} onClick={submitRename}>
                   <Check size={14} />
@@ -279,13 +279,13 @@ function LibraryCard({
           </button>
         </div>
         <div
-          className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200"
+          className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200"
           onClick={() => scanMutation.mutate()}
         >
           Scan
         </div>
         <div
-          className="cursor-pointer rounded-[7px] border border-transparent px-2 py-1.5 text-[12.5px] font-semibold text-zinc-600 hover:text-red-400"
+          className="cursor-pointer rounded-btn border border-transparent px-2 py-1.5 text-[12.5px] font-semibold text-zinc-600 hover:text-red-400"
           title="Delete library"
           onClick={() => {
             if (confirm(`Delete library "${lib.name}"? Uploaded files are removed; folder files stay on disk.`)) {
@@ -300,7 +300,7 @@ function LibraryCard({
         {lib.folders.map((folder) => (
           <div
             key={folder.id}
-            className="flex items-center justify-between rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] text-[12.5px]"
+            className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] text-[12.5px]"
           >
             <span className="truncate font-mono text-zinc-300">{folder.path}</span>
             <div className="flex flex-none items-center gap-2.5 pl-3">
@@ -327,12 +327,12 @@ function LibraryCard({
             onChange={(e) => setFolderInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && folderInput.trim() && addFolderMutation.mutate()}
             placeholder="/absolute/path/to/folder"
-            className="flex-1 rounded-[7px] border border-zinc-800 bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
+            className="flex-1 rounded-field border border-line bg-zinc-900 px-2.5 py-[7px] font-mono text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-600"
           />
           <button
             disabled={!folderInput.trim() || addFolderMutation.isPending}
             onClick={() => addFolderMutation.mutate()}
-            className="cursor-pointer rounded-[7px] bg-accent px-3 py-[7px] text-[12px] font-semibold text-white disabled:opacity-40"
+            className="cursor-pointer rounded-btn bg-accent px-3 py-[7px] text-[12px] font-semibold text-white disabled:opacity-40"
           >
             Add
           </button>
@@ -345,13 +345,13 @@ function LibraryCard({
           + Add folder
         </div>
       )}
-      <div className="mt-3 flex items-center gap-2.5 border-t border-zinc-800 pt-3">
+      <div className="mt-3 flex items-center gap-2.5 border-t border-line pt-3">
         <span className="text-[12px] text-zinc-500">Auto-scan</span>
         <select
           value={scanInterval}
           disabled={autoScanMutation.isPending}
           onChange={(e) => autoScanMutation.mutate(Number(e.target.value))}
-          className="rounded-[7px] border border-zinc-800 bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
+          className="rounded-field border border-line bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
         >
           {AUTO_SCAN_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>
@@ -443,7 +443,7 @@ function ThumbnailPickerModal({
       onClick={onClose}
     >
       <div
-        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-zinc-800 bg-[#111113] p-5"
+        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-line bg-surface p-5"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-1 flex items-center justify-between">
@@ -472,7 +472,7 @@ function ThumbnailPickerModal({
           <button
             disabled={uploadCoverMutation.isPending}
             onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
             <Upload size={13} /> Upload custom image
           </button>
@@ -480,7 +480,7 @@ function ThumbnailPickerModal({
             <button
               disabled={removeCoverMutation.isPending}
               onClick={() => removeCoverMutation.mutate()}
-              className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-40"
+              className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-40"
             >
               Remove custom image
             </button>
@@ -488,14 +488,14 @@ function ThumbnailPickerModal({
           <button
             disabled={!currentThumbId || regenerateMutation.isPending}
             onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}
-            className="flex items-center gap-1.5 cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
             <RotateCw size={13} /> Regenerate current thumbnail
           </button>
           <button
             disabled={lib.thumbnailMediaId === null || setThumbMutation.isPending}
             onClick={() => setThumbMutation.mutate(null)}
-            className="cursor-pointer rounded-[7px] border border-zinc-800 px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+            className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
           >
             Use latest media
           </button>
@@ -507,7 +507,7 @@ function ThumbnailPickerModal({
               title={m.filename}
               onClick={() => setThumbMutation.mutate(m.id)}
               className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 ${
-                currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-zinc-700'
+                currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-line-strong'
               }`}
             >
               <img src={thumbUrl(m.id, bust)} alt="" className="h-full w-full object-cover" />
