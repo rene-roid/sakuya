@@ -4,13 +4,14 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
 import { eq, and, sql, inArray } from 'drizzle-orm';
+import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
-import { rowToMedia } from '../lib/rowToMedia';
+import { rowToMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
@@ -70,14 +71,14 @@ function ftsMatchExpr(terms: string[]): string {
  * WHERE fragments + bound params for a filter query. Shared by the paginated list and by
  * `/api/media/ids`, so "select all matching" can never drift from what the grid shows.
  */
-function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: unknown[] } {
+function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
   const tagNames = (query.tags ?? '')
     .split(',')
     .map((t) => t.trim().toLowerCase())
     .filter(Boolean);
 
   const conds: string[] = [];
-  const params: unknown[] = [];
+  const params: SQLQueryBindings[] = [];
   if (query.libraryId !== undefined) {
     conds.push('m.library_id = ?');
     params.push(query.libraryId);
@@ -145,7 +146,7 @@ mediaRouter.get(
       : (
           sqlite
             .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-            .get(...(params as any[])) as { c: number }
+            .get(...params) as { c: number }
         ).c;
 
     const pageConds = [...conds];
@@ -168,7 +169,7 @@ mediaRouter.get(
       ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
       ORDER BY ${keyExpr} ${dir === 'asc' ? 'ASC' : 'DESC'}, m.id ${dir === 'asc' ? 'ASC' : 'DESC'}
       LIMIT ?`;
-    const rows = sqlite.query(sql).all(...(pageParams as any[]), query.limit) as any[];
+    const rows = sqlite.query(sql).all(...pageParams, query.limit) as MediaSqlRow[];
 
     let nextCursor: string | null = null;
     if (rows.length === query.limit) {
@@ -194,7 +195,7 @@ mediaRouter.get(
          ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}
          ORDER BY ${keyExpr} ${dir === 'asc' ? 'ASC' : 'DESC'}, m.id ${dir === 'asc' ? 'ASC' : 'DESC'}`,
       )
-      .all(...(params as any[])) as { id: number }[];
+      .all(...params) as { id: number }[];
     const body: MediaIdsResponse = { ids: rows.map((r) => r.id), total: rows.length };
     res.json(body);
   }),
@@ -208,9 +209,7 @@ mediaRouter.get(
     // round trips. The IN subquery keeps the group set in SQL, so nothing has to be bound.
     const rows = sqlite
       .query(
-        `SELECT m.*, l.name AS library_name,
-                (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-         FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+        `${MEDIA_SELECT}
          WHERE m.content_hash IN (
            SELECT content_hash FROM media
            WHERE content_hash IS NOT NULL
@@ -218,13 +217,13 @@ mediaRouter.get(
          )
          ORDER BY m.content_hash, m.created_at ASC`,
       )
-      .all() as any[];
+      .all() as MediaSqlRow[];
 
     // Rows arrive grouped and oldest-first within each group, so the first item of a group is
     // the original and the rest are what a cleanup would reclaim.
     const byHash = new Map<string, ReturnType<typeof rowToMedia>[]>();
     for (const row of rows) {
-      const hash = row.content_hash as string;
+      const hash = row.content_hash!;
       const list = byHash.get(hash);
       if (list) list.push(rowToMedia(row));
       else byHash.set(hash, [rowToMedia(row)]);
@@ -276,14 +275,9 @@ mediaRouter.post(
     const { ids } = idsBody.parse(req.body);
     const placeholders = ids.map(() => '?').join(',');
     const rows = sqlite
-      .query(
-        `SELECT m.*, l.name AS library_name,
-                (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-         FROM media m LEFT JOIN libraries l ON l.id = m.library_id
-         WHERE m.id IN (${placeholders})`,
-      )
-      .all(...(ids as any[])) as any[];
-    const byId = new Map(rows.map((row) => [row.id as number, rowToMedia(row)]));
+      .query(`${MEDIA_SELECT} WHERE m.id IN (${placeholders})`)
+      .all(...ids) as MediaSqlRow[];
+    const byId = new Map(rows.map((row) => [row.id, rowToMedia(row)]));
     res.json(ids.map((id) => byId.get(id)).filter(Boolean));
   }),
 );
@@ -301,7 +295,7 @@ mediaRouter.post(
          WHERE mt.media_id IN (${placeholders})
          GROUP BY t.id ORDER BY count DESC, t.name`,
       )
-      .all(...(ids as any[]));
+      .all(...ids);
     res.json(rows);
   }),
 );
@@ -488,13 +482,7 @@ mediaRouter.post(
 );
 
 function getDetail(id: number): MediaDetail | null {
-  const row = sqlite
-    .query(
-      `SELECT m.*, l.name AS library_name,
-              (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-       FROM media m LEFT JOIN libraries l ON l.id = m.library_id WHERE m.id = ?`,
-    )
-    .get(id) as any;
+  const row = sqlite.query(`${MEDIA_SELECT} WHERE m.id = ?`).get(id) as MediaSqlRow | null;
   if (!row) return null;
   const tagRows = sqlite
     .query(
@@ -503,14 +491,14 @@ function getDetail(id: number): MediaDetail | null {
        WHERE mt.media_id = ?
        ORDER BY CASE t.category WHEN 'rating' THEN 0 WHEN 'character' THEN 1 ELSE 2 END, mt.confidence DESC, t.name`,
     )
-    .all(id) as any[];
+    .all(id) as MediaDetail['tags'];
   const boardRows = sqlite
     .query(
       `SELECT b.id, b.name, b.created_at AS createdAt
        FROM board_media bm JOIN boards b ON b.id = bm.board_id
        WHERE bm.media_id = ? ORDER BY b.name`,
     )
-    .all(id) as any[];
+    .all(id) as MediaDetail['boards'];
   return { ...rowToMedia(row), tags: tagRows, boards: boardRows };
 }
 
@@ -697,13 +685,8 @@ mediaRouter.get(
     // Exact duplicates: same cheap content hash (size + first 4 MB).
     const duplicates = row.contentHash
       ? (sqlite
-          .query(
-            `SELECT m.*, l.name AS library_name,
-                    (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-             FROM media m LEFT JOIN libraries l ON l.id = m.library_id
-             WHERE m.content_hash = ? AND m.id != ? LIMIT 24`,
-          )
-          .all(row.contentHash, id) as any[]).map(rowToMedia)
+          .query(`${MEDIA_SELECT} WHERE m.content_hash = ? AND m.id != ? LIMIT 24`)
+          .all(row.contentHash, id) as MediaSqlRow[]).map(rowToMedia)
       : [];
 
     // Visual similarity: perceptual-hash hamming distance (images only).
@@ -719,17 +702,15 @@ mediaRouter.get(
       const bandUnion = bands.map((_, i) => `SELECT id FROM media WHERE phash_b${i} = ?`).join(' UNION ');
       const candidates = sqlite
         .query(
-          `SELECT m.*, l.name AS library_name,
-                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-           FROM media m LEFT JOIN libraries l ON l.id = m.library_id
+          `${MEDIA_SELECT}
            WHERE m.id IN (${bandUnion})
              AND m.type = 'image' AND m.perceptual_hash IS NOT NULL AND m.id != ?`,
         )
-        .all(...(bands as number[]), id) as any[];
-      const scored: { media: any; dist: number }[] = [];
+        .all(...bands, id) as MediaSqlRow[];
+      const scored: { media: MediaSqlRow; dist: number }[] = [];
       for (const cand of candidates) {
         if (dupIds.has(cand.id)) continue;
-        const dist = hammingDistance(row.perceptualHash, cand.perceptual_hash);
+        const dist = hammingDistance(row.perceptualHash, cand.perceptual_hash!);
         if (dist <= 10) scored.push({ media: cand, dist });
       }
       scored.sort((a, b) => a.dist - b.dist);

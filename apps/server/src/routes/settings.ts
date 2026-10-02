@@ -48,9 +48,14 @@ settingsRouter.patch(
   '/api/settings',
   wrap(async (req, res) => {
     const body = z.record(z.string()).parse(req.body);
+    // Checked up front so a rejected request changes nothing, rather than applying every key
+    // ahead of the bad one and then reporting failure.
+    const invalid = Object.keys(body).find((key) => !EDITABLE_KEYS.has(key));
+    if (invalid) return res.status(400).json({ error: `Setting not editable: ${invalid}` });
+    if (body.ui_style !== undefined && !UI_STYLES.has(body.ui_style)) {
+      return res.status(400).json({ error: `Unknown ui_style: ${body.ui_style}` });
+    }
     for (const [key, value] of Object.entries(body)) {
-      if (!EDITABLE_KEYS.has(key)) return res.status(400).json({ error: `Setting not editable: ${key}` });
-      if (key === 'ui_style' && !UI_STYLES.has(value)) return res.status(400).json({ error: `Unknown ui_style: ${value}` });
       if (key === 'gifs_as_videos' && value !== getSetting(key)) {
         enqueueGifReclassifyJob(value === '1');
       }
@@ -60,16 +65,21 @@ settingsRouter.patch(
   }),
 );
 
-function dirSize(dir: string): number {
-  let total = 0;
-  try {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+/**
+ * Async on purpose: the thumbnail folder holds one file per media item, and statting tens of
+ * thousands of them synchronously stalled every other request while the settings page loaded.
+ */
+async function dirSize(dir: string): Promise<number> {
+  const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const sizes = await Promise.all(
+    entries.map((entry) => {
       const full = path.join(dir, entry.name);
-      if (entry.isFile()) total += fs.statSync(full).size;
-      else if (entry.isDirectory()) total += dirSize(full);
-    }
-  } catch {}
-  return total;
+      if (entry.isFile()) return fs.promises.stat(full).then((s) => s.size, () => 0);
+      if (entry.isDirectory()) return dirSize(full);
+      return 0;
+    }),
+  );
+  return sizes.reduce((a, b) => a + b, 0);
 }
 
 settingsRouter.get(
@@ -84,7 +94,7 @@ settingsRouter.get(
       mediaCount: media.c,
       mediaBytes: media.b,
       dbBytes: fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0,
-      thumbBytes: dirSize(THUMBS_DIR),
+      thumbBytes: await dirSize(THUMBS_DIR),
     };
     res.json(info);
   }),

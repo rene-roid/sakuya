@@ -254,7 +254,7 @@ Update playback/view progress. Body: `{ progress: number (0-1) }`. Response: `{ 
 ### `GET /api/tags`
 Tag usage counts, optionally scoped to a library.
 
-Query params: `q?` (substring filter), `libraryId?` (number), `category?` (comma-separated list),
+Query params: `q?` (literal substring filter; `_` and `%` match themselves), `libraryId?` (number), `category?` (comma-separated list),
 `limit?` (1-100, default 30; ignored when filtering to only the `rating` category).
 
 Response: `TagCount[]`.
@@ -313,10 +313,10 @@ All settings key/value pairs. Response: `Settings`.
 ### `PATCH /api/settings`
 Update one or more settings. Body: `Record<string, string>` — keys must be one of the editable
 keys (`ai_tagging_enabled`, `confidence_threshold`, `accent_color`, `remember_mute_state`,
-`remember_volume_level`, `autosearch_first_tag`, `continue_where_left`,
-`thumbnail_cache_enabled`, `board_remember_filters`, `downloader_concurrency`,
-`gifs_as_videos`); unknown keys return `400`. Toggling `gifs_as_videos` enqueues a GIF
-reclassification job. Response: `Settings`.
+`remember_volume_level`, `continue_where_left`, `thumbnail_cache_enabled`,
+`board_remember_filters`, `downloader_concurrency`, `gifs_as_videos`, `video_transcode_enabled`,
+`discover_enabled`); an unknown key returns `400` and nothing in the request is saved. Toggling
+`gifs_as_videos` enqueues a GIF reclassification job. Response: `Settings`.
 
 ## System
 

@@ -25,8 +25,10 @@ test('answering the style prompt saves the style and marks it answered', async (
   expect(s.ui_style_chosen).toBe('1');
 });
 
-test('an unknown style is rejected and leaves the saved one alone', async () => {
-  const res = await patch({ ui_style: 'neon' });
+test('an unknown style is rejected and saves nothing from the same request', async () => {
+  const res = await patch({ dashboard_hero: '0', ui_style: 'neon' });
   expect(res.status).toBe(400);
-  expect((await settings()).ui_style).toBe('glass');
+  const s = await settings();
+  expect(s.ui_style).toBe('glass');
+  expect(s.dashboard_hero).toBe('1');
 });
