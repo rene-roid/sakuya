@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { Settings, UiStyle } from '@sakuya/shared';
+import type { Settings } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
 import { useToast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TabHeader } from './index';
 import { applyUiStyle, useUiStyle } from '../../hooks/useUiStyle';
+import { UI_STYLES, UiStylePreview } from '../../components/UiStylePreview';
 
 const ACCENTS = ['#8b5cf6', '#14b8a6', '#f43f5e'];
 
@@ -86,55 +87,6 @@ export function AppearanceTab() {
             ))}
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-const UI_STYLES: { key: UiStyle; label: string; desc: string }[] = [
-  { key: 'glass', label: 'Liquid Glass', desc: 'Frosted bars, pill navigation and a welcome banner.' },
-  { key: 'classic', label: 'Original', desc: 'The flat, compact look Sakuya shipped with.' },
-];
-
-/** Tiny static mock of each style, drawn in plain markup so it doesn't depend on the active one. */
-function UiStylePreview({ style }: { style: UiStyle }) {
-  const glass = style === 'glass';
-  return (
-    <div
-      className="h-[92px] overflow-hidden p-2"
-      style={{
-        borderRadius: glass ? 10 : 6,
-        background: glass
-          ? 'radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), #0c0c10'
-          : '#09090b',
-        border: '1px solid ' + (glass ? 'rgb(255 255 255 / 0.08)' : '#27272a'),
-      }}
-    >
-      <div className="flex items-center gap-1">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="h-2.5 w-7"
-            style={{
-              borderRadius: glass ? 999 : 2,
-              background: i === 0 ? (glass ? 'color-mix(in srgb, var(--accent) 45%, transparent)' : '#27272a') : glass ? 'rgb(255 255 255 / 0.06)' : 'transparent',
-            }}
-          />
-        ))}
-        <div className="ml-auto h-2.5 w-12" style={{ borderRadius: glass ? 999 : 2, background: glass ? 'rgb(255 255 255 / 0.08)' : '#18181b' }} />
-      </div>
-      <div className="mt-2 grid grid-cols-4 gap-1.5">
-        {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-[52px]"
-            style={{
-              borderRadius: glass ? 5 : 3,
-              background: glass ? 'rgb(255 255 255 / 0.05)' : '#18181b',
-              border: '1px solid ' + (glass ? 'rgb(255 255 255 / 0.1)' : '#27272a'),
-            }}
-          />
-        ))}
       </div>
     </div>
   );

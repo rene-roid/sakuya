@@ -31,6 +31,7 @@ const EDITABLE_KEYS = new Set([
   'video_transcode_enabled',
   'discover_enabled',
   'ui_style',
+  'ui_style_chosen',
   'dashboard_hero',
 ]);
 

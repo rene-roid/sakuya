@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 const STORAGE_KEY = 'sakuya:ui-style';
 
 export function storedUiStyle(): UiStyle {
-  return localStorage.getItem(STORAGE_KEY) === 'classic' ? 'classic' : 'glass';
+  return localStorage.getItem(STORAGE_KEY) === 'glass' ? 'glass' : 'classic';
 }
 
 /** Sets `data-ui` on <html>, which switches the CSS tokens and every `glass:` utility. */

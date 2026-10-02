@@ -168,6 +168,7 @@ export interface Settings {
   video_transcode_enabled: string;
   discover_enabled: string;
   ui_style: UiStyle;
+  ui_style_chosen: string;
   dashboard_hero: string;
 }
 

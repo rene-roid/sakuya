@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings, Sparkles } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
@@ -135,11 +135,14 @@ function LockButton() {
   );
 }
 
-/** Bottom tab bar that carries the navigation on phones, where the top bar has no room for it. */
+/**
+ * Bottom tab bar that carries the navigation on phones, where the top bar has no room for it.
+ * Sized so all five labels fit whole down to a 360px screen, and below that at a smaller size.
+ */
 function MobileDock({ items }: { items: typeof NAV_ITEMS }) {
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 grid h-(--dock-h) border-t border-line bg-zinc-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden glass:inset-x-3 glass:bottom-[calc(10px+env(safe-area-inset-bottom))] glass:h-[56px] glass:rounded-2xl glass:border glass:border-white/10 glass:bg-[#18181b]/75 glass:pb-0 glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.5)] glass:backdrop-blur-2xl"
+      className="fixed inset-x-0 bottom-0 z-40 grid h-(--dock-h) border-t border-line bg-zinc-950/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl md:hidden glass:inset-x-2 glass:bottom-[calc(8px+env(safe-area-inset-bottom))] glass:h-[56px] glass:rounded-2xl glass:border glass:border-white/10 glass:bg-[#18181b]/75 glass:pb-0 glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_40px_rgba(0,0,0,0.5)] glass:backdrop-blur-2xl"
       style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
     >
       {items.map(({ to, label, icon: Icon }) => (
@@ -147,7 +150,7 @@ function MobileDock({ items }: { items: typeof NAV_ITEMS }) {
           key={to}
           to={to}
           className={({ isActive }) =>
-            `flex min-w-0 flex-col items-center justify-center gap-[5px] px-1 text-[10.5px] font-semibold transition-colors ${
+            `flex min-w-0 flex-col items-center justify-center gap-[5px] px-0.5 text-[10.5px] font-semibold transition-colors max-[359px]:px-0 max-[359px]:text-[10px] max-[359px]:tracking-tight ${
               isActive ? 'text-zinc-100 [&_svg]:text-accent' : 'text-zinc-500 glass:hover:text-zinc-300'
             }`
           }
@@ -167,7 +170,9 @@ function MobileDock({ items }: { items: typeof NAV_ITEMS }) {
 export function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationType = useNavigationType();
   const barRef = useRef<HTMLDivElement>(null);
+  const lastPathname = useRef(location.pathname);
   const [searchTags, setSearchTags] = useState<string[]>([]);
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
   const discoverEnabled = settings?.discover_enabled === '1';
@@ -214,6 +219,18 @@ export function Navbar() {
       setHidden(false);
     };
   }, []);
+
+  // Opening another page starts it at the top with the bars showing. Without this the window kept
+  // the previous page's scroll offset, so a dock tap could land halfway down a feed with the top
+  // bar still slid away. Back and forward are left where the browser puts them, and query-only
+  // changes (filters) don't count as a new page.
+  useEffect(() => {
+    if (location.pathname === lastPathname.current) return;
+    lastPathname.current = location.pathname;
+    if (navigationType === 'POP') return;
+    window.scrollTo(0, 0);
+    document.documentElement.removeAttribute('data-nav-hidden');
+  }, [location.pathname, navigationType]);
 
   const goToExplore = (tags: string[]) => {
     navigate(tags.length ? `/explore?tags=${tags.map(encodeURIComponent).join(',')}` : '/explore');
