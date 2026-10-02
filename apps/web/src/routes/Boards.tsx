@@ -33,7 +33,7 @@ export function Boards() {
 
   return (
     <div className="fade-in mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-7">
-      <h1 className="m-0 text-[22px] font-extrabold glass:text-[30px] glass:font-semibold">Boards</h1>
+      <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Boards</h1>
       <div className="mb-5 mt-1 text-[13px] text-zinc-500">
         Your own collections — add any image or video to a board from its detail view.
       </div>
@@ -102,7 +102,7 @@ function BoardCard({ board }: { board: BoardWithStats }) {
   return (
     <div className="group">
       <div
-        className="relative aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-xl border border-line bg-zinc-900"
+        className="relative aspect-[16/10] w-full cursor-pointer overflow-hidden rounded-media border border-line bg-zinc-900 glass:border-white/[0.07] glass:transition-colors glass:hover:border-white/25"
         onClick={() => navigate(`/boards/${board.id}`)}
       >
         {board.thumbMediaId ? (
@@ -188,7 +188,7 @@ export function BoardView() {
     <div className="fade-in">
       <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pt-6">
         <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="m-0 text-[22px] font-extrabold glass:text-[30px] glass:font-semibold">{board?.name ?? '…'}</h1>
+          <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">{board?.name ?? '…'}</h1>
           <span className="text-[13px] text-zinc-500">
             {media.total} item{media.total === 1 ? '' : 's'}
           </span>

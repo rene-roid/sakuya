@@ -104,7 +104,7 @@ export function Discover() {
     <div className="fade-in">
       <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
         <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="m-0 text-[22px] font-extrabold glass:text-[30px] glass:font-semibold">Discover</h1>
+          <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Discover</h1>
           <span className="text-[13px] text-zinc-500">
             picked from {feed.total} item{feed.total === 1 ? '' : 's'}
           </span>

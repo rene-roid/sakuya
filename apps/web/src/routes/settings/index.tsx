@@ -38,7 +38,7 @@ export function Settings() {
           <div
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-none cursor-pointer whitespace-nowrap rounded-lg border px-3 py-[9px] text-[13.5px] font-semibold glass:rounded-full glass:px-4 glass:font-display glass:text-[14px] glass:transition-colors ${
+            className={`flex-none cursor-pointer whitespace-nowrap rounded-lg border px-3 py-[9px] text-[13.5px] font-semibold glass:rounded-full glass:px-4 glass:transition-colors ${
               tab === t.key
                 ? 'border-line bg-zinc-900 text-zinc-100 glass:border-white/10 glass:bg-white/10 glass:text-white glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
                 : 'border-transparent text-zinc-400 hover:text-zinc-200 glass:font-medium glass:hover:bg-white/5'
@@ -66,7 +66,7 @@ export function Settings() {
 export function TabHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h2 className="m-0 mb-1 text-[19px] font-bold glass:text-[24px]">{title}</h2>
+      <h2 className="m-0 mb-1 text-[19px] font-bold glass:text-[20px]">{title}</h2>
       <div className="mb-5 text-[13px] text-zinc-500">{subtitle}</div>
     </div>
   );

@@ -52,15 +52,15 @@ export const MediaCard = memo(function MediaCard({
   return (
     <div className="cursor-pointer select-none" onClick={(e) => onActivate(index, e)}>
       <div
-        className={`group relative aspect-square w-full overflow-hidden rounded-panel border bg-zinc-900 glass:rounded-xl glass:bg-white/[0.03] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_48px_rgba(0,0,0,0.16)] glass:transition-colors ${
-          selected ? 'border-accent ring-2 ring-accent' : 'border-line glass:hover:border-white/20'
+        className={`group relative aspect-square w-full overflow-hidden rounded-media border bg-zinc-900 glass:bg-white/[0.03] glass:transition-colors ${
+          selected ? 'border-accent ring-2 ring-accent' : 'border-line glass:border-white/[0.07] glass:hover:border-white/25'
         }`}
       >
         <img
           src={thumbUrl(item.id)}
           alt={item.filename}
           loading="lazy"
-          className="h-full w-full object-cover glass:transition-transform glass:duration-300 glass:group-hover:scale-[1.03]"
+          className="h-full w-full object-cover"
         />
         {item.type === 'video' && <TypeBadge type={item.type} />}
         <DurationBadge seconds={item.durationSeconds} />
@@ -120,14 +120,9 @@ export function WideCard({
   showProgress?: boolean;
 }) {
   return (
-    <div className="group w-[200px] flex-none cursor-pointer glass:w-[220px]" onClick={onClick}>
-      <div className="relative h-[112px] w-[200px] overflow-hidden rounded-panel border border-line bg-zinc-900 glass:h-[124px] glass:w-[220px] glass:rounded-xl glass:bg-white/[0.03] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_18px_48px_rgba(0,0,0,0.16)] glass:transition-colors glass:group-hover:border-white/20">
-        <img
-          src={thumbUrl(item.id)}
-          alt={item.filename}
-          loading="lazy"
-          className="h-full w-full object-cover glass:transition-transform glass:duration-300 glass:group-hover:scale-[1.04]"
-        />
+    <div className="group w-[200px] flex-none cursor-pointer" onClick={onClick}>
+      <div className="relative h-[112px] w-[200px] overflow-hidden rounded-media border border-line bg-zinc-900 glass:border-white/[0.07] glass:transition-colors glass:group-hover:border-white/25">
+        <img src={thumbUrl(item.id)} alt={item.filename} loading="lazy" className="h-full w-full object-cover" />
         {showProgress && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15">
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />
@@ -143,8 +138,8 @@ export function WideCard({
           <HeartButton mediaId={item.id} liked={item.liked} size="sm" />
         </div>
       </div>
-      <div className="mt-[7px] truncate text-[12.5px] font-semibold text-zinc-200 glass:mt-2.5 glass:px-0.5 glass:font-display glass:text-[13.5px] glass:text-zinc-100">{item.filename}</div>
-      <div className="mt-px text-[11px] text-zinc-500 glass:px-0.5 glass:text-[12px]">{item.libraryName}</div>
+      <div className="mt-[7px] truncate text-[12.5px] font-semibold text-zinc-200 glass:text-zinc-100">{item.filename}</div>
+      <div className="mt-px text-[11px] text-zinc-500">{item.libraryName}</div>
     </div>
   );
 }

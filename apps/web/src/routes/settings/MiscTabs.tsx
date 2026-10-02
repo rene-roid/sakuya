@@ -92,7 +92,7 @@ export function AppearanceTab() {
 }
 
 const UI_STYLES: { key: UiStyle; label: string; desc: string }[] = [
-  { key: 'glass', label: 'Liquid Glass', desc: 'Frosted surfaces, rounded pills and a glowing banner.' },
+  { key: 'glass', label: 'Liquid Glass', desc: 'Frosted bars, pill navigation and a welcome banner.' },
   { key: 'classic', label: 'Original', desc: 'The flat, compact look Sakuya shipped with.' },
 ];
 
@@ -103,7 +103,7 @@ function UiStylePreview({ style }: { style: UiStyle }) {
     <div
       className="h-[92px] overflow-hidden p-2"
       style={{
-        borderRadius: glass ? 14 : 6,
+        borderRadius: glass ? 10 : 6,
         background: glass
           ? 'radial-gradient(circle at 85% 0%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%), #0c0c10'
           : '#09090b',
@@ -129,8 +129,8 @@ function UiStylePreview({ style }: { style: UiStyle }) {
             key={i}
             className="h-[52px]"
             style={{
-              borderRadius: glass ? 10 : 3,
-              background: glass ? 'linear-gradient(180deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.03))' : '#18181b',
+              borderRadius: glass ? 5 : 3,
+              background: glass ? 'rgb(255 255 255 / 0.05)' : '#18181b',
               border: '1px solid ' + (glass ? 'rgb(255 255 255 / 0.1)' : '#27272a'),
             }}
           />
