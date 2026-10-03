@@ -30,7 +30,7 @@ jobs:
 
       # --isolate is required: each server test file boots its own server and
       # sqlite singleton, so they cannot share a process.
-      - run: bun test --isolate
+      - run: bun run test
 
       # The web build is the only check that exercises Vite and the release-notes
       # glob, so a broken import here would otherwise only surface on deploy.

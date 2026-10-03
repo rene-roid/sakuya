@@ -1,10 +1,4 @@
 @echo off
-setlocal enabledelayedexpansion
-
-echo ========================================
-echo   Sakuya - Update
-echo ========================================
-echo.
 
 where bun >nul 2>&1
 if %errorlevel% neq 0 (
