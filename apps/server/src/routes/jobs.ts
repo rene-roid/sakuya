@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { wrap, openEventStream } from '../lib/http';
 import { listJobs, jobEvents } from '../services/jobQueue';
 import { runAllNow } from '../services/jobScheduler';
-import type { Job } from '@sakuya/shared';
+import { SCHEDULE_JOB_TYPES, type Job } from '@sakuya/shared';
 
 export const jobsRouter = Router();
 
@@ -29,7 +29,7 @@ jobsRouter.post(
     const body = z
       .object({
         scope: z.union([z.literal('global'), z.object({ libraryId: z.number() })]),
-        jobType: z.enum(['scan', 'tag', 'hash', 'cleanup']).optional(),
+        jobType: z.enum(SCHEDULE_JOB_TYPES).optional(),
       })
       .parse(req.body);
 

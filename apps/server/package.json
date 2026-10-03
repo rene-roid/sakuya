@@ -24,7 +24,6 @@
     "@types/adm-zip": "^0.5.8",
     "@types/bun": "^1.2.0",
     "@types/express": "^4.17.21",
-    "@types/ffprobe-static": "^2.0.3",
-    "typescript": "^5.5.3"
+    "@types/ffprobe-static": "^2.0.3"
   }
 }

@@ -5,19 +5,15 @@ import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { HeartButton } from './HeartButton';
 
-export function TypeBadge({ type }: { type: 'image' | 'video' }) {
+function VideoBadge() {
   return (
-    <div
-      className={`absolute left-1.5 top-1.5 rounded px-1.5 py-px text-[9px] glass:left-2 glass:top-2 glass:rounded-full glass:px-2 glass:py-0.5 font-bold tracking-wide text-white backdrop-blur ${
-        type === 'video' ? 'bg-accent/85' : 'bg-black/60'
-      }`}
-    >
-      {type === 'video' ? 'VIDEO' : 'IMAGE'}
+    <div className="absolute left-1.5 top-1.5 rounded bg-accent/85 px-1.5 py-px text-[9px] glass:left-2 glass:top-2 glass:rounded-full glass:px-2 glass:py-0.5 font-bold tracking-wide text-white backdrop-blur">
+      VIDEO
     </div>
   );
 }
 
-export function DurationBadge({ seconds }: { seconds: number | null }) {
+function DurationBadge({ seconds }: { seconds: number | null }) {
   const label = formatDuration(seconds);
   if (!label) return null;
   return (
@@ -62,7 +58,7 @@ export const MediaCard = memo(function MediaCard({
           loading="lazy"
           className="h-full w-full object-cover"
         />
-        {item.type === 'video' && <TypeBadge type={item.type} />}
+        {item.type === 'video' && <VideoBadge />}
         <DurationBadge seconds={item.durationSeconds} />
         {item.reasonTag && (
           <div
@@ -128,7 +124,7 @@ export function WideCard({
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />
           </div>
         )}
-        {item.type === 'video' && <TypeBadge type={item.type} />}
+        {item.type === 'video' && <VideoBadge />}
         <DurationBadge seconds={item.durationSeconds} />
         <div
           className={`absolute right-1.5 top-1.5 transition-opacity ${

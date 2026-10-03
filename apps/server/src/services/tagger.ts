@@ -1,15 +1,16 @@
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import sharp from 'sharp';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
-import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, DEFAULT_MODEL_ID, MODEL_REGISTRY, LIMITS } from '../lib/config';
+import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY, LIMITS } from '../lib/config';
 import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
-import { enqueueJob, type JobHandle } from './jobQueue';
+import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
+import { computeDHash } from './perceptualHash';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { phashColumns } from '../lib/phashBands';
-import { chunkIds } from '../lib/mediaByIds';
+import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
+import { downloadFile } from '../lib/download';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
@@ -70,13 +71,8 @@ export function modelReady(): boolean {
   return fs.existsSync(MODEL_PATH) && fs.existsSync(MODEL_TAGS_PATH);
 }
 
-export function untaggedMediaIds(): number[] {
-  return db
-    .select({ id: schema.media.id })
-    .from(schema.media)
-    .where(isNull(schema.media.taggedAt))
-    .all()
-    .map((r) => r.id);
+export function untaggedMediaIds(libraryId?: number): number[] {
+  return mediaIdsWhere(isNull(schema.media.taggedAt), libraryId);
 }
 
 /**
@@ -90,7 +86,7 @@ export function untaggedCount(): number {
 }
 
 export function selectedModelId(): string {
-  return getSetting('tagger_model') || DEFAULT_MODEL_ID;
+  return getSetting('tagger_model');
 }
 
 function unhashedImageCount(): number {
@@ -101,20 +97,14 @@ function unhashedImageCount(): number {
 }
 
 export function taggerStatus(): TaggerStatus {
-  const untagged = untaggedCount();
-  const unhashedCount = unhashedImageCount();
-  const model = selectedModelId();
-  if (downloading)
-    return { status: 'downloading', model, modelSizeBytes: null, tagCount: null, untaggedCount: untagged, unhashedCount };
-  if (!modelReady())
-    return { status: 'absent', model, modelSizeBytes: null, tagCount: null, untaggedCount: untagged, unhashedCount };
+  const ready = !downloading && modelReady();
   return {
-    status: 'ready',
-    model,
-    modelSizeBytes: fs.statSync(MODEL_PATH).size,
-    tagCount: loadLabels().length,
-    untaggedCount: untagged,
-    unhashedCount,
+    status: downloading ? 'downloading' : ready ? 'ready' : 'absent',
+    model: selectedModelId(),
+    modelSizeBytes: ready ? fs.statSync(MODEL_PATH).size : null,
+    tagCount: ready ? loadLabels().length : null,
+    untaggedCount: untaggedCount(),
+    unhashedCount: unhashedImageCount(),
   };
 }
 
@@ -129,25 +119,21 @@ export function selectModel(modelId: string): void {
   labels = null;
   fs.rmSync(MODEL_PATH, { force: true });
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
-  setSetting('model_status', 'absent');
 }
 
 function loadLabels(): LabelEntry[] {
-  if (labels) return labels;
-  const csv = fs.readFileSync(MODEL_TAGS_PATH, 'utf8');
-  const lines = csv.trim().split('\n');
-  const out: LabelEntry[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    // tag_id,name,category,count — names never contain commas in this dataset
-    const parts = lines[i].split(',');
-    const category = Number(parts[2]);
-    out.push({
-      name: parts[1],
-      category: category === 9 ? 'rating' : category === 4 ? 'character' : 'general',
+  labels ??= fs
+    .readFileSync(MODEL_TAGS_PATH, 'utf8')
+    .trim()
+    .split('\n')
+    .slice(1)
+    .map((line) => {
+      // tag_id,name,category,count — names never contain commas in this dataset
+      const [, name, rawCategory] = line.split(',');
+      const category = Number(rawCategory);
+      return { name, category: category === 9 ? 'rating' : category === 4 ? 'character' : 'general' };
     });
-  }
-  labels = out;
-  return out;
+  return labels;
 }
 
 async function getSession(): Promise<any> {
@@ -209,14 +195,7 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   const allLabels = loadLabels();
 
   // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
-  let needsSigmoid = false;
-  for (let i = 0; i < probs.length; i++) {
-    if (probs[i] < -0.0001 || probs[i] > 1.0001) {
-      needsSigmoid = true;
-      break;
-    }
-  }
-  if (needsSigmoid) probs = probs.map((v) => 1 / (1 + Math.exp(-v))) as Float32Array;
+  if (probs.some((v) => v < -0.0001 || v > 1.0001)) probs = probs.map((v) => 1 / (1 + Math.exp(-v))) as Float32Array;
 
   const threshold = confidenceThreshold();
   const out: PredictedTag[] = [];
@@ -314,30 +293,23 @@ export function enqueueTagJob(mediaIds: number[], label: string, libraryId: numb
     label,
     async (job: JobHandle) => {
       job.update({ total: mediaIds.length, log: `Tagging ${mediaIds.length} files…` });
-      let tagged = 0;
-      let errors = 0;
-      for (let i = 0; i < mediaIds.length; i++) {
-        try {
-          await tagOneMedia(mediaIds[i]);
-          tagged++;
-        } catch (err) {
-          errors++;
-          console.error(`tagging failed for media ${mediaIds[i]}:`, err);
-        }
-        job.update({ progress: i + 1, log: `Tagged ${i + 1}/${mediaIds.length} files…` });
-      }
+      const errors = await eachWithProgress(
+        job,
+        mediaIds,
+        (done, total) => `Tagged ${done}/${total} files…`,
+        (id) => `tagging failed for media ${id}:`,
+        tagOneMedia,
+        1,
+      );
+      const tagged = mediaIds.length - errors;
       return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;
     },
     libraryId,
   );
 }
 
-export function unhashedImageIds(): number[] {
-  return (
-    sqlite
-      .query(`SELECT id FROM media WHERE type = 'image' AND perceptual_hash IS NULL`)
-      .all() as { id: number }[]
-  ).map((r) => r.id);
+export function unhashedImageIds(libraryId?: number): number[] {
+  return mediaIdsWhere(and(eq(schema.media.type, 'image'), isNull(schema.media.perceptualHash)), libraryId);
 }
 
 export function enqueueHashJob(mediaIds: number[], libraryId: number | null = null) {
@@ -351,58 +323,30 @@ export function enqueueHashJob(mediaIds: number[], libraryId: number | null = nu
     'hash',
     label,
     async (job: JobHandle) => {
-      const { computeDHash } = await import('./perceptualHash');
       job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
       let hashed = 0;
-      let errors = 0;
-      for (let i = 0; i < mediaIds.length; i++) {
-        try {
-          const row = db.select().from(schema.media).where(eq(schema.media.id, mediaIds[i])).get();
-          if (row && row.type === 'image' && fs.existsSync(row.path)) {
-            const hash = await computeDHash(row.path);
-            db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, mediaIds[i])).run();
-            hashed++;
-          }
-        } catch (err) {
-          errors++;
-          console.error(`hashing failed for media ${mediaIds[i]}:`, err);
-        }
-        if (i % 5 === 0 || i === mediaIds.length - 1) {
-          job.update({ progress: i + 1, log: `Hashed ${i + 1}/${mediaIds.length} images…` });
-        }
-      }
+      const errors = await eachWithProgress(
+        job,
+        mediaIds,
+        (done, total) => `Hashed ${done}/${total} images…`,
+        (id) => `hashing failed for media ${id}:`,
+        async (id) => {
+          const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+          if (!row || row.type !== 'image' || !fs.existsSync(row.path)) return;
+          const hash = await computeDHash(row.path);
+          db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, id)).run();
+          hashed++;
+        },
+      );
       return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
     },
     libraryId,
   );
 }
 
-async function downloadFile(url: string, dest: string, onProgress: (received: number, total: number) => void) {
-  const res = await fetch(url, { redirect: 'follow' });
-  if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
-  const total = Number(res.headers.get('content-length') ?? 0);
-  const tmp = dest + '.part';
-  const writer = fs.createWriteStream(tmp);
-  let received = 0;
-  try {
-    for await (const chunk of res.body as any) {
-      writer.write(chunk);
-      received += chunk.length;
-      onProgress(received, total);
-    }
-    await new Promise<void>((resolve, reject) => writer.end((err: any) => (err ? reject(err) : resolve())));
-    await fsp.rename(tmp, dest);
-  } catch (err) {
-    writer.destroy();
-    await fsp.unlink(tmp).catch(() => {});
-    throw err;
-  }
-}
-
 export function enqueueModelDownload() {
   if (downloading) throw new Error('Model download already in progress');
   downloading = true;
-  setSetting('model_status', 'downloading');
   const modelId = selectedModelId();
   const repoBase = modelRepoBase(modelId);
   return enqueueJob('model-download', `Download tagger model (${modelId})`, async (job: JobHandle) => {
@@ -424,11 +368,7 @@ export function enqueueModelDownload() {
       });
       labels = null;
       releaseSession();
-      setSetting('model_status', 'ready');
       return 'Model downloaded and ready.';
-    } catch (err) {
-      setSetting('model_status', 'error');
-      throw err;
     } finally {
       downloading = false;
     }

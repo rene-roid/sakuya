@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { DOWNLOADER_BIN_DIR } from '../lib/config';
+import { run } from '../lib/run';
+import { downloadFile } from '../lib/download';
 import { getSetting, setSetting } from '../lib/settings';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import type { DownloaderStatus } from '@sakuya/shared';
@@ -11,19 +12,10 @@ const LOCAL_BIN_NAME = process.platform === 'win32' ? 'gallery-dl.exe' : 'galler
 const LOCAL_BIN_PATH = path.join(DOWNLOADER_BIN_DIR, LOCAL_BIN_NAME);
 
 function runVersionCheck(bin: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    let proc;
-    try {
-      proc = spawn(bin, ['--version'], { stdio: ['ignore', 'pipe', 'ignore'] });
-    } catch {
-      resolve(null);
-      return;
-    }
-    let out = '';
-    proc.stdout?.on('data', (d) => (out += d));
-    proc.on('error', () => resolve(null));
-    proc.on('close', (code) => resolve(code === 0 ? out.trim() : null));
-  });
+  return run(bin, ['--version']).then(
+    (out) => out.trim(),
+    () => null,
+  );
 }
 
 /** Locate a working gallery-dl binary: cached setting -> bundled install -> PATH. */
@@ -61,32 +53,15 @@ export function installGalleryDl() {
     const url = `https://codeberg.org/mikf/gallery-dl/releases/download/latest/${asset}`;
     job.update({ total: 100, log: `Downloading ${asset}…` });
 
-    const res = await fetch(url, { redirect: 'follow' });
-    if (!res.ok || !res.body) throw new Error(`Download failed (${res.status}) for ${url}`);
-    const total = Number(res.headers.get('content-length') ?? 0);
-    const tmp = LOCAL_BIN_PATH + '.part';
-    const writer = fs.createWriteStream(tmp);
-    let received = 0;
     let lastPct = 0;
-    try {
-      for await (const chunk of res.body as any) {
-        writer.write(chunk);
-        received += chunk.length;
-        if (total) {
-          const pct = Math.round((received / total) * 100);
-          if (pct !== lastPct) {
-            lastPct = pct;
-            job.update({ progress: pct, log: `Downloading: ${(received / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)} MB` });
-          }
-        }
+    await downloadFile(url, LOCAL_BIN_PATH, (received, total) => {
+      if (!total) return;
+      const pct = Math.round((received / total) * 100);
+      if (pct !== lastPct) {
+        lastPct = pct;
+        job.update({ progress: pct, log: `Downloading: ${(received / 1e6).toFixed(1)} / ${(total / 1e6).toFixed(1)} MB` });
       }
-      await new Promise<void>((resolve, reject) => writer.end((err: any) => (err ? reject(err) : resolve())));
-      await fsp.rename(tmp, LOCAL_BIN_PATH);
-    } catch (err) {
-      writer.destroy();
-      await fsp.unlink(tmp).catch(() => {});
-      throw err;
-    }
+    });
 
     if (process.platform !== 'win32') {
       await fsp.chmod(LOCAL_BIN_PATH, 0o755);

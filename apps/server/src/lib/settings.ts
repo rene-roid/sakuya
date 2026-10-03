@@ -1,17 +1,17 @@
 import { eq } from 'drizzle-orm';
 import { db, schema } from '../db';
+import { DEFAULT_MODEL_ID } from './config';
 
-const DEFAULTS: Record<string, string> = {
+export const DEFAULTS: Record<string, string> = {
   ai_tagging_enabled: '1',
   confidence_threshold: '35',
   accent_color: '#8b5cf6',
-  model_status: 'absent',
   remember_mute_state: '0',
   remember_volume_level: '1',
   continue_where_left: '1',
   thumbnail_cache_enabled: '1',
   board_remember_filters: '1',
-  tagger_model: 'wd-swinv2-tagger-v3',
+  tagger_model: DEFAULT_MODEL_ID,
   downloader_concurrency: '2',
   gifs_as_videos: '0',
   video_transcode_enabled: '0',

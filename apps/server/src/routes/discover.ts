@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { sqlite } from '../db';
-import { wrap } from '../lib/http';
+import { wrap, encodeCursor, decodeCursor } from '../lib/http';
 import type { SQLQueryBindings } from 'bun:sqlite';
-import { rowToMedia, type MediaSqlRow } from '../lib/rowToMedia';
+import { rowToMedia, countMedia, type MediaSqlRow } from '../lib/rowToMedia';
 import { tasteVersion } from '../lib/tasteVersion';
-import type { MediaListResponse } from '@sakuya/shared';
+import { MEDIA_TYPES, type MediaListResponse } from '@sakuya/shared';
 
 export const discoverRouter = Router();
 
 const discoverQuerySchema = z.object({
-  type: z.enum(['image', 'video']).optional(),
+  type: z.enum(MEDIA_TYPES).optional(),
   // 0 = pure taste match, 1 = pure random. "I'm feeling lucky" is 1 with limit=1.
   surprise: z.coerce.number().min(0).max(1).default(0.25),
   seed: z.coerce.number().int().default(1),
@@ -208,12 +208,8 @@ discoverRouter.get(
 
     let cursor: { key: number; id: number; snapshot: number } | null = null;
     if (query.cursor) {
-      try {
-        const [key, id, snapshot] = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
-        cursor = { key, id, snapshot };
-      } catch {
-        throw Object.assign(new Error('Invalid cursor'), { status: 400 });
-      }
+      const [key, id, snapshot] = decodeCursor(query.cursor);
+      cursor = { key, id, snapshot };
     }
     // A cursor whose snapshot has aged out falls back to the current one: the rest of that scroll
     // may repeat or miss a few items, which is the old behaviour, but only after 8 rebuilds.
@@ -240,13 +236,7 @@ discoverRouter.get(
 
     // Only the first page pays for the count; the client keeps the total from page one, the same
     // as /api/media.
-    const total = cursor
-      ? null
-      : (
-          sqlite
-            .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-            .get(...params) as { c: number }
-        ).c;
+    const total = cursor ? null : countMedia(conds, params);
 
     const pageConds = [...conds];
     const pageParams = [...params];
@@ -283,7 +273,7 @@ discoverRouter.get(
     let nextCursor: string | null = null;
     if (items.length === query.limit) {
       const last = items[items.length - 1];
-      nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id, snap.id])).toString('base64url');
+      nextCursor = encodeCursor([last.sort_key, last.id, snap.id]);
     }
     const body: MediaListResponse = { items: items.map(rowToMedia), nextCursor, total };
     res.json(body);

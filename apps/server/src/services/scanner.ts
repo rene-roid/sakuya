@@ -1,7 +1,6 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { createHash } from 'node:crypto';
-import { spawn } from 'node:child_process';
 import sharp from 'sharp';
 import ffprobeStatic from 'ffprobe-static';
 import { eq, and } from 'drizzle-orm';
@@ -12,10 +11,12 @@ import { generateThumbnail } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
 import { removeMediaRows } from './mediaRemoval';
 import { isUnder } from '../lib/paths';
-import { enqueueJob, type JobHandle } from './jobQueue';
+import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { dispatchAfterScan } from './jobScheduler';
 import { tryConvertUgoiraZip } from './ugoira';
+import { computeDHash } from './perceptualHash';
 import { phashColumns } from '../lib/phashBands';
+import { run } from '../lib/run';
 
 const ffprobePath: string = ffprobeStatic.path;
 
@@ -28,19 +29,7 @@ interface ProbeResult {
 }
 
 export async function probeVideo(filePath: string): Promise<ProbeResult> {
-  const json = await new Promise<string>((resolve, reject) => {
-    const proc = spawn(
-      ffprobePath,
-      ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    let out = '';
-    let err = '';
-    proc.stdout.on('data', (d) => (out += d));
-    proc.stderr.on('data', (d) => (err += d));
-    proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve(out) : reject(new Error(`ffprobe: ${err.slice(-300)}`))));
-  });
+  const json = await run(ffprobePath, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath]);
   const data = JSON.parse(json);
   const streams = data.streams ?? [];
   const video = streams.find((s: any) => s.codec_type === 'video');
@@ -69,14 +58,7 @@ async function probeImage(filePath: string): Promise<ProbeResult> {
 async function hashFile(filePath: string, size: number): Promise<string> {
   const hash = createHash('sha1');
   hash.update(String(size));
-  const handle = await fs.open(filePath, 'r');
-  try {
-    const buf = Buffer.alloc(Math.min(size, 4 * 1024 * 1024));
-    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-    hash.update(buf.subarray(0, bytesRead));
-  } finally {
-    await handle.close();
-  }
+  hash.update(await Bun.file(filePath).slice(0, Math.min(size, 4 * 1024 * 1024)).bytes());
   return hash.digest('hex');
 }
 
@@ -93,15 +75,11 @@ export function mediaTypeForExt(ext: string): 'image' | 'video' | null {
  * are full of the latter. A transport stream is 188-byte packets that each start with 0x47.
  */
 export async function isTransportStream(filePath: string): Promise<boolean> {
-  const handle = await fs.open(filePath, 'r').catch(() => null);
-  if (!handle) return false;
-  try {
-    const buf = Buffer.alloc(189);
-    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
-    return bytesRead === buf.length && buf[0] === 0x47 && buf[188] === 0x47;
-  } finally {
-    await handle.close();
-  }
+  const buf = await Bun.file(filePath)
+    .slice(0, 189)
+    .bytes()
+    .catch(() => null);
+  return buf?.length === 189 && buf[0] === 0x47 && buf[188] === 0x47;
 }
 
 async function walk(dir: string, out: string[]): Promise<void> {
@@ -205,7 +183,6 @@ export async function indexFile(
   }
   if (type === 'image') {
     try {
-      const { computeDHash } = await import('./perceptualHash');
       const phash = await computeDHash(filePath);
       db.update(schema.media).set(phashColumns(phash)).where(eq(schema.media.id, mediaId)).run();
     } catch (err) {
@@ -272,12 +249,12 @@ export function enqueueGifReclassifyJob(toVideo: boolean) {
         .filter((r) => r.path.toLowerCase().endsWith('.gif'));
 
       job.update({ total: rows.length, log: `Reclassifying ${rows.length} GIFs…` });
-      let done = 0;
-      let errors = 0;
-
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        try {
+      const errors = await eachWithProgress(
+        job,
+        rows,
+        (done, total) => `Reclassified ${done}/${total}…`,
+        (row) => `gif reclassify failed for ${row.path}:`,
+        async (row) => {
           if (toVideo) {
             const probe = await probeVideo(row.path);
             db.update(schema.media)
@@ -285,22 +262,15 @@ export function enqueueGifReclassifyJob(toVideo: boolean) {
               .where(eq(schema.media.id, row.id))
               .run();
           } else {
-            const { computeDHash } = await import('./perceptualHash');
             const phash = await computeDHash(row.path).catch(() => null);
             db.update(schema.media)
               .set({ type: 'image', durationSeconds: null, ...phashColumns(phash) })
               .where(eq(schema.media.id, row.id))
               .run();
           }
-          done++;
-        } catch (err) {
-          errors++;
-          console.error(`gif reclassify failed for ${row.path}:`, err);
-        }
-        if (i % 5 === 0 || i === rows.length - 1) {
-          job.update({ progress: i + 1, log: `Reclassified ${i + 1}/${rows.length}…` });
-        }
-      }
+        },
+      );
+      const done = rows.length - errors;
 
       return `Completed. ${done} reclassified${errors ? `, ${errors} errors` : ''}.`;
     },
@@ -317,7 +287,6 @@ export function enqueueScanJob(libraryId: number) {
       const libFolders = db.select().from(schema.folders).where(eq(schema.folders.libraryId, libraryId)).all();
       let indexed = 0;
       let skipped = 0;
-      let errors = 0;
       let pruned = 0;
 
       for (const folder of libFolders) {
@@ -333,19 +302,16 @@ export function enqueueScanJob(libraryId: number) {
       }
       job.update({ total: files.length, log: `Found ${files.length} files, indexing…` });
 
-      for (let i = 0; i < files.length; i++) {
-        try {
-          const id = await indexFile(files[i], libraryId, 'folder');
-          if (id !== null) indexed++;
+      const errors = await eachWithProgress(
+        job,
+        files,
+        (done, total) => `Indexing ${done}/${total} files…`,
+        (file) => `index failed for ${file}:`,
+        async (file) => {
+          if ((await indexFile(file, libraryId, 'folder')) !== null) indexed++;
           else skipped++;
-        } catch (err) {
-          errors++;
-          console.error(`index failed for ${files[i]}:`, err);
-        }
-        if (i % 5 === 0 || i === files.length - 1) {
-          job.update({ progress: i + 1, log: `Indexing ${i + 1}/${files.length} files…` });
-        }
-      }
+        },
+      );
 
       const unreachable: string[] = [];
       let withheld = 0;

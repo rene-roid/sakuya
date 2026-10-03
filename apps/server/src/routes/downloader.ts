@@ -222,11 +222,10 @@ downloaderRouter.post(
   '/api/downloader/console/start',
   wrap(async (req, res) => {
     const body = consoleStartSchema.parse(req.body);
-    if (getConsoleStatus().running) return res.status(409).json({ error: 'A console session is already running' });
     try {
       await startConsoleSession(body.command.trim());
     } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+      return res.status(err.status ?? 400).json({ error: err.message });
     }
     res.json(getConsoleStatus());
   }),
@@ -238,7 +237,6 @@ downloaderRouter.post(
   '/api/downloader/console/input',
   wrap(async (req, res) => {
     const body = consoleInputSchema.parse(req.body);
-    if (!getConsoleStatus().running) return res.status(409).json({ error: 'No console session is running' });
     writeConsoleInput(body.text);
     res.json({ ok: true });
   }),

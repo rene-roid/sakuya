@@ -1,15 +1,12 @@
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
 import sharp from 'sharp';
-import ffmpegStatic from 'ffmpeg-static';
 import { eq } from 'drizzle-orm';
 import { THUMBS_DIR } from '../lib/config';
 import { db, schema } from '../db';
-import { enqueueJob, type JobHandle } from './jobQueue';
+import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { mediaRowsByIds, type MediaRow } from '../lib/mediaByIds';
-
-const ffmpegPath: string = (ffmpegStatic as unknown as string) ?? 'ffmpeg';
+import { run, FFMPEG_PATH } from '../lib/run';
 
 export function thumbPathFor(mediaId: number): string {
   return path.join(THUMBS_DIR, `${mediaId}.webp`);
@@ -17,29 +14,20 @@ export function thumbPathFor(mediaId: number): string {
 
 /** Extract a single frame as a webp — used for video thumbnails, and as a fallback for images sharp can't decode. */
 async function ffmpegFrameToWebp(sourcePath: string, dest: string, seekSeconds: number): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const args = [
-      '-y',
-      // Extracting a single frame doesn't benefit from multi-threaded decode;
-      // capping this keeps bulk regeneration from eating every core and
-      // starving request handling / other services on the host.
-      '-threads', '1',
-      '-ss', seekSeconds.toFixed(2),
-      '-i', sourcePath,
-      '-frames:v', '1',
-      '-vf', 'scale=512:-2',
-      '-f', 'webp',
-      dest,
-    ];
-    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    proc.stderr.on('data', (d) => (stderr += d));
-    proc.on('error', reject);
-    proc.on('close', (code) => {
-      if (code === 0 && fs.existsSync(dest)) resolve();
-      else reject(new Error(`ffmpeg exited with ${code}: ${stderr.slice(-300)}`));
-    });
-  });
+  await run(FFMPEG_PATH, [
+    '-y',
+    // Extracting a single frame doesn't benefit from multi-threaded decode;
+    // capping this keeps bulk regeneration from eating every core and
+    // starving request handling / other services on the host.
+    '-threads', '1',
+    '-ss', seekSeconds.toFixed(2),
+    '-i', sourcePath,
+    '-frames:v', '1',
+    '-vf', 'scale=512:-2',
+    '-f', 'webp',
+    dest,
+  ]);
+  if (!fs.existsSync(dest)) throw new Error('ffmpeg did not produce an output file');
 }
 
 async function generateImageThumbnail(sourcePath: string, dest: string): Promise<void> {
@@ -102,24 +90,18 @@ function regenerateJob(label: string, rows: (typeof schema.media.$inferSelect)[]
   return enqueueJob('thumbnail', label, async (job: JobHandle) => {
     job.update({ total: rows.length, log: `Regenerating ${rows.length} thumbnails…` });
     let regenerated = 0;
-    let errors = 0;
-
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        if (fs.existsSync(rows[i].path)) {
-          await generateThumbnail(rows[i].path, rows[i].id, rows[i].type, rows[i].durationSeconds ?? null);
-          db.update(schema.media).set({ thumbnailPath: thumbPathFor(rows[i].id) }).where(eq(schema.media.id, rows[i].id)).run();
-          regenerated++;
-        }
-      } catch (err) {
-        errors++;
-        console.error(`thumbnail regeneration failed for media ${rows[i].id}:`, err);
-      }
-      if (i % 5 === 0 || i === rows.length - 1) {
-        job.update({ progress: i + 1, log: `Regenerated ${i + 1}/${rows.length} thumbnails…` });
-      }
-    }
-
+    const errors = await eachWithProgress(
+      job,
+      rows,
+      (done, total) => `Regenerated ${done}/${total} thumbnails…`,
+      (row) => `thumbnail regeneration failed for media ${row.id}:`,
+      async (row) => {
+        if (!fs.existsSync(row.path)) return;
+        await generateThumbnail(row.path, row.id, row.type, row.durationSeconds ?? null);
+        db.update(schema.media).set({ thumbnailPath: thumbPathFor(row.id) }).where(eq(schema.media.id, row.id)).run();
+        regenerated++;
+      },
+    );
     return `Completed. ${regenerated} regenerated${errors ? `, ${errors} errors` : ''}.`;
   }, libraryId);
 }

@@ -4,6 +4,8 @@ import os from 'node:os';
 import { loadConfig } from '@sakuya/shared/config';
 import { detectCgroupMemoryLimit, detectCpuQuota, effectiveCpus, resolveLimits, type LimitsReport } from './limits';
 import { currentJobMemoryLimit } from './windowsJob';
+import type { TaggerModel } from '@sakuya/shared';
+import pkg from '../../../../package.json' with { type: 'json' };
 
 const serverRoot = path.resolve(import.meta.dir, '..', '..');
 
@@ -15,7 +17,6 @@ for (const warning of loaded.warnings) console.warn(`[sakuya] ${warning}`);
 
 export const CONFIG = loaded.config;
 export const CONFIG_FILE = loaded.file;
-export const IN_DOCKER = loaded.docker;
 
 export const HOME_DATA_DIR = path.join(os.homedir(), '.sakuya');
 export const LOCAL_DATA_DIR = path.join(serverRoot, 'data');
@@ -29,7 +30,7 @@ export const DATA_DIR_PINNED = CONFIG.server.dataDir !== null;
  * setup.sh or the Settings > System migrate button creates ~/.sakuya, and from then on every start
  * finds it.
  */
-export function resolveDataDir(): string {
+function resolveDataDir(): string {
   if (CONFIG.server.dataDir) return CONFIG.server.dataDir;
   return fs.existsSync(HOME_DATA_DIR) ? HOME_DATA_DIR : LOCAL_DATA_DIR;
 }
@@ -39,55 +40,24 @@ export const DB_PATH = path.join(DATA_DIR, 'tbge.db');
 export const THUMBS_DIR = path.join(DATA_DIR, 'thumbnails');
 export const TRANSCODES_DIR = path.join(DATA_DIR, 'transcodes');
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
-export const MODELS_DIR = path.join(DATA_DIR, 'models');
+const MODELS_DIR = path.join(DATA_DIR, 'models');
 export const MODEL_PATH = path.join(MODELS_DIR, 'model.onnx');
 export const MODEL_TAGS_PATH = path.join(MODELS_DIR, 'selected_tags.csv');
 export const DOWNLOADER_DIR = path.join(DATA_DIR, 'downloader');
 export const DOWNLOADER_BIN_DIR = path.join(DOWNLOADER_DIR, 'bin');
 export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
 
-export const PORT = CONFIG.server.port;
-
-/**
- * Interface to bind. Defaults to loopback: the server exposes the whole library and
- * POST /api/media/:id/reveal, which spawns a file manager on the host, and auth is off by
- * default — none of that should be reachable from the LAN because someone started the server.
- *
- * Containers must bind 0.0.0.0 or published ports never reach the process, so the Docker image
- * pins it. Set server.host yourself to serve other machines directly, ideally with auth on.
- */
-export const HOST = CONFIG.server.host;
-
-/**
- * Marks the auth cookie Secure. Off by default because serving plain HTTP over a LAN is a
- * supported setup, and a Secure cookie is silently dropped there, which would lock users out.
- */
-export const AUTH_COOKIE_SECURE = CONFIG.server.https;
 /**
  * The root package.json is the one source of truth for the app version: Settings > System reads
  * this, and the bundled release notes in apps/web/src/releases drive the update toast. They used
  * to disagree three ways (0.1.0 / 1.0.0 / 1.4.0); version.test.ts now keeps them in step.
  *
- * Read at runtime rather than imported so the value survives outside the workspace layout. The
- * Docker image copies the root package.json into /app, one level above apps/server, so this
- * resolves there too.
+ * The Docker image copies the root package.json into /app, one level above apps/server, so this
+ * import resolves there too.
  */
-function readAppVersion(): string {
-  try {
-    const raw = fs.readFileSync(path.resolve(serverRoot, '..', '..', 'package.json'), 'utf8');
-    const version = JSON.parse(raw).version;
-    if (typeof version === 'string' && version) return version;
-  } catch {
-    // A stripped-down install shouldn't fail to boot just because it can't name itself.
-  }
-  return 'unknown';
-}
+export const APP_VERSION: string = pkg.version;
 
-export const APP_VERSION = readAppVersion();
-
-export const AUTH_ENABLED = CONFIG.auth.enabled;
-export const AUTH_SECRET = CONFIG.auth.secret;
-if (AUTH_ENABLED && !AUTH_SECRET) {
+if (CONFIG.auth.enabled && !CONFIG.auth.secret) {
   throw new Error(`auth.enabled is true but auth.secret is empty in ${CONFIG_FILE}. Set a password there.`);
 }
 
@@ -105,13 +75,7 @@ export const LIMITS_REPORT: LimitsReport = {
 
 // Curated WD v3 taggers — all share 448px input + the same selected_tags.csv format,
 // so they are drop-in compatible with the existing preprocessing/inference code.
-export interface TaggerModelDef {
-  id: string;
-  label: string;
-  repo: string;
-}
-
-export const MODEL_REGISTRY: TaggerModelDef[] = [
+export const MODEL_REGISTRY: TaggerModel[] = [
   { id: 'wd-swinv2-tagger-v3', label: 'WD SwinV2 v3 (default)', repo: 'SmilingWolf/wd-swinv2-tagger-v3' },
   { id: 'wd-convnext-tagger-v3', label: 'WD ConvNeXT v3', repo: 'SmilingWolf/wd-convnext-tagger-v3' },
   { id: 'wd-vit-tagger-v3', label: 'WD ViT v3', repo: 'SmilingWolf/wd-vit-tagger-v3' },
@@ -119,7 +83,7 @@ export const MODEL_REGISTRY: TaggerModelDef[] = [
   { id: 'wd-eva02-large-tagger-v3', label: 'WD EVA02 Large v3', repo: 'SmilingWolf/wd-eva02-large-tagger-v3' },
 ];
 
-export const DEFAULT_MODEL_ID = 'wd-swinv2-tagger-v3';
+export const DEFAULT_MODEL_ID = MODEL_REGISTRY[0].id;
 
 export function modelRepoBase(id: string): string {
   const def = MODEL_REGISTRY.find((m) => m.id === id) ?? MODEL_REGISTRY[0];

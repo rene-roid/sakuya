@@ -1,10 +1,8 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Check, Palette } from 'lucide-react';
 import type { UiStyle } from '@sakuya/shared';
-import { api } from '../lib/api';
 import { applyUiStyle } from '../hooks/useUiStyle';
-import { useToast } from './Toast';
+import { usePatchSettings } from '../hooks/useSettings';
 import { UI_STYLES, UiStylePreview } from './UiStylePreview';
 
 /**
@@ -13,20 +11,11 @@ import { UI_STYLES, UiStylePreview } from './UiStylePreview';
  * Continue on the preselected style is that, and it keeps the prompt from coming back.
  */
 export function UiStylePicker({ current }: { current: UiStyle }) {
-  const queryClient = useQueryClient();
-  const showToast = useToast();
   const [choice, setChoice] = useState<UiStyle>(current);
 
-  const saveMutation = useMutation({
-    mutationFn: () => api.patchSettings({ ui_style: choice, ui_style_chosen: '1' }),
-    onSuccess: (data) => {
-      // Applied here as well as in App: when the choice equals the saved style, ui_style doesn't
-      // change and App's effect wouldn't run.
-      applyUiStyle(data.ui_style);
-      queryClient.setQueryData(['settings'], data);
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  // Applied here as well as in App: when the choice equals the saved style, ui_style doesn't
+  // change and App's effect wouldn't run.
+  const saveMutation = usePatchSettings((data) => applyUiStyle(data.ui_style));
 
   return (
     <div className="fade-in fixed inset-0 z-[95] flex items-center justify-center bg-zinc-950/80 p-4 backdrop-blur sm:p-6">
@@ -82,7 +71,7 @@ export function UiStylePicker({ current }: { current: UiStyle }) {
           <button
             type="button"
             disabled={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
+            onClick={() => saveMutation.mutate({ ui_style: choice, ui_style_chosen: '1' })}
             className="cursor-pointer rounded-btn bg-accent px-5 py-2 text-[13px] font-semibold text-white hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
           >
             Continue with {UI_STYLES.find((option) => option.key === choice)?.label}

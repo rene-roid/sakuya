@@ -5,19 +5,13 @@ import { Images, Pencil, Trash2 } from 'lucide-react';
 import type { BoardWithStats } from '@sakuya/shared';
 import { api, thumbUrl } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
-import { useMediaInfinite } from '../hooks/useMedia';
-import { useSelection } from '../hooks/useSelection';
-import { FilterToolbar } from '../components/FilterToolbar';
-import { MediaGrid } from '../components/MediaGrid';
-import { SelectionBar } from '../components/SelectionBar';
-import { MediaViewer } from '../components/MediaViewer';
+import { MediaBrowser } from '../components/MediaBrowser';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { useToast } from '../components/Toast';
+import { toast } from '../components/Toast';
 
 /** Index of user-created boards: cover, item count, rename/delete. */
 export function Boards() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const { data: boards } = useQuery({ queryKey: ['boards'], queryFn: api.boards });
   const [newName, setNewName] = useState('');
 
@@ -26,9 +20,8 @@ export function Boards() {
     onSuccess: (board) => {
       setNewName('');
       queryClient.invalidateQueries({ queryKey: ['boards'] });
-      showToast(`Board “${board.name}” created`);
+      toast(`Board “${board.name}” created`);
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   return (
@@ -76,7 +69,6 @@ export function Boards() {
 function BoardCard({ board }: { board: BoardWithStats }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(board.name);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -88,15 +80,13 @@ function BoardCard({ board }: { board: BoardWithStats }) {
       setRenaming(false);
       invalidate();
     },
-    onError: (err: Error) => showToast(err.message),
   });
   const deleteMutation = useMutation({
     mutationFn: () => api.deleteBoard(board.id),
     onSuccess: () => {
       invalidate();
-      showToast('Board deleted');
+      toast('Board deleted');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   return (
@@ -173,10 +163,6 @@ export function BoardView() {
   const { id } = useParams();
   const boardId = Number(id);
   const [filters, actions] = useFilters();
-  const boardFilters = { ...filters, boardId };
-  const media = useMediaInfinite(boardFilters);
-  const selection = useSelection(media.items, JSON.stringify(boardFilters));
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const { data: board } = useQuery({
     queryKey: ['boards', boardId],
@@ -184,44 +170,5 @@ export function BoardView() {
     enabled: Number.isInteger(boardId),
   });
 
-  return (
-    <div className="fade-in">
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pt-6">
-        <div className="mb-1 flex items-baseline gap-3">
-          <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">{board?.name ?? '…'}</h1>
-          <span className="text-[13px] text-zinc-500">
-            {media.total} item{media.total === 1 ? '' : 's'}
-          </span>
-        </div>
-      </div>
-      <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
-        <div className="mx-auto max-w-[1400px] px-4 sm:px-8 py-3">
-          <FilterToolbar filters={filters} actions={actions} selection={selection} />
-        </div>
-      </div>
-      <div className="mx-auto max-w-[1400px] px-4 sm:px-8 pb-16 pt-5">
-        <MediaGrid
-          items={media.items}
-          hasNextPage={!!media.hasNextPage}
-          isFetchingNextPage={media.isFetchingNextPage}
-          fetchNextPage={media.fetchNextPage}
-          isLoading={media.isLoading}
-          onOpen={setViewerIndex}
-          selection={selection}
-        />
-      </div>
-      {selection.active && (
-        <SelectionBar selection={selection} filters={boardFilters} total={media.total} boardId={boardId} />
-      )}
-      {viewerIndex !== null && (
-        <MediaViewer
-          items={media.items}
-          index={viewerIndex}
-          onIndexChange={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
-          onNearEnd={() => media.hasNextPage && !media.isFetchingNextPage && media.fetchNextPage()}
-        />
-      )}
-    </div>
-  );
+  return <MediaBrowser title={board?.name ?? '…'} filters={filters} actions={actions} boardId={boardId} />;
 }

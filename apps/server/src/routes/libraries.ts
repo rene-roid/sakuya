@@ -12,11 +12,15 @@ import { scheduleAll } from '../services/jobScheduler';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { isUnder } from '../lib/paths';
 import { UPLOADS_DIR } from '../lib/config';
-import type { LibraryWithStats } from '@sakuya/shared';
+import { LIBRARY_TYPES, type LibraryWithStats } from '@sakuya/shared';
 
 export const librariesRouter = Router();
 
-export function libraryWithStats(row: typeof schema.libraries.$inferSelect): LibraryWithStats {
+// auto_scan_interval is a legacy column, migrated into job_schedules at boot (db/index.ts).
+export function libraryWithStats({
+  autoScanInterval: _legacy,
+  ...row
+}: typeof schema.libraries.$inferSelect): LibraryWithStats {
   const count = sqlite.query('SELECT COUNT(*) AS c FROM media WHERE library_id = ?').get(row.id) as { c: number };
   const thumb =
     row.thumbnailMediaId ??
@@ -25,15 +29,7 @@ export function libraryWithStats(row: typeof schema.libraries.$inferSelect): Lib
       .get(row.id) as { id: number } | null)?.id ?? null);
   const libFolders = db.select().from(schema.folders).where(eq(schema.folders.libraryId, row.id)).all();
   return {
-    id: row.id,
-    name: row.name,
-    type: row.type,
-    thumbnailMediaId: row.thumbnailMediaId,
-    customImagePath: row.customImagePath ?? null,
-    createdAt: row.createdAt,
-    lastVisitedAt: row.lastVisitedAt,
-    autoScanInterval: row.autoScanInterval,
-    sortOrder: row.sortOrder,
+    ...row,
     itemCount: count.c,
     // Cover precedence: custom uploaded image wins; otherwise a media thumbnail.
     thumbMediaId: row.customImagePath ? null : thumb,
@@ -66,8 +62,7 @@ librariesRouter.get(
 
 const libraryBodySchema = z.object({
   name: z.string().min(1).max(120),
-  type: z.enum(['image', 'video', 'mixed']).default('mixed'),
-  autoScanInterval: z.number().int().min(0).default(0),
+  type: z.enum(LIBRARY_TYPES).default('mixed'),
 });
 
 /** New libraries land at the bottom of the list. */
@@ -85,7 +80,6 @@ librariesRouter.post(
       .values({
         name: body.name,
         type: body.type,
-        autoScanInterval: body.autoScanInterval,
         createdAt: Date.now(),
         sortOrder: nextSortOrder(),
       })

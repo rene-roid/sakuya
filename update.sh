@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-echo "========================================"
-echo "  Sakuya - Update"
-echo "========================================"
-echo ""
-
 if ! command -v bun &>/dev/null; then
     echo "Bun is not installed. Run ./setup.sh first."
     exit 1

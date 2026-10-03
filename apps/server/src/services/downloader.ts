@@ -1,9 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { eq, and, gt, inArray } from 'drizzle-orm';
-import ffmpegStatic from 'ffmpeg-static';
 import { db, schema } from '../db';
 import { downloaderConcurrency } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
@@ -11,12 +11,14 @@ import { enqueueScanJob } from './scanner';
 import { removeMediaRows } from './mediaRemoval';
 import { chunkIds } from '../lib/mediaByIds';
 import { parseShellArgs } from '../lib/shellArgs';
-import type { DownloadBatchWithItems, DownloadBatch, DownloadItem, DownloadLogLine } from '@sakuya/shared';
+import { isUnder } from '../lib/paths';
+import { FFMPEG_PATH } from '../lib/run';
+import type { DownloadBatchWithItems, DownloadLogLine } from '@sakuya/shared';
 
 // Directory holding the bundled ffmpeg binary, prepended to the gallery-dl subprocess's
 // PATH so its "--ugoira gif" postprocessor (which shells out to "ffmpeg") can find it
 // even when no system ffmpeg is installed.
-const ffmpegDir = typeof ffmpegStatic === 'string' ? path.dirname(ffmpegStatic) : null;
+const ffmpegDir = path.isAbsolute(FFMPEG_PATH) ? path.dirname(FFMPEG_PATH) : null;
 
 export const downloaderEvents = new EventEmitter();
 downloaderEvents.setMaxListeners(100);
@@ -29,31 +31,6 @@ interface RunningEntry {
 const queue: number[] = [];
 const runningProcs = new Map<number, RunningEntry>();
 let running = 0;
-
-function rowToBatch(row: typeof schema.downloadBatches.$inferSelect): DownloadBatch {
-  return {
-    id: row.id,
-    libraryId: row.libraryId,
-    folderPath: row.folderPath,
-    extraArgs: row.extraArgs,
-    cookieFileId: row.cookieFileId,
-    createdAt: row.createdAt,
-  };
-}
-
-function rowToItem(row: typeof schema.downloadItems.$inferSelect): DownloadItem {
-  return {
-    id: row.id,
-    batchId: row.batchId,
-    url: row.url,
-    status: row.status,
-    filesDownloaded: row.filesDownloaded,
-    pid: row.pid,
-    errorMessage: row.errorMessage,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
 
 function getItem(id: number) {
   return db.select().from(schema.downloadItems).where(eq(schema.downloadItems.id, id)).get();
@@ -72,7 +49,7 @@ function removeFromQueue(id: number) {
 
 function broadcastItem(id: number) {
   const row = getItem(id);
-  if (row) downloaderEvents.emit('item', rowToItem(row));
+  if (row) downloaderEvents.emit('item', row);
 }
 
 function patchItem(id: number, patch: Partial<typeof schema.downloadItems.$inferInsert>) {
@@ -84,12 +61,11 @@ function patchItem(id: number, patch: Partial<typeof schema.downloadItems.$infer
 }
 
 function appendLog(itemId: number, line: string) {
-  const row = db
+  const log: DownloadLogLine = db
     .insert(schema.downloadLogs)
     .values({ itemId, line, createdAt: Date.now() })
     .returning()
     .get();
-  const log: DownloadLogLine = { id: row.id, itemId, line, createdAt: row.createdAt };
   downloaderEvents.emit('log', log);
 }
 
@@ -98,8 +74,7 @@ function handleStdoutLine(itemId: number, folderPath: string, rawLine: string) {
   if (!line.trim()) return;
   appendLog(itemId, line);
   const resolved = path.isAbsolute(line) ? path.normalize(line) : path.resolve(folderPath, line);
-  const folderResolved = path.resolve(folderPath);
-  if (!resolved.startsWith(folderResolved + path.sep) && resolved !== folderResolved) return;
+  if (!isUnder(resolved, path.resolve(folderPath))) return;
   try {
     if (!fs.statSync(resolved).isFile()) return;
   } catch {
@@ -130,7 +105,7 @@ function maybeCompleteBatch(batchId: number) {
 function removeEmptyDirsUpTo(startDir: string, stopAt: string) {
   const stopResolved = path.resolve(stopAt);
   let dir = path.resolve(startDir);
-  while (dir !== stopResolved && dir.startsWith(stopResolved + path.sep)) {
+  while (dir !== stopResolved && isUnder(dir, stopResolved)) {
     try {
       if (fs.readdirSync(dir).length > 0) break;
       fs.rmdirSync(dir);
@@ -192,36 +167,23 @@ async function runOne(itemId: number): Promise<void> {
     runningProcs.set(itemId, { child, killIntent: null });
     patchItem(itemId, { pid: child.pid ?? null });
 
-    let stdoutBuf = '';
-    let stderrBuf = '';
     let lastStderrLine = '';
 
-    child.stdout?.on('data', (d) => {
-      stdoutBuf += d.toString();
-      const lines = stdoutBuf.split('\n');
-      stdoutBuf = lines.pop() ?? '';
-      for (const line of lines) handleStdoutLine(itemId, batch.folderPath, line);
-    });
-    child.stderr?.on('data', (d) => {
-      stderrBuf += d.toString();
-      const lines = stderrBuf.split('\n');
-      stderrBuf = lines.pop() ?? '';
-      for (const line of lines) {
-        if (line.trim()) {
-          lastStderrLine = line.trim();
-          appendLog(itemId, line);
-        }
-      }
-    });
+    // readline flushes a final unterminated line when the stream ends, which is before 'close'.
+    if (child.stdout) {
+      readline.createInterface({ input: child.stdout }).on('line', (line) => handleStdoutLine(itemId, batch.folderPath, line));
+    }
+    if (child.stderr) {
+      readline.createInterface({ input: child.stderr }).on('line', (line) => {
+        if (!line.trim()) return;
+        lastStderrLine = line.trim();
+        appendLog(itemId, line);
+      });
+    }
     child.on('error', (err) => {
       lastStderrLine = err.message;
     });
     child.on('close', (code) => {
-      if (stdoutBuf.trim()) handleStdoutLine(itemId, batch.folderPath, stdoutBuf);
-      if (stderrBuf.trim()) {
-        lastStderrLine = stderrBuf.trim();
-        appendLog(itemId, stderrBuf);
-      }
       const entry = runningProcs.get(itemId);
       runningProcs.delete(itemId);
       const killIntent = entry?.killIntent ?? null;
@@ -275,7 +237,7 @@ export function enqueueBatch(opts: {
   for (const row of itemRows) queue.push(row.id);
   queueMicrotask(pump);
 
-  const batch: DownloadBatchWithItems = { ...rowToBatch(batchRow), items: itemRows.map(rowToItem) };
+  const batch: DownloadBatchWithItems = { ...batchRow, items: itemRows };
   downloaderEvents.emit('batch', batch);
   return batch;
 }
@@ -285,13 +247,8 @@ export function listBatches(): DownloadBatchWithItems[] {
   return batches
     .sort((a, b) => b.createdAt - a.createdAt)
     .map((b) => ({
-      ...rowToBatch(b),
-      items: db
-        .select()
-        .from(schema.downloadItems)
-        .where(eq(schema.downloadItems.batchId, b.id))
-        .all()
-        .map(rowToItem),
+      ...b,
+      items: db.select().from(schema.downloadItems).where(eq(schema.downloadItems.batchId, b.id)).all(),
     }));
 }
 
@@ -300,8 +257,7 @@ export function listItemLogs(itemId: number, afterId = 0): DownloadLogLine[] {
     .select()
     .from(schema.downloadLogs)
     .where(and(eq(schema.downloadLogs.itemId, itemId), gt(schema.downloadLogs.id, afterId)))
-    .all()
-    .map((r) => ({ id: r.id, itemId: r.itemId, line: r.line, createdAt: r.createdAt }));
+    .all();
 }
 
 export function pauseItem(id: number): void {
@@ -399,14 +355,12 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
 /** Walks all registered folders to find the library that owns (or is an ancestor of) `inputPath`. */
 export function resolveLibraryForPath(inputPath: string): number | null {
   const resolved = path.resolve(inputPath);
-  const allFolders = db.select().from(schema.folders).all();
-  for (const f of allFolders) {
-    const folderResolved = path.resolve(f.path);
-    if (resolved === folderResolved || resolved.startsWith(folderResolved + path.sep)) {
-      return f.libraryId;
-    }
-  }
-  return null;
+  const owner = db
+    .select()
+    .from(schema.folders)
+    .all()
+    .find((f) => isUnder(resolved, path.resolve(f.path)));
+  return owner?.libraryId ?? null;
 }
 
 // Requeue items left 'queued' by a server restart (see db/index.ts migration).

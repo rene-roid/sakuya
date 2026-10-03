@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Sparkles, ListChecks } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
 import type { Media } from '@sakuya/shared';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
@@ -10,13 +9,9 @@ import { useSelection } from '../hooks/useSelection';
 import { MediaGrid } from '../components/MediaGrid';
 import { SelectionBar } from '../components/SelectionBar';
 import { MediaViewer } from '../components/MediaViewer';
-import { useToast } from '../components/Toast';
-
-function segStyle(active: boolean): string {
-  return `cursor-pointer rounded-md px-[13px] py-1.5 text-[12.5px] font-semibold ${
-    active ? 'bg-accent text-white' : 'text-zinc-400 hover:text-zinc-200'
-  }`;
-}
+import { toast } from '../components/Toast';
+import { Segmented, TYPE_OPTIONS } from '../components/Segmented';
+import { useSettings } from '../hooks/useSettings';
 
 const randomSeed = () => Math.floor(Math.random() * 2 ** 30) + 1;
 
@@ -31,11 +26,10 @@ function surpriseLabel(value: number): string {
 }
 
 export function Discover() {
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const settings = useSettings();
   const [params, setParams] = useSearchParams();
   const typeParam = params.get('type') === 'image' ? 'image' : params.get('type') === 'video' ? 'video' : 'all';
   const seed = Number(params.get('seed') ?? 1) || 1;
-  const showToast = useToast();
 
   // The slider thumb has to track the pointer at 60fps; the feed only refetches once it settles.
   const [surprise, setSurprise] = useState(() => Number(params.get('surprise') ?? 0.25));
@@ -71,9 +65,9 @@ export function Discover() {
         seed: randomSeed(),
       });
       if (res.items.length) setLucky({ items: res.items, index: 0 });
-      else showToast('No media to pick from yet');
+      else toast('No media to pick from yet');
     } catch (err) {
-      showToast(`Failed: ${(err as Error).message}`);
+      toast(`Failed: ${(err as Error).message}`);
     } finally {
       setLuckyPending(false);
     }
@@ -115,17 +109,11 @@ export function Discover() {
       </div>
       <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
         <div className="flex flex-wrap items-center gap-4 px-4 sm:px-8 py-3">
-          <div className="flex rounded-lg border border-line bg-zinc-900 p-0.5">
-            {(['all', 'image', 'video'] as const).map((t) => (
-              <div
-                key={t}
-                className={segStyle(typeParam === t)}
-                onClick={() => update((p) => (t === 'all' ? p.delete('type') : p.set('type', t)))}
-              >
-                {t === 'all' ? 'All' : t === 'image' ? 'Images' : 'Videos'}
-              </div>
-            ))}
-          </div>
+          <Segmented
+            options={TYPE_OPTIONS}
+            value={typeParam}
+            onChange={(t) => update((p) => (t === 'all' ? p.delete('type') : p.set('type', t)))}
+          />
           <label className="flex flex-col gap-1">
             <div className="flex items-center gap-2.5">
               <span className="text-[12.5px] font-semibold text-zinc-400">Surprise</span>

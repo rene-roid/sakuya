@@ -6,12 +6,10 @@ import { isLikedMediaList, patchCachedMedia } from '../lib/mediaCache';
 export function HeartButton({
   mediaId,
   liked,
-  className = '',
   size = 'md',
 }: {
   mediaId: number;
   liked: boolean;
-  className?: string;
   size?: 'sm' | 'md' | 'lg';
 }) {
   const queryClient = useQueryClient();
@@ -37,7 +35,7 @@ export function HeartButton({
       }}
       className={`flex items-center justify-center rounded-full backdrop-blur transition-colors ${
         liked ? 'bg-black/40 text-rose-500' : 'bg-black/40 text-white/85 hover:text-rose-400'
-      } ${className} hover:cursor-pointer`}
+      } hover:cursor-pointer`}
     >
       <Heart size={dimSize} fill={liked ? 'currentColor' : 'none'} />
     </button>

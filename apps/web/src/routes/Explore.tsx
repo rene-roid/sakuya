@@ -1,29 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '../lib/api';
 import { useFilters } from '../hooks/useFilters';
-import { useMediaInfinite } from '../hooks/useMedia';
-import { useSelection } from '../hooks/useSelection';
-import { FilterToolbar } from '../components/FilterToolbar';
+import { useSettings } from '../hooks/useSettings';
 import { TagSidebar } from '../components/TagSidebar';
-import { MediaGrid } from '../components/MediaGrid';
-import { SelectionBar } from '../components/SelectionBar';
-import { MediaViewer } from '../components/MediaViewer';
+import { MediaBrowser } from '../components/MediaBrowser';
 
 const EXPLORE_FILTERS_KEY = 'sakuya:exploreFilters';
 
 export function Explore() {
   const [filters, actions] = useFilters();
-  const media = useMediaInfinite(filters);
-  const selection = useSelection(media.items, JSON.stringify(filters));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const settings = useSettings();
   const rememberFilters = settings?.board_remember_filters !== '0';
   const restored = useRef(false);
 
@@ -50,57 +41,28 @@ export function Explore() {
   }, [location.search, rememberFilters]);
 
   return (
-    <div className="fade-in flex">
-      <TagSidebar
-        filters={filters}
-        actions={actions}
-        collapsed={sidebarCollapsed}
-        onToggle={() => setSidebarCollapsed((c) => !c)}
-      />
-      <div className="min-w-0 flex-1">
-        <div className="max-w-[1400px] px-4 sm:px-8 pt-6">
-          <div className="mb-1 flex items-baseline gap-3">
-            <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Explore</h1>
-            <span className="text-[13px] text-zinc-500">
-              {media.total} item{media.total === 1 ? '' : 's'}
-            </span>
-            {/* Phones get this instead of the collapsed sidebar strip, which ate a column of the grid. */}
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              className="ml-auto flex cursor-pointer items-center gap-1.5 self-center rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 sm:hidden glass:bg-white/[0.04] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-            >
-              <PanelLeft size={14} />
-              Libraries &amp; tags
-            </button>
-          </div>
-        </div>
-        <div className="sticky top-(--nav-h) z-20 mt-3.5 border-b border-line bg-bar backdrop-blur transition-transform duration-300 max-md:nav-hidden:-translate-y-[calc(100%+var(--nav-h))] glass:backdrop-blur-2xl">
-          <div className="px-4 sm:px-8 py-3">
-            <FilterToolbar filters={filters} actions={actions} selection={selection} />
-          </div>
-        </div>
-        <div className="px-4 sm:px-8 pb-16 pt-5">
-          <MediaGrid
-            items={media.items}
-            hasNextPage={!!media.hasNextPage}
-            isFetchingNextPage={media.isFetchingNextPage}
-            fetchNextPage={media.fetchNextPage}
-            isLoading={media.isLoading}
-            onOpen={setViewerIndex}
-            selection={selection}
-          />
-        </div>
-      </div>
-      {selection.active && <SelectionBar selection={selection} filters={filters} total={media.total} />}
-      {viewerIndex !== null && (
-        <MediaViewer
-          items={media.items}
-          index={viewerIndex}
-          onIndexChange={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
-          onNearEnd={() => media.hasNextPage && !media.isFetchingNextPage && media.fetchNextPage()}
+    <MediaBrowser
+      title="Explore"
+      filters={filters}
+      actions={actions}
+      sidebar={
+        <TagSidebar
+          filters={filters}
+          actions={actions}
+          collapsed={sidebarCollapsed}
+          onToggle={() => setSidebarCollapsed((c) => !c)}
         />
-      )}
-    </div>
+      }
+      headerExtra={
+        // Phones get this instead of the collapsed sidebar strip, which ate a column of the grid.
+        <button
+          onClick={() => setSidebarCollapsed(false)}
+          className="ml-auto flex cursor-pointer items-center gap-1.5 self-center rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 sm:hidden glass:bg-white/[0.04] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+        >
+          <PanelLeft size={14} />
+          Libraries &amp; tags
+        </button>
+      }
+    />
   );
 }

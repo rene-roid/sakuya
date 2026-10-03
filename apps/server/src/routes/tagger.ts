@@ -12,7 +12,6 @@ import {
   unhashedImageIds,
 } from '../services/tagger';
 import { MODEL_REGISTRY } from '../lib/config';
-import type { TaggerModel } from '@sakuya/shared';
 
 export const taggerRouter = Router();
 
@@ -26,8 +25,7 @@ taggerRouter.get(
 taggerRouter.get(
   '/api/tagger/models',
   wrap(async (_req, res) => {
-    const models: TaggerModel[] = MODEL_REGISTRY.map((m) => ({ id: m.id, label: m.label, repo: m.repo }));
-    res.json(models);
+    res.json(MODEL_REGISTRY);
   }),
 );
 

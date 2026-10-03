@@ -1,30 +1,17 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { api, type DiscoverFilters, type MediaFilters } from '../lib/api';
-import type { Media } from '@sakuya/shared';
+import type { Media, MediaListResponse } from '@sakuya/shared';
 
-export function useMediaInfinite(filters: MediaFilters) {
+/** A cursor-paged media feed, flattened into one list. */
+function useInfiniteMedia<F>(
+  key: string,
+  filters: F,
+  fetchPage: (filters: F, cursor?: string) => Promise<MediaListResponse>,
+) {
   const query = useInfiniteQuery({
-    queryKey: ['media', filters],
-    queryFn: ({ pageParam }) => api.mediaList(filters, pageParam || undefined),
-    initialPageParam: '',
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
-    staleTime: 15_000,
-  });
-
-  const items = useMemo<Media[]>(
-    () => query.data?.pages.flatMap((p) => p.items) ?? [],
-    [query.data],
-  );
-  const total = query.data?.pages[0]?.total ?? 0;
-
-  return { ...query, items, total };
-}
-
-export function useDiscoverInfinite(filters: DiscoverFilters) {
-  const query = useInfiniteQuery({
-    queryKey: ['discover', filters],
-    queryFn: ({ pageParam }) => api.discover(filters, pageParam || undefined),
+    queryKey: [key, filters],
+    queryFn: ({ pageParam }) => fetchPage(filters, pageParam || undefined),
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     staleTime: 15_000,
@@ -35,3 +22,6 @@ export function useDiscoverInfinite(filters: DiscoverFilters) {
 
   return { ...query, items, total };
 }
+
+export const useMediaInfinite = (filters: MediaFilters) => useInfiniteMedia('media', filters, api.mediaList);
+export const useDiscoverInfinite = (filters: DiscoverFilters) => useInfiniteMedia('discover', filters, api.discover);

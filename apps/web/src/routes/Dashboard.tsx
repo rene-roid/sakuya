@@ -1,31 +1,47 @@
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Heart, X } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { api, thumbUrl, libraryCoverUrl } from '../lib/api';
 import { WideCard } from '../components/MediaCard';
 import { MediaViewer } from '../components/MediaViewer';
-import { useToast } from '../components/Toast';
+import { toast } from '../components/Toast';
 import { useUiStyle } from '../hooks/useUiStyle';
+import { usePatchSettings, useSettings } from '../hooks/useSettings';
+
+const ROWS = [
+  {
+    key: 'continueWatching',
+    title: 'Continue Watching',
+    seeAll: '/explore?type=video',
+    empty: 'Videos you start watching will show up here.',
+    progress: () => true,
+  },
+  {
+    key: 'recentlyViewed',
+    title: 'Recently Viewed',
+    seeAll: '/explore',
+    empty: 'Images and videos you open will show up here.',
+    progress: (item: Media) => item.type === 'video',
+  },
+  {
+    key: 'recentlyAdded',
+    title: 'Recently Added',
+    seeAll: '/explore',
+    empty: 'Scan a library or upload files to get started.',
+    progress: () => false,
+  },
+] as const;
 
 export function Dashboard() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const showToast = useToast();
   const glass = useUiStyle() === 'glass';
   const { data } = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const settings = useSettings();
   const [viewer, setViewer] = useState<{ items: Media[]; index: number } | null>(null);
 
-  const hideHeroMutation = useMutation({
-    mutationFn: () => api.patchSettings({ dashboard_hero: '0' }),
-    onSuccess: (next) => {
-      queryClient.setQueryData(['settings'], next);
-      showToast('Banner hidden. Bring it back in Settings → Appearance');
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  const hideHeroMutation = usePatchSettings(() => toast('Banner hidden. Bring it back in Settings → Appearance'));
 
   const libraryCover = (lib: NonNullable<typeof data>['libraries'][number]) =>
     lib.customImagePath ? (
@@ -46,7 +62,7 @@ export function Dashboard() {
           likedCount={data?.likedCount ?? 0}
           onExplore={() => navigate('/explore')}
           onLikes={() => navigate('/explore?liked=1')}
-          onClose={() => hideHeroMutation.mutate()}
+          onClose={() => hideHeroMutation.mutate({ dashboard_hero: '0' })}
         />
       )}
 
@@ -87,45 +103,25 @@ export function Dashboard() {
         )}
       </div>
 
-      <SectionHeader title="Continue Watching" onSeeAll={() => navigate('/explore?type=video')} />
-      <div className="mb-9 flex gap-3.5 overflow-x-auto pb-2">
-        {(data?.continueWatching ?? []).map((item, i) => (
-          <WideCard
-            key={item.id}
-            item={item}
-            showProgress
-            onClick={() => setViewer({ items: data!.continueWatching, index: i })}
-          />
-        ))}
-        {data && data.continueWatching.length === 0 && (
-          <div className="py-6 text-[12.5px] text-zinc-600">Videos you start watching will show up here.</div>
-        )}
-      </div>
-
-      <SectionHeader title="Recently Viewed" onSeeAll={() => navigate('/explore')} />
-      <div className="mb-9 flex gap-3.5 overflow-x-auto pb-2">
-        {(data?.recentlyViewed ?? []).map((item, i) => (
-          <WideCard
-            key={item.id}
-            item={item}
-            showProgress={item.type === 'video'}
-            onClick={() => setViewer({ items: data!.recentlyViewed, index: i })}
-          />
-        ))}
-        {data && data.recentlyViewed.length === 0 && (
-          <div className="py-6 text-[12.5px] text-zinc-600">Images and videos you open will show up here.</div>
-        )}
-      </div>
-
-      <SectionHeader title="Recently Added" onSeeAll={() => navigate('/explore')} />
-      <div className="flex gap-3.5 overflow-x-auto pb-2">
-        {(data?.recentlyAdded ?? []).map((item, i) => (
-          <WideCard key={item.id} item={item} onClick={() => setViewer({ items: data!.recentlyAdded, index: i })} />
-        ))}
-        {data && data.recentlyAdded.length === 0 && (
-          <div className="py-6 text-[12.5px] text-zinc-600">Scan a library or upload files to get started.</div>
-        )}
-      </div>
+      {ROWS.map((row, r) => {
+        const items = data?.[row.key] ?? [];
+        return (
+          <Fragment key={row.key}>
+            <SectionHeader title={row.title} onSeeAll={() => navigate(row.seeAll)} />
+            <div className={`${r < ROWS.length - 1 ? 'mb-9 ' : ''}flex gap-3.5 overflow-x-auto pb-2`}>
+              {items.map((item, i) => (
+                <WideCard
+                  key={item.id}
+                  item={item}
+                  showProgress={row.progress(item)}
+                  onClick={() => setViewer({ items, index: i })}
+                />
+              ))}
+              {data && items.length === 0 && <div className="py-6 text-[12.5px] text-zinc-600">{row.empty}</div>}
+            </div>
+          </Fragment>
+        );
+      })}
 
       {viewer && (
         <MediaViewer

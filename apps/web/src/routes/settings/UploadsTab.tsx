@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { api } from '../../lib/api';
-import { useToast } from '../../components/Toast';
+import { toast } from '../../components/Toast';
 import { TabHeader } from './index';
 
 interface UploadRow {
@@ -20,7 +20,6 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function UploadsTab() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
   const [libraryId, setLibraryId] = useState<number | ''>('');
   const [rows, setRows] = useState<UploadRow[]>([]);
@@ -33,7 +32,7 @@ export function UploadsTab() {
     const list = Array.from(files);
     if (!list.length) return;
     if (!effectiveLibraryId) {
-      showToast('Create a library first');
+      toast('Create a library first');
       return;
     }
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -58,17 +57,17 @@ export function UploadsTab() {
         prev.map((r) => (r.id === id ? { ...r, status: ok ? 'done' : 'error', progress: ok ? 100 : r.progress } : r)),
       );
       if (ok) {
-        showToast(`Uploaded ${label}`);
+        toast(`Uploaded ${label}`);
         queryClient.invalidateQueries({ queryKey: ['media'] });
         queryClient.invalidateQueries({ queryKey: ['dashboard'] });
         queryClient.invalidateQueries({ queryKey: ['libraries'] });
       } else {
-        showToast('Upload failed');
+        toast('Upload failed');
       }
     };
     xhr.onerror = () => {
       setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: 'error' } : r)));
-      showToast('Upload failed');
+      toast('Upload failed');
     };
     xhr.send(form);
   }

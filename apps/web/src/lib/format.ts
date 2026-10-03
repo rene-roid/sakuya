@@ -1,3 +1,5 @@
+import type { TagCategory } from '@sakuya/shared';
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return '0 B';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -27,4 +29,12 @@ export function timeAgo(ts: number | null): string {
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`;
   return new Date(ts).toLocaleDateString();
+}
+
+/** Tag categories, in the order every category picker lists them. */
+export const CATEGORIES: TagCategory[] = ['general', 'character', 'rating', 'user'];
+
+/** Tags are stored lowercase with underscores for spaces. */
+export function normalizeTag(tag: string): string {
+  return tag.trim().toLowerCase().replace(/\s+/g, '_');
 }

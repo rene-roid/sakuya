@@ -37,7 +37,7 @@ function quoteShellArg(arg: string): string {
 }
 
 export async function startConsoleSession(commandText: string): Promise<void> {
-  if (child) throw new Error('A console session is already running');
+  if (child) throw Object.assign(new Error('A console session is already running'), { status: 409 });
 
   const galleryDl = await detectGalleryDl();
   if (!galleryDl.installed || !galleryDl.path) throw new Error('gallery-dl is not installed');
@@ -51,23 +51,16 @@ export async function startConsoleSession(commandText: string): Promise<void> {
   // browser=false (dodges the xdg-open crash; the URL is printed either way for the user to open
   // themselves) plus --no-colors since a pty otherwise makes it emit ANSI codes into the console log.
   const galleryDlArgs = ['--no-colors', '-o', 'browser=false', ...args];
-  let proc: ChildProcessWithoutNullStreams;
   usingPty = process.platform === 'linux';
-  if (usingPty) {
-    const cmd = [galleryDl.path, ...galleryDlArgs].map(quoteShellArg).join(' ');
-    proc = spawn('script', ['-qc', cmd, '/dev/null'], {
-      cwd: DOWNLOADER_DIR,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
-    });
-  } else {
-    proc = spawn(galleryDl.path, galleryDlArgs, {
-      cwd: DOWNLOADER_DIR,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      // Force unbuffered stdout so interactive prompts (e.g. 2FA codes) show up immediately.
-      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
-    });
-  }
+  const [cmd, cmdArgs]: [string, string[]] = usingPty
+    ? ['script', ['-qc', [galleryDl.path, ...galleryDlArgs].map(quoteShellArg).join(' '), '/dev/null']]
+    : [galleryDl.path, galleryDlArgs];
+  const proc = spawn(cmd, cmdArgs, {
+    cwd: DOWNLOADER_DIR,
+    stdio: ['pipe', 'pipe', 'pipe'],
+    // Force unbuffered stdout so interactive prompts (e.g. 2FA codes) show up immediately.
+    env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8' },
+  });
 
   child = proc;
   command = commandText;
@@ -89,7 +82,7 @@ export async function startConsoleSession(commandText: string): Promise<void> {
 }
 
 export function writeConsoleInput(text: string): void {
-  if (!child || !child.stdin.writable) throw new Error('No console session is running');
+  if (!child || !child.stdin.writable) throw Object.assign(new Error('No console session is running'), { status: 409 });
   if (!usingPty) appendBuffer(`${text}\n`);
   child.stdin.write(`${text}\n`);
 }

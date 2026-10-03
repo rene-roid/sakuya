@@ -4,8 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
-import { formatBytes, formatDuration, timeAgo } from '../lib/format';
-import { useToast } from './Toast';
+import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
+import { toast, toastError } from './Toast';
+import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -26,12 +27,6 @@ interface MediaViewerProps {
   onClose: () => void;
   onNearEnd?: () => void;
 }
-
-const ADD_CATEGORIES: { key: TagCategory; label: string }[] = [
-  { key: 'general', label: 'General' },
-  { key: 'character', label: 'Character' },
-  { key: 'rating', label: 'Rating' },
-];
 
 // Actual .gif files can't be decoded by an HTML5 <video> element even when classified as a video
 // (see the "Detect GIFs as videos" setting), so they render as an <img> and dwell like an image.
@@ -87,7 +82,6 @@ function useFitSize(width: number | null, height: number | null) {
 export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const showToast = useToast();
   const [tagInput, setTagInput] = useState('');
   const [addCategory, setAddCategory] = useState<TagCategory>('general');
   // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
@@ -112,7 +106,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     enabled: !!item,
   });
 
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const settings = useSettings();
   const rememberMute = settings?.remember_mute_state === '1';
   const rememberVolume = settings?.remember_volume_level !== '0';
   const resumeEnabled = settings?.continue_where_left !== '0';
@@ -307,20 +301,8 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       queryClient.setQueryData(['media-detail', item.id], updated);
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
-      showToast('Tags saved');
+      toast('Tags saved');
     },
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
-  });
-
-  const retagMutation = useMutation({
-    mutationFn: () => api.retag(item.id),
-    onSuccess: () => showToast('Re-tagging with AI…'),
-    onError: (err: Error) => showToast(err.message),
-  });
-
-  const revealMutation = useMutation({
-    mutationFn: () => api.revealMedia(item.id),
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   const renameMutation = useMutation({
@@ -329,9 +311,8 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       queryClient.setQueryData(['media-detail', item.id], updated);
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setRenaming(false);
-      showToast('Renamed');
+      toast('Renamed');
     },
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   const deleteMutation = useMutation({
@@ -339,12 +320,12 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      showToast('File deleted');
+      toast('File deleted');
       onClose();
     },
     onError: (err: Error) => {
       setShowDeleteConfirm(false);
-      showToast(`Failed: ${err.message}`);
+      toastError(err);
     },
   });
 
@@ -481,7 +462,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
                 className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
                 onClick={() => {
                   navigator.clipboard.writeText(displayPath);
-                  showToast('Path copied');
+                  toast('Path copied');
                 }}
                 title="Copy path"
               >
@@ -489,7 +470,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
               </button>
               <button
                 className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
-                onClick={() => revealMutation.mutate()}
+                onClick={() => api.revealMedia(item.id).catch(toastError)}
                 title="Show in file explorer"
               >
                 <FolderOpen size={13} />
@@ -512,7 +493,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           <div className="text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
           <button
             className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-accent hover:opacity-80"
-            onClick={() => retagMutation.mutate()}
+            onClick={() => api.retag(item.id).then(() => toast('Re-tagging with AI…'), toastError)}
           >
             <RotateCw size={13} />
             AI re-tag
@@ -531,15 +512,15 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
           {detail && detail.tags.length === 0 && <div className="text-[11.5px] text-zinc-600">No tags yet</div>}
         </div>
         <div className="mb-1.5 flex gap-1">
-          {ADD_CATEGORIES.map((c) => (
+          {CATEGORIES.map((c) => (
             <div
-              key={c.key}
-              onClick={() => setAddCategory(c.key)}
-              className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold ${
-                addCategory === c.key ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+              key={c}
+              onClick={() => setAddCategory(c)}
+              className={`cursor-pointer rounded-md px-2 py-1 text-[11px] font-semibold capitalize ${
+                addCategory === c ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              {c.label}
+              {c}
             </div>
           ))}
         </div>
@@ -574,7 +555,6 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
 /** Board membership for the open item: current boards as removable pills, plus an add picker. */
 function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }) {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const { data: allBoards } = useQuery({ queryKey: ['boards'], queryFn: api.boards });
@@ -590,15 +570,13 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
     mutationFn: (boardId: number) => api.addToBoard(boardId, [mediaId]),
     onSuccess: (board) => {
       invalidate();
-      showToast(`Added to ${board.name}`);
+      toast(`Added to ${board.name}`);
     },
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   const removeMutation = useMutation({
     mutationFn: (boardId: number) => api.removeFromBoard(boardId, mediaId),
     onSuccess: invalidate,
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   const createMutation = useMutation({
@@ -608,7 +586,6 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
       setCreating(false);
       addMutation.mutate(board.id);
     },
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   const memberIds = new Set(boards.map((b) => b.id));
@@ -717,7 +694,7 @@ function TagPill({
       </button>
       {menuOpen && (
         <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-line-strong bg-zinc-900 shadow-xl">
-          {(['general', 'character', 'rating', 'user'] as TagCategory[]).map((c) => (
+          {CATEGORIES.map((c) => (
             <div
               key={c}
               className="cursor-pointer px-3 py-1.5 text-[11.5px] capitalize text-zinc-200 hover:bg-zinc-800"
@@ -746,24 +723,21 @@ function SimilarPanel({
   previousId: number | null;
   onPick: (m: Media) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(true);
   return (
-    <div className="absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-line bg-zinc-950/85 backdrop-blur">
-      <button className={`w-full flex cursor-pointer items-center justify-between ${collapsed ? 'px-3 py-2' : 'px-3 py-3 mb-2'}`} onClick={() => setCollapsed((c) => !c)}>
+    <details className="group absolute bottom-4 left-4 z-10 w-[240px] rounded-xl border border-line bg-zinc-950/85 backdrop-blur">
+      <summary className="flex w-full cursor-pointer list-none items-center justify-between px-3 py-2 group-open:mb-2 group-open:py-3 [&::-webkit-details-marker]:hidden">
         <span className="text-[11px] font-bold tracking-[0.4px] text-zinc-400">SIMILAR & DUPLICATES</span>
-        <ChevronRight size={16} className={`text-zinc-500 transition-transform ${collapsed ? '' : 'rotate-90'}`} />
-      </button>
-      {!collapsed && (
-        <div className="flex flex-col gap-2 px-3 pb-3">
-          {duplicates.length > 0 && (
-            <Section title={`Duplicates (${duplicates.length})`} items={duplicates} previousId={previousId} onPick={onPick} />
-          )}
-          {similar.length > 0 && (
-            <Section title={`Similar (${similar.length})`} items={similar} previousId={previousId} onPick={onPick} />
-          )}
-        </div>
-      )}
-    </div>
+        <ChevronRight size={16} className="text-zinc-500 transition-transform group-open:rotate-90" />
+      </summary>
+      <div className="flex flex-col gap-2 px-3 pb-3">
+        {duplicates.length > 0 && (
+          <Section title={`Duplicates (${duplicates.length})`} items={duplicates} previousId={previousId} onPick={onPick} />
+        )}
+        {similar.length > 0 && (
+          <Section title={`Similar (${similar.length})`} items={similar} previousId={previousId} onPick={onPick} />
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -802,11 +776,11 @@ function Section({
   );
 }
 
-function MetaRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function MetaRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-3 text-[12.5px]">
       <span className="flex-none text-zinc-500">{label}</span>
-      <span className={`truncate text-right text-zinc-300 ${mono ? 'font-mono text-[11.5px]' : ''}`} title={value}>
+      <span className="truncate text-right text-zinc-300" title={value}>
         {value}
       </span>
     </div>

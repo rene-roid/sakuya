@@ -13,10 +13,11 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import type { BulkResult, BulkRenameItem, Media, TagCategory } from '@sakuya/shared';
+import type { BulkResult, Media } from '@sakuya/shared';
 import { api, type MediaFilters } from '../lib/api';
 import { formatBytes } from '../lib/format';
-import { useToast } from './Toast';
+import { toast, toastError } from './Toast';
+import { Modal } from './Modal';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
 import { BulkTagDialog } from './BulkTagDialog';
 import { BulkRenameDialog } from './BulkRenameDialog';
@@ -24,9 +25,6 @@ import { MenuItem, MenuPanel } from './Menu';
 import type { SelectionApi } from '../hooks/useSelection';
 
 type Action = 'tags' | 'rename' | 'boards' | 'like' | 'unlike' | 'delete' | 'retag' | 'thumbnails' | 'board-remove';
-
-/** Actions that need the selected rows resolved before their dialog can render. */
-const NEEDS_ROWS: Action[] = ['tags', 'rename', 'like', 'unlike', 'delete', 'retag', 'thumbnails', 'board-remove'];
 
 function actionButton(danger?: boolean): string {
   return `flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-[7px] text-[12.5px] font-semibold ${
@@ -58,7 +56,6 @@ export function SelectionBar({
   boardId?: number;
 }) {
   const qc = useQueryClient();
-  const showToast = useToast();
   const [action, setAction] = useState<Action | null>(null);
   const [boardTarget, setBoardTarget] = useState<{ id: number; name: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -86,7 +83,7 @@ export function SelectionBar({
   }
 
   function finish(message: string) {
-    showToast(message);
+    toast(message);
     qc.invalidateQueries({ queryKey: ['media'] });
     qc.invalidateQueries({ queryKey: ['media-by-ids'] });
     qc.invalidateQueries({ queryKey: ['media-detail'] });
@@ -99,94 +96,43 @@ export function SelectionBar({
   }
 
   /** Bulk routes report per-item failures instead of failing the whole call. */
-  function report(verb: string, result: BulkResult) {
+  const report = (verb: string) => (result: BulkResult) => {
     const failed = result.failed.length;
-    finish(`${verb} ${result.updated} file${result.updated === 1 ? '' : 's'}${failed ? ` · ${failed} skipped` : ''}`);
-  }
-
-  const fail = (err: Error) => showToast(`Failed: ${err.message}`);
+    return `${verb} ${result.updated} file${result.updated === 1 ? '' : 's'}${failed ? ` · ${failed} skipped` : ''}`;
+  };
+  const files = `${ids.length} file${ids.length === 1 ? '' : 's'}`;
 
   const selectAll = useMutation({
     mutationFn: () => api.mediaIds(filters!),
     onSuccess: (res) => {
       selection.replace(res.ids);
-      showToast(`Selected ${res.ids.length} file${res.ids.length === 1 ? '' : 's'}`);
+      toast(`Selected ${res.ids.length} file${res.ids.length === 1 ? '' : 's'}`);
     },
-    onError: fail,
   });
 
-  const tagsMutation = useMutation({
-    mutationFn: (body: { add: string[]; remove: string[]; category: TagCategory }) =>
-      api.tagsBatch({ ids, ...body }),
-    onSuccess: (res) => report('Tagged', res),
-    onError: fail,
-  });
+  // Every bulk change goes through this one mutation: the thunk does the work and resolves to the
+  // toast that reports it.
+  const run = useMutation({ mutationFn: (change: () => Promise<string>) => change(), onSuccess: finish });
+  const busy = run.isPending;
 
-  const renameMutation = useMutation({
-    mutationFn: (items: BulkRenameItem[]) => api.renameBatch(items),
-    onSuccess: (res) => report('Renamed', res),
-    onError: fail,
-  });
-
-  const likeMutation = useMutation({
-    mutationFn: (liked: boolean) => api.likeBatch(ids, liked),
-    onSuccess: (res) => report(action === 'unlike' ? 'Unliked' : 'Liked', res),
-    onError: fail,
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: () => api.deleteMediaBatch(ids),
-    onSuccess: (res) => finish(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`),
-    onError: fail,
-  });
-
-  const addToBoardMutation = useMutation({
-    mutationFn: (target: number) => api.addToBoard(target, ids),
-    onSuccess: (board) => finish(`Added ${ids.length} to ${board.name}`),
-    onError: fail,
-  });
-
-  const removeFromBoardMutation = useMutation({
-    mutationFn: () => api.removeFromBoardBatch(boardId!, ids),
-    onSuccess: (board) => finish(`Removed ${ids.length} from ${board.name}`),
-    onError: fail,
-  });
-
-  const retagMutation = useMutation({
-    mutationFn: () => api.retagBatch(ids),
-    onSuccess: () => finish(`Queued AI tagging for ${ids.length} file${ids.length === 1 ? '' : 's'}`),
-    onError: fail,
-  });
-
-  const thumbnailsMutation = useMutation({
-    mutationFn: () => api.thumbnailsBatch(ids),
-    onSuccess: () => finish(`Queued thumbnail regeneration for ${ids.length} file${ids.length === 1 ? '' : 's'}`),
-    onError: fail,
-  });
-
-  const copyPaths = useMutation({
-    mutationFn: async () => {
+  const copyPaths = async () => {
+    try {
       const items = await api.mediaByIds(ids);
       await navigator.clipboard.writeText(items.map((m) => m.path).join('\n'));
-      return items.length;
-    },
-    onSuccess: (count) => showToast(`Copied ${count} path${count === 1 ? '' : 's'}`),
-    onError: fail,
-  });
+      toast(`Copied ${items.length} path${items.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      toastError(err as Error);
+    }
+  };
 
-  const busy =
-    tagsMutation.isPending ||
-    renameMutation.isPending ||
-    likeMutation.isPending ||
-    deleteMutation.isPending ||
-    addToBoardMutation.isPending ||
-    removeFromBoardMutation.isPending ||
-    retagMutation.isPending ||
-    thumbnailsMutation.isPending;
+  const fromMenu = (pick: () => void) => () => {
+    setMenuOpen(false);
+    pick();
+  };
 
-  // The board flow only needs rows once a target board is chosen and the confirm list renders.
-  const needsRows =
-    action !== null && (NEEDS_ROWS.includes(action) || (action === 'boards' && boardTarget !== null));
+  // Every action but the board flow needs the rows up front; that one only once a target board
+  // is chosen and the confirm list renders.
+  const needsRows = action !== null && (action !== 'boards' || boardTarget !== null);
   const plainRows: BulkChangeRow[] = selected.map((item) => ({ id: item.id, label: item.filename }));
   const selectedBytes = selected.reduce((sum, m) => sum + m.sizeBytes, 0);
   const allSelected = ids.length >= total && total > 0;
@@ -241,48 +187,25 @@ export function SelectionBar({
             </button>
             {menuOpen && (
               <MenuPanel side="top" onClose={() => setMenuOpen(false)}>
-                <MenuItem
-                  icon={<HeartOff size={13} />}
-                  label="Unlike"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setAction('unlike');
-                  }}
-                />
+                <MenuItem icon={<HeartOff size={13} />} label="Unlike" onClick={fromMenu(() => setAction('unlike'))} />
                 {boardId !== undefined && (
                   <MenuItem
                     icon={<Images size={13} />}
                     label="Remove from this board"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setAction('board-remove');
-                    }}
+                    onClick={fromMenu(() => setAction('board-remove'))}
                   />
                 )}
                 <MenuItem
                   icon={<RotateCw size={13} />}
                   label="AI re-tag"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setAction('retag');
-                  }}
+                  onClick={fromMenu(() => setAction('retag'))}
                 />
                 <MenuItem
                   icon={<RefreshCw size={13} />}
                   label="Regenerate thumbnails"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setAction('thumbnails');
-                  }}
+                  onClick={fromMenu(() => setAction('thumbnails'))}
                 />
-                <MenuItem
-                  icon={<Copy size={13} />}
-                  label="Copy file paths"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    copyPaths.mutate();
-                  }}
-                />
+                <MenuItem icon={<Copy size={13} />} label="Copy file paths" onClick={fromMenu(copyPaths)} />
               </MenuPanel>
             )}
           </div>
@@ -308,7 +231,7 @@ export function SelectionBar({
           selected={selected}
           libraryId={filters?.libraryId}
           busy={busy}
-          onApply={(body) => tagsMutation.mutate(body)}
+          onApply={(body) => run.mutate(() => api.tagsBatch({ ids, ...body }).then(report('Tagged')))}
           onCancel={close}
         />
       )}
@@ -317,7 +240,7 @@ export function SelectionBar({
         <BulkRenameDialog
           selected={selected}
           busy={busy}
-          onApply={(items) => renameMutation.mutate(items)}
+          onApply={(items) => run.mutate(() => api.renameBatch(items).then(report('Renamed')))}
           onCancel={close}
         />
       )}
@@ -325,12 +248,16 @@ export function SelectionBar({
       {action === 'boards' &&
         (boardTarget && rows ? (
           <BulkConfirmDialog
-            title={`Add ${ids.length} file${ids.length === 1 ? '' : 's'} to “${boardTarget.name}”?`}
+            title={`Add ${files} to “${boardTarget.name}”?`}
             summary={`Files already on the board are left as they are. Nothing is moved or copied on disk.`}
             rows={plainRows}
             confirmLabel="Add to board"
             busy={busy}
-            onConfirm={() => addToBoardMutation.mutate(boardTarget.id)}
+            onConfirm={() =>
+              run.mutate(() =>
+                api.addToBoard(boardTarget.id, ids).then((board) => `Added ${ids.length} to ${board.name}`),
+              )
+            }
             onCancel={() => setBoardTarget(null)}
           />
         ) : (
@@ -343,19 +270,23 @@ export function SelectionBar({
 
       {action === 'board-remove' && rows && (
         <BulkConfirmDialog
-          title={`Remove ${ids.length} file${ids.length === 1 ? '' : 's'} from this board?`}
+          title={`Remove ${files} from this board?`}
           summary="The files stay in their libraries — only the board membership is removed."
           rows={plainRows}
           confirmLabel="Remove from board"
           busy={busy}
-          onConfirm={() => removeFromBoardMutation.mutate()}
+          onConfirm={() =>
+            run.mutate(() =>
+              api.removeFromBoardBatch(boardId!, ids).then((board) => `Removed ${ids.length} from ${board.name}`),
+            )
+          }
           onCancel={close}
         />
       )}
 
       {(action === 'like' || action === 'unlike') && rows && (
         <BulkConfirmDialog
-          title={`${action === 'like' ? 'Like' : 'Unlike'} ${ids.length} file${ids.length === 1 ? '' : 's'}?`}
+          title={`${action === 'like' ? 'Like' : 'Unlike'} ${files}?`}
           summary={
             action === 'like'
               ? 'Liked media shows up in the Likes library and under the liked filter.'
@@ -368,19 +299,23 @@ export function SelectionBar({
           }))}
           confirmLabel={action === 'like' ? 'Like all' : 'Unlike all'}
           busy={busy}
-          onConfirm={() => likeMutation.mutate(action === 'like')}
+          onConfirm={() =>
+            run.mutate(() =>
+              api.likeBatch(ids, action === 'like').then(report(action === 'like' ? 'Liked' : 'Unliked')),
+            )
+          }
           onCancel={close}
         />
       )}
 
       {action === 'retag' && rows && (
         <BulkConfirmDialog
-          title={`Re-tag ${ids.length} file${ids.length === 1 ? '' : 's'} with AI?`}
+          title={`Re-tag ${files} with AI?`}
           summary="Queues a tagging job. Existing AI tags are replaced; tags you added by hand are kept."
           rows={plainRows}
           confirmLabel="Queue tagging"
           busy={busy}
-          onConfirm={() => retagMutation.mutate()}
+          onConfirm={() => run.mutate(() => api.retagBatch(ids).then(() => `Queued AI tagging for ${files}`))}
           onCancel={close}
         />
       )}
@@ -392,14 +327,16 @@ export function SelectionBar({
           rows={plainRows}
           confirmLabel="Queue regeneration"
           busy={busy}
-          onConfirm={() => thumbnailsMutation.mutate()}
+          onConfirm={() =>
+            run.mutate(() => api.thumbnailsBatch(ids).then(() => `Queued thumbnail regeneration for ${files}`))
+          }
           onCancel={close}
         />
       )}
 
       {action === 'delete' && rows && (
         <BulkConfirmDialog
-          title={`Delete ${ids.length} file${ids.length === 1 ? '' : 's'}?`}
+          title={`Delete ${files}?`}
           summary={
             <span>
               <strong className="text-rose-400">This cannot be undone.</strong> {formatBytes(selectedBytes)} will be
@@ -414,7 +351,11 @@ export function SelectionBar({
           confirmLabel="Delete permanently"
           danger
           busy={busy}
-          onConfirm={() => deleteMutation.mutate()}
+          onConfirm={() =>
+            run.mutate(() =>
+              api.deleteMediaBatch(ids).then((res) => `Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`),
+            )
+          }
           onCancel={close}
         />
       )}
@@ -424,14 +365,12 @@ export function SelectionBar({
 
 function LoadingDialog({ onCancel }: { onCancel: () => void }) {
   return (
-    <div
-      className="fade-in fixed inset-0 z-[95] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
-      onClick={onCancel}
+    <Modal
+      onClose={onCancel}
+      className="rounded-xl border border-line bg-surface px-6 py-5 text-[12.5px] text-zinc-400"
     >
-      <div className="rounded-xl border border-line bg-surface px-6 py-5 text-[12.5px] text-zinc-400">
-        Loading selection…
-      </div>
-    </div>
+      Loading selection…
+    </Modal>
   );
 }
 
@@ -445,7 +384,6 @@ function BoardPicker({
   onCancel: () => void;
 }) {
   const qc = useQueryClient();
-  const showToast = useToast();
   const [newName, setNewName] = useState('');
 
   const createMutation = useMutation({
@@ -454,53 +392,47 @@ function BoardPicker({
       qc.invalidateQueries({ queryKey: ['boards'] });
       onPick({ id: board.id, name: board.name });
     },
-    onError: (err: Error) => showToast(`Failed: ${err.message}`),
   });
 
   return (
-    <div
-      className="fade-in fixed inset-0 z-[95] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
-      onClick={onCancel}
+    <Modal
+      onClose={onCancel}
+      className="flex max-h-[70vh] w-full max-w-[420px] flex-col rounded-xl border border-line bg-surface p-5"
     >
-      <div
-        className="flex max-h-[70vh] w-full max-w-[420px] flex-col rounded-xl border border-line bg-surface p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 text-[15px] font-bold">Add to board</div>
-        <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40">
-          {boards.length === 0 && (
-            <div className="px-3 py-3 text-[11.5px] text-zinc-600">No boards yet — create one below.</div>
-          )}
-          {boards.map((board) => (
-            <div
-              key={board.id}
-              onClick={() => onPick({ id: board.id, name: board.name })}
-              className="flex cursor-pointer items-center justify-between border-b border-line/60 px-3 py-2 last:border-b-0 hover:bg-white/5"
-            >
-              <span className="truncate text-[12.5px] font-semibold text-zinc-200">{board.name}</span>
-              <span className="flex-none text-[11px] text-zinc-500">{board.itemCount}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex gap-2">
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && newName.trim()) createMutation.mutate(newName.trim());
-            }}
-            placeholder="New board name"
-            className="flex-1 rounded-field border border-line bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
-          />
-          <button
-            disabled={!newName.trim() || createMutation.isPending}
-            onClick={() => createMutation.mutate(newName.trim())}
-            className="cursor-pointer rounded-btn bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+      <div className="mb-3 text-[15px] font-bold">Add to board</div>
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-line bg-zinc-900/40">
+        {boards.length === 0 && (
+          <div className="px-3 py-3 text-[11.5px] text-zinc-600">No boards yet — create one below.</div>
+        )}
+        {boards.map((board) => (
+          <div
+            key={board.id}
+            onClick={() => onPick({ id: board.id, name: board.name })}
+            className="flex cursor-pointer items-center justify-between border-b border-line/60 px-3 py-2 last:border-b-0 hover:bg-white/5"
           >
-            Create
-          </button>
-        </div>
+            <span className="truncate text-[12.5px] font-semibold text-zinc-200">{board.name}</span>
+            <span className="flex-none text-[11px] text-zinc-500">{board.itemCount}</span>
+          </div>
+        ))}
       </div>
-    </div>
+      <div className="mt-3 flex gap-2">
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && newName.trim()) createMutation.mutate(newName.trim());
+          }}
+          placeholder="New board name"
+          className="flex-1 rounded-field border border-line bg-zinc-900 px-3 py-[7px] text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
+        />
+        <button
+          disabled={!newName.trim() || createMutation.isPending}
+          onClick={() => createMutation.mutate(newName.trim())}
+          className="cursor-pointer rounded-btn bg-accent px-4 py-[7px] text-[12.5px] font-semibold text-white disabled:opacity-40"
+        >
+          Create
+        </button>
+      </div>
+    </Modal>
   );
 }

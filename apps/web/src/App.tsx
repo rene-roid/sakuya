@@ -1,7 +1,5 @@
 import { useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
-import { api } from './lib/api';
 import { Navbar } from './components/Navbar';
 import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
 import { UiStylePicker } from './components/UiStylePicker';
@@ -9,6 +7,7 @@ import { UpdateToast } from './components/UpdateToast';
 import { LoginGate } from './components/LoginGate';
 import { useAuth } from './hooks/useAuth';
 import { applyUiStyle } from './hooks/useUiStyle';
+import { useSettings } from './hooks/useSettings';
 import { JobsProvider } from './hooks/useJobs';
 import { DownloaderProvider } from './hooks/useDownloader';
 import { Dashboard } from './routes/Dashboard';
@@ -21,12 +20,7 @@ import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
 export function App() {
   const { loading, enabled, unlocked } = useAuth();
-  const { data: settings } = useQuery({
-    queryKey: ['settings'],
-    queryFn: api.settings,
-    staleTime: 60_000,
-    enabled: unlocked,
-  });
+  const settings = useSettings(unlocked);
 
   useEffect(() => {
     if (settings?.accent_color) {

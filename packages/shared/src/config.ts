@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export interface SakuyaConfig {
+interface SakuyaConfig {
   server: {
     port: number;
     /** Interface to bind. Loopback by default: the API serves the whole library and can open a file manager on the host. */
@@ -48,7 +48,7 @@ export interface SakuyaConfig {
 
 type Env = Record<string, string | undefined>;
 
-export const CONFIG_FILE_NAME = 'sakuya.config.json';
+const CONFIG_FILE_NAME = 'sakuya.config.json';
 
 /** packages/shared/src -> repo root. Also right inside the Docker image, which mirrors the layout under /app. */
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -67,29 +67,16 @@ export class ConfigError extends Error {
   }
 }
 
-const MEMORY_UNITS: Record<string, number> = {
-  b: 1,
-  k: 1024,
-  kb: 1024,
-  m: 1024 ** 2,
-  mb: 1024 ** 2,
-  g: 1024 ** 3,
-  gb: 1024 ** 3,
-  t: 1024 ** 4,
-  tb: 1024 ** 4,
-};
-
 /** Accepts what Docker's mem_limit accepts — "2g", "512m", "1.5G" — plus a bare byte count. */
 export function parseMemory(raw: string | number | null | undefined): number | null {
   if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : null;
   if (!raw) return null;
-  const match = /^\s*(\d+(?:\.\d+)?)\s*([a-z]*)\s*$/i.exec(raw);
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([kmgt]?)b?\s*$/i.exec(raw);
   if (!match) return null;
   const value = Number(match[1]);
   const unit = match[2].toLowerCase();
-  const multiplier = unit === '' ? 1 : MEMORY_UNITS[unit];
-  if (!multiplier || !Number.isFinite(value) || value <= 0) return null;
-  return Math.floor(value * multiplier);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return Math.floor(value * 1024 ** (unit ? 'kmgt'.indexOf(unit) + 1 : 0));
 }
 
 export function formatBytes(bytes: number): string {
@@ -106,18 +93,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 const KNOWN_KEYS: Record<string, string[]> = {
-  '': ['$schema', 'server', 'web', 'auth', 'limits'],
-  server: ['port', 'host', 'dataDir', 'https'],
-  web: ['port'],
-  auth: ['enabled', 'secret'],
-  limits: ['cpus', 'memory'],
+  '': ['$schema', ...Object.keys(DEFAULT_CONFIG)],
+  ...Object.fromEntries(Object.entries(DEFAULT_CONFIG).map(([section, values]) => [section, Object.keys(values)])),
 };
 
 /**
  * Pure: validate parsed JSON into a full config, filling defaults for anything absent. Returns
  * warnings for unknown keys rather than failing on them — most likely a typo, worth saying out loud.
  */
-export function parseConfig(raw: unknown, file: string, baseDir: string): { config: SakuyaConfig; warnings: string[] } {
+function parseConfig(raw: unknown, file: string, baseDir: string): { config: SakuyaConfig; warnings: string[] } {
   if (!isObject(raw)) throw new ConfigError(file, 'must contain a JSON object');
   const warnings: string[] = [];
   const section = (name: keyof SakuyaConfig): Record<string, unknown> => {
@@ -214,7 +198,7 @@ export function parseConfig(raw: unknown, file: string, baseDir: string): { conf
  * The image pins host, port and dataDir itself: the container must bind 0.0.0.0, nginx proxies to
  * a fixed port, and the host's dataDir path means nothing inside the container.
  */
-export const DOCKER_OVERRIDES = {
+const DOCKER_OVERRIDES = {
   SAKUYA_PORT: 'server.port',
   SAKUYA_HOST: 'server.host',
   SAKUYA_DATA_DIR: 'server.dataDir',
@@ -327,13 +311,13 @@ export interface LoadedConfig {
   warnings: string[];
 }
 
-export interface LoadOptions {
+interface LoadOptions {
   env?: Env;
   /** Write a default file (migrating any old .env) when none exists. The server side does; Vite only reads. */
   create?: boolean;
 }
 
-export function configFilePath(env: Env = process.env): string {
+function configFilePath(env: Env = process.env): string {
   // SAKUYA_CONFIG picks a different *file*; it overrides no values. The test suite points it at
   // throwaway files so tests never read or create the real one.
   return env.SAKUYA_CONFIG ? path.resolve(env.SAKUYA_CONFIG) : path.join(REPO_ROOT, CONFIG_FILE_NAME);

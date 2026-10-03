@@ -5,16 +5,12 @@ export interface SelectionApi {
   /** True while the grid is in multi-select mode (cards toggle instead of opening). */
   active: boolean;
   ids: Set<number>;
-  count: number;
   enter: () => void;
   exit: () => void;
   /** Card click while in select mode. `shift` extends from the last-clicked card. */
   click: (index: number, shift: boolean) => void;
-  toggle: (id: number) => void;
-  selectAllLoaded: () => void;
   /** Used by "select all N matching", which resolves ids on the server. */
   replace: (ids: number[]) => void;
-  clear: () => void;
 }
 
 /**
@@ -95,8 +91,10 @@ export function useSelection(items: Media[], resetKey: string): SelectionApi {
     if (!active) return;
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null;
-      // Don't hijack keys while the user is typing in a filter or dialog field.
+      // Don't hijack keys while the user is typing in a filter field, or anywhere in a dialog: Escape
+      // there closes the dialog, not select mode.
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (target?.closest('dialog')) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         exit();
@@ -109,8 +107,5 @@ export function useSelection(items: Media[], resetKey: string): SelectionApi {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [active, exit, selectAllLoaded]);
 
-  return useMemo(
-    () => ({ active, ids, count: ids.size, enter, exit, click, toggle, selectAllLoaded, replace, clear }),
-    [active, ids, enter, exit, click, toggle, selectAllLoaded, replace, clear],
-  );
+  return useMemo(() => ({ active, ids, enter, exit, click, replace }), [active, ids, enter, exit, click, replace]);
 }

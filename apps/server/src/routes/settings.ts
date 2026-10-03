@@ -2,10 +2,10 @@ import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { sqlite, db, schema } from '../db';
 import { wrap } from '../lib/http';
-import { getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
+import { DEFAULTS, getAllSettings, getSetting, setSetting, gifsAsVideos } from '../lib/settings';
 import { THUMBS_DIR, DB_PATH, APP_VERSION, DATA_DIR, DATA_DIR_PINNED, HOME_DATA_DIR, LOCAL_DATA_DIR } from '../lib/config';
 import { migrateDataDir } from '../lib/storage';
 import { enqueueBulkThumbnailRegenerate } from '../services/thumbnailer';
@@ -13,27 +13,12 @@ import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { performCleanup } from '../services/cleanup';
-import type { SystemInfo, StorageInfo, JobSchedule, JobSchedulesPayload } from '@sakuya/shared';
+import { SCHEDULE_JOB_TYPES, SCHEDULE_MODES, type SystemInfo, type StorageInfo, type JobSchedule, type JobSchedulesPayload } from '@sakuya/shared';
 
 export const settingsRouter = Router();
 
-const EDITABLE_KEYS = new Set([
-  'ai_tagging_enabled',
-  'confidence_threshold',
-  'accent_color',
-  'remember_mute_state',
-  'remember_volume_level',
-  'continue_where_left',
-  'thumbnail_cache_enabled',
-  'board_remember_filters',
-  'downloader_concurrency',
-  'gifs_as_videos',
-  'video_transcode_enabled',
-  'discover_enabled',
-  'ui_style',
-  'ui_style_chosen',
-  'dashboard_hero',
-]);
+// tagger_model is switched through /api/tagger/select, which also drops the downloaded model.
+const EDITABLE_KEYS = new Set(Object.keys(DEFAULTS).filter((key) => key !== 'tagger_model'));
 
 const UI_STYLES = new Set(['glass', 'classic']);
 
@@ -70,15 +55,9 @@ settingsRouter.patch(
  * thousands of them synchronously stalled every other request while the settings page loaded.
  */
 async function dirSize(dir: string): Promise<number> {
-  const entries = await fs.promises.readdir(dir, { withFileTypes: true }).catch(() => []);
-  const sizes = await Promise.all(
-    entries.map((entry) => {
-      const full = path.join(dir, entry.name);
-      if (entry.isFile()) return fs.promises.stat(full).then((s) => s.size, () => 0);
-      if (entry.isDirectory()) return dirSize(full);
-      return 0;
-    }),
-  );
+  // Flat: thumbnails are <id>.webp directly in the folder.
+  const names = await fs.promises.readdir(dir).catch(() => []);
+  const sizes = await Promise.all(names.map((name) => fs.promises.stat(path.join(dir, name)).then((s) => s.size, () => 0)));
   return sizes.reduce((a, b) => a + b, 0);
 }
 
@@ -189,9 +168,9 @@ settingsRouter.get(
 );
 
 const scheduleBody = z.object({
-  jobType: z.enum(['scan', 'tag', 'hash', 'cleanup']),
+  jobType: z.enum(SCHEDULE_JOB_TYPES),
   libraryId: z.number().int().positive().nullable().optional(),
-  mode: z.enum(['off', 'interval', 'after-scan']).optional(),
+  mode: z.enum(SCHEDULE_MODES).optional(),
   intervalMinutes: z.number().int().min(0).optional(),
   useGlobal: z.boolean().optional(),
 });
@@ -203,43 +182,23 @@ settingsRouter.patch(
     const libraryId = body.libraryId ?? null;
 
     // SQLite treats NULLs as distinct in unique indexes, so composite-PK upsert on (job_type, NULL)
-    // can't be relied on. Read → decide → update-or-insert explicitly.
-    const existing = db
-      .select()
-      .from(schema.jobSchedules)
-      .where(
-        libraryId === null
-          ? isNull(schema.jobSchedules.libraryId)
-          : eq(schema.jobSchedules.libraryId, libraryId),
-      )
-      .all()
-      .find((r) => r.jobType === body.jobType);
+    // can't be relied on. Read → decide → update-or-insert explicitly; `IS` matches NULL and values alike.
+    const where = and(
+      eq(schema.jobSchedules.jobType, body.jobType),
+      sql`${schema.jobSchedules.libraryId} IS ${libraryId}`,
+    );
+    const existing = db.select().from(schema.jobSchedules).where(where).get();
 
     const merged = {
       jobType: body.jobType,
       libraryId,
-      mode: (body.mode ?? existing?.mode ?? 'off') as 'off' | 'interval' | 'after-scan',
+      mode: body.mode ?? existing?.mode ?? 'off',
       intervalMinutes: body.intervalMinutes ?? existing?.intervalMinutes ?? 0,
       useGlobal: body.useGlobal !== undefined ? (body.useGlobal ? 1 : 0) : (existing?.useGlobal ?? 0),
     };
 
-    if (existing) {
-      sqlite
-        .prepare(
-          libraryId === null
-            ? 'UPDATE job_schedules SET mode = ?, interval_minutes = ?, use_global = ? WHERE job_type = ? AND library_id IS NULL'
-            : 'UPDATE job_schedules SET mode = ?, interval_minutes = ?, use_global = ? WHERE job_type = ? AND library_id = ?',
-        )
-        .run(
-          merged.mode,
-          merged.intervalMinutes,
-          merged.useGlobal,
-          merged.jobType,
-          ...(libraryId === null ? [] : [libraryId]),
-        );
-    } else {
-      db.insert(schema.jobSchedules).values(merged).run();
-    }
+    if (existing) db.update(schema.jobSchedules).set(merged).where(where).run();
+    else db.insert(schema.jobSchedules).values(merged).run();
 
     scheduleAll();
     res.json({ ok: true });

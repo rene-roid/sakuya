@@ -1,6 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import type { UiStyle } from '@sakuya/shared';
-import { api } from '../lib/api';
+import { useSettings } from './useSettings';
 
 // Mirrors the server setting so the right style paints before settings load (and on the login gate).
 const STORAGE_KEY = 'sakuya:ui-style';
@@ -16,6 +15,5 @@ export function applyUiStyle(style: UiStyle) {
 }
 
 export function useUiStyle(): UiStyle {
-  const { data } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
-  return data?.ui_style ?? storedUiStyle();
+  return useSettings()?.ui_style ?? storedUiStyle();
 }

@@ -2,7 +2,9 @@ import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, X, Upload, RotateCw, ChevronUp, ChevronDown, Check } from 'lucide-react';
 import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
-import { useToast } from '../../components/Toast';
+import { toast } from '../../components/Toast';
+import { Modal } from '../../components/Modal';
+import { INTERVAL_OPTIONS } from './JobsConfigureTab';
 import { useScanAllLibraries } from '../../hooks/useScanAllLibraries';
 import { TabHeader } from './index';
 import type { LibraryWithStats } from '@sakuya/shared';
@@ -16,7 +18,6 @@ const FOLDER_STATUS_COLOR: Record<string, string> = {
 
 export function LibrariesTab() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('mixed');
@@ -31,9 +32,8 @@ export function LibrariesTab() {
     onSuccess: () => {
       setNewName('');
       invalidate();
-      showToast('Library created');
+      toast('Library created');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const scanAllMutation = useScanAllLibraries(libraries);
@@ -41,7 +41,6 @@ export function LibrariesTab() {
   const reorderMutation = useMutation({
     mutationFn: (ids: number[]) => api.reorderLibraries(ids),
     onSuccess: () => invalidate(),
-    onError: (err: Error) => showToast(err.message),
   });
 
   // Swap a library with its neighbour and persist the whole list's new order.
@@ -106,16 +105,7 @@ export function LibrariesTab() {
   );
 }
 
-const AUTO_SCAN_OPTIONS = [
-  { label: 'Off', value: 0 },
-  { label: '15 min', value: 15 },
-  { label: '30 min', value: 30 },
-  { label: '1 hour', value: 60 },
-  { label: '2 hours', value: 120 },
-  { label: '6 hours', value: 360 },
-  { label: '12 hours', value: 720 },
-  { label: '24 hours', value: 1440 },
-];
+const AUTO_SCAN_OPTIONS = [{ label: 'Off', minutes: 0 }, ...INTERVAL_OPTIONS];
 
 function LibraryCard({
   lib,
@@ -130,7 +120,6 @@ function LibraryCard({
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
-  const showToast = useToast();
   const queryClient = useQueryClient();
   const [folderInput, setFolderInput] = useState('');
   const [showFolderInput, setShowFolderInput] = useState(false);
@@ -146,8 +135,7 @@ function LibraryCard({
 
   const scanMutation = useMutation({
     mutationFn: () => api.scanLibrary(lib.id),
-    onSuccess: () => showToast(`Scan started: ${lib.name}`),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast(`Scan started: ${lib.name}`),
   });
   const autoScanMutation = useMutation({
     mutationFn: (intervalMinutes: number) =>
@@ -161,9 +149,8 @@ function LibraryCard({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job-schedules'] });
       onChanged();
-      showToast('Auto-scan updated');
+      toast('Auto-scan updated');
     },
-    onError: (err: Error) => showToast(err.message),
   });
   const addFolderMutation = useMutation({
     mutationFn: () => api.addFolder(lib.id, folderInput.trim()),
@@ -171,26 +158,23 @@ function LibraryCard({
       setFolderInput('');
       setShowFolderInput(false);
       onChanged();
-      showToast('Folder added');
+      toast('Folder added');
     },
-    onError: (err: Error) => showToast(err.message),
   });
   const removeFolderMutation = useMutation({
     mutationFn: (folderId: number) => api.removeFolder(folderId),
     onSuccess: () => {
       onChanged();
-      showToast('Folder removed');
+      toast('Folder removed');
     },
-    onError: (err: Error) => showToast(err.message),
   });
   const renameMutation = useMutation({
     mutationFn: (name: string) => api.updateLibrary(lib.id, { name }),
     onSuccess: () => {
       setRenaming(null);
       onChanged();
-      showToast('Library renamed');
+      toast('Library renamed');
     },
-    onError: (err: Error) => showToast(err.message),
   });
   const submitRename = () => {
     const name = renaming?.trim();
@@ -201,9 +185,8 @@ function LibraryCard({
     mutationFn: () => api.deleteLibrary(lib.id),
     onSuccess: () => {
       onChanged();
-      showToast('Library deleted');
+      toast('Library deleted');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   return (
@@ -354,7 +337,7 @@ function LibraryCard({
           className="rounded-field border border-line bg-zinc-900 px-2 py-[5px] text-[12px] text-zinc-300 outline-none disabled:opacity-40"
         >
           {AUTO_SCAN_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+            <option key={opt.minutes} value={opt.minutes}>
               {opt.label}
             </option>
           ))}
@@ -388,7 +371,6 @@ function ThumbnailPickerModal({
   onClose: () => void;
   onChanged: () => void;
 }) {
-  const showToast = useToast();
   const [bust, setBust] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { data: media } = useQuery({
@@ -400,9 +382,8 @@ function ThumbnailPickerModal({
     mutationFn: (mediaId: number | null) => api.updateLibrary(lib.id, { thumbnailMediaId: mediaId }),
     onSuccess: () => {
       onChanged();
-      showToast('Library thumbnail updated');
+      toast('Library thumbnail updated');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const regenerateMutation = useMutation({
@@ -410,9 +391,8 @@ function ThumbnailPickerModal({
     onSuccess: () => {
       setBust((b) => b + 1);
       onChanged();
-      showToast('Thumbnail regenerated');
+      toast('Thumbnail regenerated');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const uploadCoverMutation = useMutation({
@@ -420,9 +400,8 @@ function ThumbnailPickerModal({
     onSuccess: () => {
       setBust((b) => b + 1);
       onChanged();
-      showToast('Custom cover uploaded');
+      toast('Custom cover uploaded');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const removeCoverMutation = useMutation({
@@ -430,94 +409,88 @@ function ThumbnailPickerModal({
     onSuccess: () => {
       setBust((b) => b + 1);
       onChanged();
-      showToast('Custom cover removed');
+      toast('Custom cover removed');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const currentThumbId = lib.thumbMediaId;
 
   return (
-    <div
-      className="fade-in fixed inset-0 z-[90] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
-      onClick={onClose}
+    <Modal
+      onClose={onClose}
+      className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-line bg-surface p-5"
     >
-      <div
-        className="flex max-h-[80vh] w-full max-w-[560px] flex-col rounded-xl border border-line bg-surface p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-[15px] font-bold">Library thumbnail</div>
-          <div className="cursor-pointer text-zinc-500 hover:text-zinc-200" onClick={onClose}>
-            <X size={16} />
-          </div>
-        </div>
-        <div className="mb-3.5 text-[12.5px] text-zinc-500">
-          {lib.customImagePath
-            ? 'A custom cover is set. It stays fixed until removed — pick a media item or remove it to auto-update again.'
-            : 'Pick a media item as the cover, upload a custom image, or force-regenerate the current thumbnail.'}
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) uploadCoverMutation.mutate(file);
-            e.target.value = '';
-          }}
-        />
-        <div className="mb-3.5 flex flex-wrap gap-2">
-          <button
-            disabled={uploadCoverMutation.isPending}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
-          >
-            <Upload size={13} /> Upload custom image
-          </button>
-          {lib.customImagePath && (
-            <button
-              disabled={removeCoverMutation.isPending}
-              onClick={() => removeCoverMutation.mutate()}
-              className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-40"
-            >
-              Remove custom image
-            </button>
-          )}
-          <button
-            disabled={!currentThumbId || regenerateMutation.isPending}
-            onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}
-            className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
-          >
-            <RotateCw size={13} /> Regenerate current thumbnail
-          </button>
-          <button
-            disabled={lib.thumbnailMediaId === null || setThumbMutation.isPending}
-            onClick={() => setThumbMutation.mutate(null)}
-            className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
-          >
-            Use latest media
-          </button>
-        </div>
-        <div className="grid flex-1 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-5">
-          {(media?.items ?? []).map((m) => (
-            <div
-              key={m.id}
-              title={m.filename}
-              onClick={() => setThumbMutation.mutate(m.id)}
-              className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 ${
-                currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-line-strong'
-              }`}
-            >
-              <img src={thumbUrl(m.id, bust)} alt="" className="h-full w-full object-cover" />
-            </div>
-          ))}
-          {media && media.items.length === 0 && (
-            <div className="col-span-full py-6 text-center text-[12.5px] text-zinc-600">No media in this library yet.</div>
-          )}
+      <div className="mb-1 flex items-center justify-between">
+        <div className="text-[15px] font-bold">Library thumbnail</div>
+        <div className="cursor-pointer text-zinc-500 hover:text-zinc-200" onClick={onClose}>
+          <X size={16} />
         </div>
       </div>
-    </div>
+      <div className="mb-3.5 text-[12.5px] text-zinc-500">
+        {lib.customImagePath
+          ? 'A custom cover is set. It stays fixed until removed — pick a media item or remove it to auto-update again.'
+          : 'Pick a media item as the cover, upload a custom image, or force-regenerate the current thumbnail.'}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) uploadCoverMutation.mutate(file);
+          e.target.value = '';
+        }}
+      />
+      <div className="mb-3.5 flex flex-wrap gap-2">
+        <button
+          disabled={uploadCoverMutation.isPending}
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+        >
+          <Upload size={13} /> Upload custom image
+        </button>
+        {lib.customImagePath && (
+          <button
+            disabled={removeCoverMutation.isPending}
+            onClick={() => removeCoverMutation.mutate()}
+            className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-rose-400 hover:text-rose-300 disabled:opacity-40"
+          >
+            Remove custom image
+          </button>
+        )}
+        <button
+          disabled={!currentThumbId || regenerateMutation.isPending}
+          onClick={() => currentThumbId && regenerateMutation.mutate(currentThumbId)}
+          className="flex items-center gap-1.5 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+        >
+          <RotateCw size={13} /> Regenerate current thumbnail
+        </button>
+        <button
+          disabled={lib.thumbnailMediaId === null || setThumbMutation.isPending}
+          onClick={() => setThumbMutation.mutate(null)}
+          className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
+        >
+          Use latest media
+        </button>
+      </div>
+      <div className="grid flex-1 grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-5">
+        {(media?.items ?? []).map((m) => (
+          <div
+            key={m.id}
+            title={m.filename}
+            onClick={() => setThumbMutation.mutate(m.id)}
+            className={`relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 ${
+              currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-line-strong'
+            }`}
+          >
+            <img src={thumbUrl(m.id, bust)} alt="" className="h-full w-full object-cover" />
+          </div>
+        ))}
+        {media && media.items.length === 0 && (
+          <div className="col-span-full py-6 text-center text-[12.5px] text-zinc-600">No media in this library yet.</div>
+        )}
+      </div>
+    </Modal>
   );
 }

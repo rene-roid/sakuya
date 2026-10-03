@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { AUTH_ENABLED, AUTH_SECRET } from '../lib/config';
+import { CONFIG } from '../lib/config';
 import { timingSafeEqual, isAuthed, setAuthCookie, clearAuthCookie } from '../lib/auth';
 import type { AuthStatus } from '@sakuya/shared';
 
@@ -15,18 +15,18 @@ const loginLimiter = rateLimit({
 });
 
 authRouter.get('/api/auth/status', (req, res) => {
-  const payload: AuthStatus = { enabled: AUTH_ENABLED, unlocked: isAuthed(req) };
+  const payload: AuthStatus = { enabled: CONFIG.auth.enabled, unlocked: isAuthed(req) };
   res.json(payload);
 });
 
 authRouter.post('/api/auth/login', loginLimiter, (req, res) => {
-  if (!AUTH_ENABLED) {
+  if (!CONFIG.auth.enabled) {
     res.json({ ok: true });
     return;
   }
 
   const secret = typeof req.body?.secret === 'string' ? req.body.secret : '';
-  if (!secret || !timingSafeEqual(secret, AUTH_SECRET)) {
+  if (!secret || !timingSafeEqual(secret, CONFIG.auth.secret)) {
     res.status(401).json({ error: 'Invalid password' });
     return;
   }

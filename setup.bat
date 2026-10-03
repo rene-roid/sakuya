@@ -1,11 +1,6 @@
 @echo off
 setlocal enabledelayedexpansion
 
-echo ========================================
-echo   Sakuya - Setup
-echo ========================================
-echo.
-
 where bun >nul 2>&1
 if %errorlevel% neq 0 (
     echo Bun is not installed. Installing Bun...
