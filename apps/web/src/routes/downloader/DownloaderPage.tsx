@@ -48,7 +48,7 @@ export function DownloaderPage() {
 
   // A folder that already belongs to a library pins the download to that library.
   const debouncedPath = useDebounce(folderPath.trim(), 400);
-  const { data: resolved } = useQuery({
+  const { data: resolved, isPlaceholderData } = useQuery({
     queryKey: ['resolve-path', debouncedPath],
     queryFn: () => api.resolveDownloaderPath(debouncedPath),
     enabled: !!debouncedPath,
@@ -56,9 +56,10 @@ export function DownloaderPage() {
   });
   const lockedLibrary = folderPath.trim() ? (resolved?.library ?? null) : null;
   const lockedLibraryName = lockedLibrary?.name ?? null;
+  // Only a lookup of the current path may pick the library: placeholder data is the previous path's.
   useEffect(() => {
-    if (lockedLibrary) setLibraryId(lockedLibrary.id);
-  }, [lockedLibrary]);
+    if (lockedLibrary && !isPlaceholderData) setLibraryId(lockedLibrary.id);
+  }, [lockedLibrary, isPlaceholderData]);
 
   const uploadCookiesMutation = useMutation({
     mutationFn: (files: File[]) => api.uploadCookies(files),

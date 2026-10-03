@@ -16,10 +16,27 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const onCloseRef = useRef(onClose);
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  });
   useLayoutEffect(() => {
     const dialog = ref.current!;
+    let unmounting = false;
+    // Chromium closes a dialog on a second Escape in a row even though `cancel` was prevented.
+    // Treat that like any other dismissal, or reopen when the modal must not be dismissed.
+    const onNativeClose = () => {
+      if (unmounting) return;
+      if (onCloseRef.current) onCloseRef.current();
+      else dialog.showModal();
+    };
+    dialog.addEventListener('close', onNativeClose);
     dialog.showModal();
-    return () => dialog.close();
+    return () => {
+      unmounting = true;
+      dialog.removeEventListener('close', onNativeClose);
+      dialog.close();
+    };
   }, []);
 
   return (

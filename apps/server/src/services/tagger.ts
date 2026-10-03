@@ -299,6 +299,7 @@ export function enqueueTagJob(mediaIds: number[], label: string, libraryId: numb
         (done, total) => `Tagged ${done}/${total} files…`,
         (id) => `tagging failed for media ${id}:`,
         tagOneMedia,
+        1,
       );
       const tagged = mediaIds.length - errors;
       return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;

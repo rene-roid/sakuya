@@ -80,6 +80,8 @@ export function enqueueTranscodeJob(mediaIds: number[], label: string, libraryId
           if ((await processOne(id)) === 'transcoded') transcoded++;
           else skipped++;
         },
+        // One transcode can run for an hour, so report after every item.
+        1,
       );
       return `Completed. ${transcoded} transcoded, ${skipped} already playable${errors ? `, ${errors} errors` : ''}.`;
     },

@@ -93,7 +93,7 @@ export function listJobs(limit = 50): Job[] {
 
 /**
  * Run `fn` over every item, logging and counting failures rather than aborting on the first one,
- * with a progress update every 5 items. Resolves with the number of failures.
+ * with a progress update every `every` items. Resolves with the number of failures.
  */
 export async function eachWithProgress<T>(
   job: JobHandle,
@@ -101,6 +101,7 @@ export async function eachWithProgress<T>(
   progressLog: (done: number, total: number) => string,
   failMsg: (item: T) => string,
   fn: (item: T) => Promise<unknown>,
+  every = 5,
 ): Promise<number> {
   let errors = 0;
   for (let i = 0; i < items.length; i++) {
@@ -110,7 +111,7 @@ export async function eachWithProgress<T>(
       errors++;
       console.error(failMsg(items[i]), err);
     }
-    if (i % 5 === 0 || i === items.length - 1) {
+    if (i % every === 0 || i === items.length - 1) {
       job.update({ progress: i + 1, log: progressLog(i + 1, items.length) });
     }
   }
