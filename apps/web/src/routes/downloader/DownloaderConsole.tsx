@@ -3,7 +3,8 @@ import { useMutation } from '@tanstack/react-query';
 import { Play, Square, CornerDownLeft } from 'lucide-react';
 import type { ConsoleSessionStatus } from '@sakuya/shared';
 import { api } from '../../lib/api';
-import { useToast } from '../../components/Toast';
+import { toastError } from '../../components/Toast';
+import { useEventSource } from '../../hooks/useEventSource';
 
 const MAX_CLIENT_BUFFER = 200_000;
 
@@ -12,27 +13,17 @@ export function DownloaderConsole() {
   const [status, setStatus] = useState<ConsoleSessionStatus | null>(null);
   const [input, setInput] = useState('');
   const outputRef = useRef<HTMLPreElement>(null);
-  const showToast = useToast();
 
-  useEffect(() => {
-    const source = new EventSource('/api/downloader/console/stream');
-    source.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'snapshot') {
-        setBuffer(data.buffer);
-        setStatus(data.status);
-        return;
-      }
-      if (data.type === 'data') {
-        setBuffer((prev) => (prev + data.chunk).slice(-MAX_CLIENT_BUFFER));
-        return;
-      }
-      if (data.type === 'status') {
-        setStatus(data.status);
-      }
-    };
-    return () => source.close();
-  }, []);
+  useEventSource('/api/downloader/console/stream', (data) => {
+    if (data.type === 'snapshot') {
+      setBuffer(data.buffer);
+      setStatus(data.status);
+    } else if (data.type === 'data') {
+      setBuffer((prev) => (prev + data.chunk).slice(-MAX_CLIENT_BUFFER));
+    } else if (data.type === 'status') {
+      setStatus(data.status);
+    }
+  });
 
   useEffect(() => {
     const el = outputRef.current;
@@ -41,18 +32,8 @@ export function DownloaderConsole() {
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [buffer]);
 
-  const startMutation = useMutation({
-    mutationFn: (command: string) => api.startConsole(command),
-    onError: (err: Error) => showToast(err.message),
-  });
-  const stopMutation = useMutation({
-    mutationFn: () => api.stopConsole(),
-    onError: (err: Error) => showToast(err.message),
-  });
-  const inputMutation = useMutation({
-    mutationFn: (text: string) => api.sendConsoleInput(text),
-    onError: (err: Error) => showToast(err.message),
-  });
+  const startMutation = useMutation({ mutationFn: (command: string) => api.startConsole(command) });
+  const inputMutation = useMutation({ mutationFn: (text: string) => api.sendConsoleInput(text) });
 
   const running = status?.running ?? false;
 
@@ -85,7 +66,7 @@ export function DownloaderConsole() {
           </span>
           {running && (
             <button
-              onClick={() => stopMutation.mutate()}
+              onClick={() => api.stopConsole().catch(toastError)}
               className="flex cursor-pointer items-center gap-1 rounded-field border border-line px-2.5 py-1 text-[11.5px] text-zinc-400 hover:text-red-400"
             >
               <Square size={12} /> Stop

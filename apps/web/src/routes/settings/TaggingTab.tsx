@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Job } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
-import { useToast } from '../../components/Toast';
+import { toast } from '../../components/Toast';
 import { useJobs } from '../../hooks/useJobs';
+import { usePatchSettings, useSettings } from '../../hooks/useSettings';
 import { TabHeader } from './index';
 import { ToggleSwitch } from './MiscTabs';
+import { ProgressBar } from './JobsHistoryTab';
 
 export function TaggingTab() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const jobs = useJobs();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const settings = useSettings();
   const { data: tagger } = useQuery({
     queryKey: ['tagger'],
     queryFn: api.taggerStatus,
@@ -28,28 +30,22 @@ export function TaggingTab() {
     if (settings) setThreshold(Number(settings.confidence_threshold) || 35);
   }, [settings]);
 
-  const patchMutation = useMutation({
-    mutationFn: (body: Record<string, string>) => api.patchSettings(body),
-    onSuccess: (data) => queryClient.setQueryData(['settings'], data),
-    onError: (err: Error) => showToast(err.message),
-  });
+  const patchMutation = usePatchSettings();
 
   const downloadMutation = useMutation({
     mutationFn: api.taggerDownload,
     onSuccess: () => {
-      showToast('Model download started');
+      toast('Model download started');
       queryClient.invalidateQueries({ queryKey: ['tagger'] });
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const tagAllMutation = useMutation({
     mutationFn: api.taggerTagAll,
     onSuccess: () => {
-      showToast('AI tagging started');
+      toast('AI tagging started');
       queryClient.invalidateQueries({ queryKey: ['tagger'] });
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const selectModelMutation = useMutation({
@@ -57,18 +53,16 @@ export function TaggingTab() {
     onSuccess: (data) => {
       queryClient.setQueryData(['tagger'], data);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      showToast('Model switched — download the new model to use it');
+      toast('Model switched — download the new model to use it');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const hashAllMutation = useMutation({
     mutationFn: api.taggerHashAll,
     onSuccess: () => {
-      showToast('Hashing started');
+      toast('Hashing started');
       queryClient.invalidateQueries({ queryKey: ['tagger'] });
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   return (
@@ -115,78 +109,34 @@ export function TaggingTab() {
         </div>
       </div>
 
-      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-[13.5px] font-bold">
-              {activeTagJob ? 'Tagging in progress…' : 'Bulk tag'}
-            </div>
-            <div className="mt-0.5 truncate text-xs text-zinc-500">
-              {activeTagJob
-                ? activeTagJob.log || `${activeTagJob.progress}/${activeTagJob.total}`
-                : (tagger?.untaggedCount ?? 0) > 0
-                  ? `${tagger?.untaggedCount} file${tagger?.untaggedCount === 1 ? '' : 's'} without AI tags.`
-                  : 'All files are tagged.'}
-            </div>
-            {activeTagJob && (
-              <div className="mt-2 h-[5px] w-full overflow-hidden rounded-full bg-zinc-800">
-                <div
-                  className="h-full bg-accent transition-[width] duration-300"
-                  style={{
-                    width: `${activeTagJob.total > 0 ? Math.round((activeTagJob.progress / activeTagJob.total) * 100) : 0}%`,
-                  }}
-                />
-              </div>
-            )}
-          </div>
-          <button
-            disabled={
-              !!activeTagJob ||
-              tagger?.status !== 'ready' ||
-              (tagger?.untaggedCount ?? 0) === 0 ||
-              tagAllMutation.isPending
-            }
-            onClick={() => tagAllMutation.mutate()}
-            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
-          >
-            {activeTagJob ? 'Tagging…' : 'Tag all'}
-          </button>
-        </div>
-      </div>
-
-      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-[13.5px] font-bold">
-              {activeHashJob ? 'Hashing images…' : 'Duplicate detection'}
-            </div>
-            <div className="mt-0.5 truncate text-xs text-zinc-500">
-              {activeHashJob
-                ? activeHashJob.log || `${activeHashJob.progress}/${activeHashJob.total}`
-                : (tagger?.unhashedCount ?? 0) > 0
-                  ? `${tagger?.unhashedCount} image${tagger?.unhashedCount === 1 ? '' : 's'} without a perceptual hash.`
-                  : 'All images are hashed for similarity search.'}
-            </div>
-            {activeHashJob && (
-              <div className="mt-2 h-[5px] w-full overflow-hidden rounded-full bg-zinc-800">
-                <div
-                  className="h-full bg-accent transition-[width] duration-300"
-                  style={{
-                    width: `${activeHashJob.total > 0 ? Math.round((activeHashJob.progress / activeHashJob.total) * 100) : 0}%`,
-                  }}
-                />
-              </div>
-            )}
-          </div>
-          <button
-            disabled={!!activeHashJob || (tagger?.unhashedCount ?? 0) === 0 || hashAllMutation.isPending}
-            onClick={() => hashAllMutation.mutate()}
-            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
-          >
-            {activeHashJob ? 'Hashing…' : 'Hash images'}
-          </button>
-        </div>
-      </div>
+      <JobRunCard
+        job={activeTagJob}
+        title="Bulk tag"
+        activeTitle="Tagging in progress…"
+        idle={
+          (tagger?.untaggedCount ?? 0) > 0
+            ? `${tagger?.untaggedCount} file${tagger?.untaggedCount === 1 ? '' : 's'} without AI tags.`
+            : 'All files are tagged.'
+        }
+        label="Tag all"
+        activeLabel="Tagging…"
+        disabled={tagger?.status !== 'ready' || (tagger?.untaggedCount ?? 0) === 0 || tagAllMutation.isPending}
+        onRun={() => tagAllMutation.mutate()}
+      />
+      <JobRunCard
+        job={activeHashJob}
+        title="Duplicate detection"
+        activeTitle="Hashing images…"
+        idle={
+          (tagger?.unhashedCount ?? 0) > 0
+            ? `${tagger?.unhashedCount} image${tagger?.unhashedCount === 1 ? '' : 's'} without a perceptual hash.`
+            : 'All images are hashed for similarity search.'
+        }
+        label="Hash images"
+        activeLabel="Hashing…"
+        disabled={(tagger?.unhashedCount ?? 0) === 0 || hashAllMutation.isPending}
+        onRun={() => hashAllMutation.mutate()}
+      />
 
       <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between">
@@ -218,6 +168,48 @@ export function TaggingTab() {
           className="w-full"
         />
         <div className="mt-1.5 text-[12.5px] font-semibold text-zinc-400">{threshold}%</div>
+      </div>
+    </div>
+  );
+}
+
+/** A card that starts a background job and shows its progress while it runs. */
+function JobRunCard({
+  job,
+  title,
+  activeTitle,
+  idle,
+  label,
+  activeLabel,
+  disabled,
+  onRun,
+}: {
+  job: Job | undefined;
+  title: string;
+  activeTitle: string;
+  idle: string;
+  label: string;
+  activeLabel: string;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
+      <div className="flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-[13.5px] font-bold">{job ? activeTitle : title}</div>
+          <div className="mt-0.5 truncate text-xs text-zinc-500">
+            {job ? job.log || `${job.progress}/${job.total}` : idle}
+          </div>
+          {job && <ProgressBar job={job} className="mt-2 w-full" />}
+        </div>
+        <button
+          disabled={!!job || disabled}
+          onClick={onRun}
+          className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+        >
+          {job ? activeLabel : label}
+        </button>
       </div>
     </div>
   );

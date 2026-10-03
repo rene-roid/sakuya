@@ -99,7 +99,7 @@ function filterParams(filters: MediaFilters): URLSearchParams {
   return params;
 }
 
-export function mediaQueryString(filters: MediaFilters, cursor?: string): string {
+function mediaQueryString(filters: MediaFilters, cursor?: string): string {
   const params = filterParams(filters);
   params.set('limit', '60');
   if (cursor) params.set('cursor', cursor);
@@ -113,12 +113,12 @@ export interface DiscoverFilters {
   seed: number;
 }
 
-export function discoverQueryString(filters: DiscoverFilters, cursor?: string, limit = 60): string {
+function discoverQueryString(filters: DiscoverFilters, cursor?: string): string {
   const params = new URLSearchParams();
   if (filters.type) params.set('type', filters.type);
   params.set('surprise', String(filters.surprise));
   params.set('seed', String(filters.seed));
-  params.set('limit', String(limit));
+  params.set('limit', '60');
   if (cursor) params.set('cursor', cursor);
   return params.toString();
 }
@@ -144,12 +144,10 @@ export const api = {
     request<{ ok: true }>(`/api/boards/${id}/media/${mediaId}`, { method: 'DELETE' }),
   libraries: () => request<LibraryWithStats[]>('/api/libraries'),
   library: (id: number) => request<LibraryWithStats>(`/api/libraries/${id}`),
-  createLibrary: (body: { name: string; type: string; autoScanInterval?: number }) =>
+  createLibrary: (body: { name: string; type: string }) =>
     request<LibraryWithStats>('/api/libraries', { method: 'POST', body: JSON.stringify(body) }),
-  updateLibrary: (
-    id: number,
-    body: { name?: string; type?: string; autoScanInterval?: number; thumbnailMediaId?: number | null },
-  ) => request<LibraryWithStats>(`/api/libraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  updateLibrary: (id: number, body: { name?: string; type?: string; thumbnailMediaId?: number | null }) =>
+    request<LibraryWithStats>(`/api/libraries/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   reorderLibraries: (ids: number[]) =>
     request<LibraryWithStats[]>('/api/libraries/order', { method: 'PUT', body: JSON.stringify({ ids }) }),
   deleteLibrary: (id: number) => request<{ ok: true }>(`/api/libraries/${id}`, { method: 'DELETE' }),
@@ -160,8 +158,8 @@ export const api = {
   mediaList: (filters: MediaFilters, cursor?: string) =>
     request<MediaListResponse>(`/api/media?${mediaQueryString(filters, cursor)}`),
   mediaDetail: (id: number) => request<MediaDetail>(`/api/media/${id}`),
-  discover: (filters: DiscoverFilters, cursor?: string, limit?: number) =>
-    request<MediaListResponse>(`/api/discover?${discoverQueryString(filters, cursor, limit)}`),
+  discover: (filters: DiscoverFilters, cursor?: string) =>
+    request<MediaListResponse>(`/api/discover?${discoverQueryString(filters, cursor)}`),
   patchTags: (
     id: number,
     body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> },
@@ -208,7 +206,6 @@ export const api = {
     if (opts.category) params.set('category', ([] as TagCategory[]).concat(opts.category).join(','));
     return request<TagCount[]>(`/api/tags?${params}`);
   },
-  jobs: () => request<Job[]>('/api/jobs'),
   settings: () => request<Settings>('/api/settings'),
   patchSettings: (body: Partial<Record<keyof Settings, string>>) =>
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
@@ -271,7 +268,6 @@ export const api = {
     extraArgs?: string;
     cookieFileId?: number | null;
   }) => request<DownloadBatchWithItems>('/api/downloader/batches', { method: 'POST', body: JSON.stringify(body) }),
-  listDownloadBatches: () => request<DownloadBatchWithItems[]>('/api/downloader/batches'),
   downloadItemLogs: (id: number, after?: number) =>
     request<DownloadLogLine[]>(`/api/downloader/items/${id}/logs${after ? `?after=${after}` : ''}`),
   pauseDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/pause`, { method: 'POST' }),
@@ -280,7 +276,6 @@ export const api = {
   redoDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/redo`, { method: 'POST' }),
   removeDownloadItem: (id: number, deleteFiles: boolean) =>
     request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
-  consoleStatus: () => request<ConsoleSessionStatus>('/api/downloader/console/status'),
   startConsole: (command: string) =>
     request<ConsoleSessionStatus>('/api/downloader/console/start', { method: 'POST', body: JSON.stringify({ command }) }),
   sendConsoleInput: (text: string) =>

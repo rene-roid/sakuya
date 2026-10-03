@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
@@ -52,6 +53,12 @@ export function TagSidebar({
     queryFn: () => api.tags({ libraryId: filters.libraryId, category: ['general', 'user'], limit: 100 }),
     staleTime: 30_000,
   });
+
+  const sections = [
+    { title: 'RATING', tags: ratingTags ?? [] },
+    { title: 'CHARACTERS', tags: characterTags ?? [] },
+    { title: 'TAGS', tags: generalTags ?? [] },
+  ];
 
   if (collapsed) {
     return (
@@ -114,79 +121,33 @@ export function TagSidebar({
           </div>
         </>
       )}
-      {(() => {
-        const ratings = ratingTags ?? [];
-        const characters = characterTags ?? [];
-        const general = generalTags ?? [];
-
-        return (
-          <>
-            {ratings.length > 0 && (
-              <>
-                <div className="mb-2.5 text-[11px] font-bold tracking-[0.6px] text-zinc-500">RATING</div>
-                <div className="mb-5 flex flex-col gap-px">
-                  {ratings.map((tag) => {
-                    const active = filters.tags.includes(tag.name);
-                    return (
-                      <div
-                        key={tag.name}
-                        className={rowStyle(active)}
-                        onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
-                      >
-                        <span className="truncate">{tag.name}</span>
-                        <span className="text-[11px] text-zinc-500">{tag.count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            {characters.length > 0 && (
-              <>
-                <div className="mb-2.5 text-[11px] font-bold tracking-[0.6px] text-zinc-500">CHARACTERS</div>
-                <div className="mb-5 flex flex-col gap-px">
-                  {characters.map((tag) => {
-                    const active = filters.tags.includes(tag.name);
-                    return (
-                      <div
-                        key={tag.name}
-                        className={rowStyle(active)}
-                        onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
-                      >
-                        <span className="truncate">{tag.name}</span>
-                        <span className="text-[11px] text-zinc-500">{tag.count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            {general.length > 0 && (
-              <>
-                <div className="mb-2.5 text-[11px] font-bold tracking-[0.6px] text-zinc-500">TAGS</div>
-                <div className="flex flex-col gap-px">
-                  {general.map((tag) => {
-                    const active = filters.tags.includes(tag.name);
-                    return (
-                      <div
-                        key={tag.name}
-                        className={rowStyle(active)}
-                        onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
-                      >
-                        <span className="truncate">{tag.name}</span>
-                        <span className="text-[11px] text-zinc-500">{tag.count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-            {ratings.length === 0 && characters.length === 0 && general.length === 0 && (
-              <div className="px-2.5 py-1 text-[11.5px] text-zinc-600">No tags yet</div>
-            )}
-          </>
-        );
-      })()}
+      {sections.map(
+        (section, i) =>
+          section.tags.length > 0 && (
+            <Fragment key={section.title}>
+              <div className="mb-2.5 text-[11px] font-bold tracking-[0.6px] text-zinc-500">{section.title}</div>
+              {/* The last section is the end of the panel; the rest keep a gap below. */}
+              <div className={`${i < sections.length - 1 ? 'mb-5 ' : ''}flex flex-col gap-px`}>
+                {section.tags.map((tag) => {
+                  const active = filters.tags.includes(tag.name);
+                  return (
+                    <div
+                      key={tag.name}
+                      className={rowStyle(active)}
+                      onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
+                    >
+                      <span className="truncate">{tag.name}</span>
+                      <span className="text-[11px] text-zinc-500">{tag.count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Fragment>
+          ),
+      )}
+      {sections.every((section) => section.tags.length === 0) && (
+        <div className="px-2.5 py-1 text-[11.5px] text-zinc-600">No tags yet</div>
+      )}
       </div>
     </>
   );

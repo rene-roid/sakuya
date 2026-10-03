@@ -3,31 +3,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Settings } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
-import { useToast } from '../../components/Toast';
+import { toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TabHeader } from './index';
-import { applyUiStyle, useUiStyle } from '../../hooks/useUiStyle';
+import { useUiStyle } from '../../hooks/useUiStyle';
+import { usePatchSettings, useSettings } from '../../hooks/useSettings';
 import { UI_STYLES, UiStylePreview } from '../../components/UiStylePreview';
 
 const ACCENTS = ['#8b5cf6', '#14b8a6', '#f43f5e'];
 
 export function AppearanceTab() {
-  const queryClient = useQueryClient();
-  const showToast = useToast();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const settings = useSettings();
   const current = settings?.accent_color ?? '#8b5cf6';
   const uiStyle = useUiStyle();
 
-  const patchMutation = useMutation({
-    mutationFn: (body: Partial<Record<keyof Settings, string>>) => api.patchSettings(body),
-    onSuccess: (data, body) => {
-      queryClient.setQueryData(['settings'], data);
-      document.documentElement.style.setProperty('--accent', data.accent_color);
-      applyUiStyle(data.ui_style);
-      showToast(body.accent_color ? 'Accent updated' : 'Appearance updated');
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  // App applies the accent and style whenever the cached settings change.
+  const patchMutation = usePatchSettings((_, body) =>
+    toast(body.accent_color ? 'Accent updated' : 'Appearance updated'),
+  );
 
   return (
     <div>
@@ -93,14 +86,10 @@ export function AppearanceTab() {
 }
 
 export function SystemTab() {
-  const showToast = useToast();
   const queryClient = useQueryClient();
   const { data: info } = useQuery({ queryKey: ['system'], queryFn: api.system });
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
-  const [showCacheWarning, setShowCacheWarning] = useState(false);
-  const [showRegenerateWarning, setShowRegenerateWarning] = useState(false);
-  const [showCleanupWarning, setShowCleanupWarning] = useState(false);
-  const [migrateTo, setMigrateTo] = useState<'home' | 'local' | null>(null);
+  const settings = useSettings();
+  const [confirm, setConfirm] = useState<'cache' | 'regenerate' | 'cleanup' | 'home' | 'local' | null>(null);
   const [movedTo, setMovedTo] = useState<string | null>(null);
 
   const cacheEnabled = settings?.thumbnail_cache_enabled !== '0';
@@ -112,62 +101,115 @@ export function SystemTab() {
     mutationFn: (target: 'home' | 'local') => api.migrateStorage(target),
     onSuccess: (res) => {
       setMovedTo(res.movedTo);
-      showToast(`Data moved to ${res.movedTo} — restart Sakuya`);
+      toast(`Data moved to ${res.movedTo} — restart Sakuya`);
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const clearMutation = useMutation({
     mutationFn: api.clearThumbnails,
     onSuccess: (res) => {
-      showToast(`Cleared ${res.removed} thumbnails`);
+      toast(`Cleared ${res.removed} thumbnails`);
       queryClient.invalidateQueries({ queryKey: ['system'] });
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
-  const cacheMutation = useMutation({
-    mutationFn: (value: boolean) => api.patchSettings({ thumbnail_cache_enabled: value ? '1' : '0' }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['settings'], data);
-      showToast('Thumbnail cache setting updated');
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  const cacheMutation = usePatchSettings(() => toast('Thumbnail cache setting updated'));
 
   const regenerateMutation = useMutation({
     mutationFn: api.regenerateAllThumbnails,
-    onSuccess: () => showToast('Thumbnail regeneration started'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Thumbnail regeneration started'),
   });
 
-  const transcodeToggleMutation = useMutation({
-    mutationFn: (value: boolean) => api.patchSettings({ video_transcode_enabled: value ? '1' : '0' }),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['settings'], data);
-      showToast('Video transcoding setting updated');
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  const transcodeToggleMutation = usePatchSettings(() => toast('Video transcoding setting updated'));
 
   const transcodeRunMutation = useMutation({
     mutationFn: api.transcodeVideos,
-    onSuccess: () => showToast('Checking videos for playback compatibility…'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Checking videos for playback compatibility…'),
   });
 
   const cleanupMutation = useMutation({
     mutationFn: api.cleanupData,
     onSuccess: (res) => {
-      showToast(
+      toast(
         `Removed ${res.removedThumbs} orphan thumbnails and ${res.removedTranscodes} transcodes · reset ${res.resetTagCounts} tag counts · ` +
           `pruned ${res.prunedJobs} old jobs and ${res.prunedDownloadLogs} log lines`,
       );
       queryClient.invalidateQueries({ queryKey: ['system'] });
       queryClient.invalidateQueries({ queryKey: ['tags'] });
     },
-    onError: (err: Error) => showToast(err.message),
   });
+
+  const migrateDialog = (target: 'home' | 'local') => ({
+    title: target === 'home' ? 'Move data to ~/.sakuya?' : 'Move data back to the app folder?',
+    confirmLabel: 'Move and shut down',
+    body: (
+      <>
+        Everything in <span className="text-zinc-300">{storage?.current}</span> is copied to{' '}
+        <span className="text-zinc-300">{target === 'home' ? storage?.home : storage?.local}</span> and the old folder
+        is deleted. Large thumbnail and transcode caches can make this take a while — don't close the browser. The
+        server shuts down when it's done; start it again to keep using Sakuya.
+      </>
+    ),
+    run: () => migrateMutation.mutate(target),
+  });
+  const dialogs = {
+    home: migrateDialog('home'),
+    local: migrateDialog('local'),
+    cache: {
+      title: 'Disable thumbnail cache?',
+      danger: true,
+      confirmLabel: 'Disable anyway',
+      body: 'Without cached thumbnails, the board and dashboard will load full-resolution images directly. This can significantly hurt performance and load times on large libraries.',
+      run: () => cacheMutation.mutate({ thumbnail_cache_enabled: '0' }),
+    },
+    regenerate: {
+      title: 'Regenerate all thumbnails?',
+      confirmLabel: 'Regenerate',
+      body: 'This may take a long time on large libraries. Existing thumbnails will be overwritten as each file is re-processed.',
+      run: () => regenerateMutation.mutate(),
+    },
+    cleanup: {
+      title: 'Clean up orphan data?',
+      danger: true,
+      confirmLabel: 'Clean up',
+      body: 'Removes thumbnail files whose media rows no longer exist and recomputes usage counts for every tag. Safe to run any time — nothing referenced by current media is touched.',
+      run: () => cleanupMutation.mutate(),
+    },
+  };
+  const dialog = confirm && dialogs[confirm];
+
+  const maintenance = [
+    {
+      title: 'Thumbnail cache',
+      desc: 'Delete all cached thumbnails to free up disk space',
+      label: 'Clear cache',
+      danger: true,
+      pending: clearMutation.isPending,
+      onClick: () => clearMutation.mutate(),
+    },
+    {
+      title: 'Regenerate thumbnails',
+      desc: 'Re-process all media files and overwrite existing thumbnails',
+      label: 'Regenerate all',
+      pending: regenerateMutation.isPending,
+      onClick: () => setConfirm('regenerate'),
+    },
+    {
+      title: 'Transcode videos',
+      desc: "Check every video and re-encode any the browser can't play",
+      label: 'Transcode all videos now',
+      pending: transcodeRunMutation.isPending,
+      onClick: () => transcodeRunMutation.mutate(),
+    },
+    {
+      title: 'Clean up orphan data',
+      desc: 'Remove thumbnail files and tag counts with no matching media',
+      label: 'Clean up',
+      danger: true,
+      pending: cleanupMutation.isPending,
+      onClick: () => setConfirm('cleanup'),
+    },
+  ];
 
   return (
     <div>
@@ -199,7 +241,7 @@ export function SystemTab() {
             pending={migrateMutation.isPending}
             onChange={(value) => {
               if (storage?.locked || migrateMutation.isPending) return;
-              setMigrateTo(value ? 'home' : 'local');
+              setConfirm(value ? 'home' : 'local');
             }}
           />
         </div>
@@ -217,8 +259,8 @@ export function SystemTab() {
             checked={cacheEnabled}
             pending={cacheMutation.isPending}
             onChange={(value) => {
-              if (!value) setShowCacheWarning(true);
-              else cacheMutation.mutate(true);
+              if (!value) setConfirm('cache');
+              else cacheMutation.mutate({ thumbnail_cache_enabled: '1' });
             }}
           />
         </div>
@@ -235,7 +277,7 @@ export function SystemTab() {
           <ToggleSwitch
             checked={transcodeEnabled}
             pending={transcodeToggleMutation.isPending}
-            onChange={(value) => transcodeToggleMutation.mutate(value)}
+            onChange={(value) => transcodeToggleMutation.mutate({ video_transcode_enabled: value ? '1' : '0' })}
           />
         </div>
       </div>
@@ -245,118 +287,37 @@ export function SystemTab() {
         <Row label="Database size" value={info ? formatBytes(info.dbBytes) : '—'} />
         <Row label="Thumbnail cache" value={info ? formatBytes(info.thumbBytes) : '—'} />
         <div className="mt-1.5 flex flex-col gap-2.5">
-          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
-            <div>
-              <div className="text-[13px] font-semibold text-zinc-200">Thumbnail cache</div>
-              <div className="text-[11px] text-zinc-500">Delete all cached thumbnails to free up disk space</div>
-            </div>
-            <button
-              disabled={clearMutation.isPending}
-              onClick={() => clearMutation.mutate()}
-              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
+          {maintenance.map((row) => (
+            <div
+              key={row.title}
+              className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2"
             >
-              Clear cache
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
-            <div>
-              <div className="text-[13px] font-semibold text-zinc-200">Regenerate thumbnails</div>
-              <div className="text-[11px] text-zinc-500">Re-process all media files and overwrite existing thumbnails</div>
+              <div>
+                <div className="text-[13px] font-semibold text-zinc-200">{row.title}</div>
+                <div className="text-[11px] text-zinc-500">{row.desc}</div>
+              </div>
+              <button
+                disabled={row.pending}
+                onClick={row.onClick}
+                className={`cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold disabled:opacity-40 ${
+                  row.danger
+                    ? 'text-rose-400 hover:border-rose-800 hover:text-rose-300'
+                    : 'text-zinc-300 hover:border-line-strong hover:text-zinc-100'
+                }`}
+              >
+                {row.label}
+              </button>
             </div>
-            <button
-              disabled={regenerateMutation.isPending}
-              onClick={() => setShowRegenerateWarning(true)}
-              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
-            >
-              Regenerate all
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
-            <div>
-              <div className="text-[13px] font-semibold text-zinc-200">Transcode videos</div>
-              <div className="text-[11px] text-zinc-500">Check every video and re-encode any the browser can't play</div>
-            </div>
-            <button
-              disabled={transcodeRunMutation.isPending}
-              onClick={() => transcodeRunMutation.mutate()}
-              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
-            >
-              Transcode all videos now
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
-            <div>
-              <div className="text-[13px] font-semibold text-zinc-200">Clean up orphan data</div>
-              <div className="text-[11px] text-zinc-500">Remove thumbnail files and tag counts with no matching media</div>
-            </div>
-            <button
-              disabled={cleanupMutation.isPending}
-              onClick={() => setShowCleanupWarning(true)}
-              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-rose-400 hover:border-rose-800 hover:text-rose-300 disabled:opacity-40"
-            >
-              Clean up
-            </button>
-          </div>
+          ))}
         </div>
       </div>
-      {migrateTo && (
+      {dialog && (
         <ConfirmDialog
-          title={migrateTo === 'home' ? 'Move data to ~/.sakuya?' : 'Move data back to the app folder?'}
-          confirmLabel="Move and shut down"
-          body={
-            <>
-              Everything in <span className="text-zinc-300">{storage?.current}</span> is copied to{' '}
-              <span className="text-zinc-300">{migrateTo === 'home' ? storage?.home : storage?.local}</span> and the
-              old folder is deleted. Large thumbnail and transcode caches can make this take a while — don't close
-              the browser. The server shuts down when it's done; start it again to keep using Sakuya.
-            </>
-          }
-          onCancel={() => setMigrateTo(null)}
+          {...dialog}
+          onCancel={() => setConfirm(null)}
           onConfirm={() => {
-            const target = migrateTo;
-            setMigrateTo(null);
-            migrateMutation.mutate(target);
-          }}
-        />
-      )}
-      {showCacheWarning && (
-        <ConfirmDialog
-          title="Disable thumbnail cache?"
-          danger
-          confirmLabel="Disable anyway"
-          body="Without cached thumbnails, the board and dashboard will load full-resolution images directly. This can significantly hurt performance and load times on large libraries."
-          onCancel={() => setShowCacheWarning(false)}
-          onConfirm={() => {
-            setShowCacheWarning(false);
-            cacheMutation.mutate(false);
-          }}
-        />
-      )}
-      {showRegenerateWarning && (
-        <ConfirmDialog
-          title="Regenerate all thumbnails?"
-          confirmLabel="Regenerate"
-          body="This may take a long time on large libraries. Existing thumbnails will be overwritten as each file is re-processed."
-          onCancel={() => setShowRegenerateWarning(false)}
-          onConfirm={() => {
-            setShowRegenerateWarning(false);
-            regenerateMutation.mutate();
-          }}
-        />
-      )}
-      {showCleanupWarning && (
-        <ConfirmDialog
-          title="Clean up orphan data?"
-          danger
-          confirmLabel="Clean up"
-          body="Removes thumbnail files whose media rows no longer exist and recomputes usage counts for every tag. Safe to run any time — nothing referenced by current media is touched."
-          onCancel={() => setShowCleanupWarning(false)}
-          onConfirm={() => {
-            setShowCleanupWarning(false);
-            cleanupMutation.mutate();
+            setConfirm(null);
+            dialog.run();
           }}
         />
       )}
@@ -392,18 +353,8 @@ export function ToggleSwitch({
 }
 
 export function BehaviorTab() {
-  const queryClient = useQueryClient();
-  const showToast = useToast();
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
-
-  const patchMutation = useMutation({
-    mutationFn: (body: Record<string, string>) => api.patchSettings(body),
-    onSuccess: (data) => {
-      queryClient.setQueryData(['settings'], data);
-      showToast('Behaviour updated');
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
+  const settings = useSettings();
+  const patchMutation = usePatchSettings(() => toast('Behaviour updated'));
 
   const rows: { key: keyof Settings; label: string; desc: string; defaultOn?: boolean }[] = [
     {
@@ -443,8 +394,7 @@ export function BehaviorTab() {
 
   const reclassifyMutation = useMutation({
     mutationFn: api.reclassifyGifs,
-    onSuccess: () => showToast('Reclassifying existing GIFs…'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Reclassifying existing GIFs…'),
   });
 
   return (

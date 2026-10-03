@@ -13,7 +13,6 @@ interface TagSearchInputProps {
   /** Called when the user submits text that wasn't completed into a tag. */
   onFreeText?: (q: string) => void;
   placeholder?: string;
-  autoFocus?: boolean;
   /** Render selected tags as chips inside the box. Off when the caller lists them itself. */
   showChips?: boolean;
 }
@@ -39,7 +38,6 @@ export function TagSearchInput({
   libraryId,
   onFreeText,
   placeholder = 'Search tags…',
-  autoFocus,
   showChips = true,
 }: TagSearchInputProps) {
   const [text, setText] = useState('');
@@ -150,7 +148,6 @@ export function TagSearchInput({
           ))}
         <input
           ref={inputRef}
-          autoFocus={autoFocus}
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -163,8 +160,8 @@ export function TagSearchInput({
           className="min-w-[80px] flex-1 bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
         />
       </div>
-      {/* z-[97]: above dialogs (95) and the confetti canvas (96), since the box can live inside
-          one, but below toasts (100). */}
+      {/* Inside a modal <dialog> the list has to live in the dialog too: a modal sits in the top
+          layer and leaves the rest of the page inert. */}
       {showDropdown &&
         anchor &&
         createPortal(
@@ -189,7 +186,7 @@ export function TagSearchInput({
               </div>
             ))}
           </div>,
-          document.body,
+          boxRef.current?.closest('dialog') ?? document.body,
         )}
     </div>
   );

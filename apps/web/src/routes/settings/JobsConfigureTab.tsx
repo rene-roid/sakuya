@@ -2,12 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { JobSchedule, LibraryWithStats } from '@sakuya/shared';
 import { api, libraryCoverUrl, thumbUrl, type ScheduleJobType, type UpdateJobScheduleBody } from '../../lib/api';
-import { useToast } from '../../components/Toast';
-import { Search, Tag, Fingerprint, Trash2, ChevronDown } from 'lucide-react';
+import { toast } from '../../components/Toast';
+import { Search, Tag, Fingerprint, Trash2, ChevronDown, type LucideIcon } from 'lucide-react';
 
 type IntervalOption = { label: string; minutes: number };
 
-const INTERVAL_OPTIONS: IntervalOption[] = [
+export const INTERVAL_OPTIONS: IntervalOption[] = [
   { label: '15 min', minutes: 15 },
   { label: '30 min', minutes: 30 },
   { label: '1 hour', minutes: 60 },
@@ -17,11 +17,11 @@ const INTERVAL_OPTIONS: IntervalOption[] = [
   { label: '24 hours', minutes: 1440 },
 ];
 
-const JOB_TYPES: { key: ScheduleJobType; label: string; recommended?: string }[] = [
-  { key: 'scan', label: 'Library scan' },
-  { key: 'tag', label: 'AI tagging', recommended: 'Recommended: After every scan' },
-  { key: 'hash', label: 'Duplicate detection', recommended: 'Recommended: After every scan' },
-  { key: 'cleanup', label: 'Cleanup orphan data' },
+const JOB_TYPES: { key: ScheduleJobType; label: string; icon: LucideIcon; recommended?: string }[] = [
+  { key: 'scan', label: 'Library scan', icon: Search },
+  { key: 'tag', label: 'AI tagging', icon: Tag, recommended: 'Recommended: After every scan' },
+  { key: 'hash', label: 'Duplicate detection', icon: Fingerprint, recommended: 'Recommended: After every scan' },
+  { key: 'cleanup', label: 'Cleanup orphan data', icon: Trash2 },
 ];
 
 /** All possible <select> values as a discriminated string set. */
@@ -77,7 +77,6 @@ function ScheduleSelect({
 
 export function JobsConfigureTab() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
   const { data: schedules } = useQuery({ queryKey: ['job-schedules'], queryFn: api.jobSchedules });
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
 
@@ -86,22 +85,19 @@ export function JobsConfigureTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
-      showToast('Schedule updated');
+      toast('Schedule updated');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const runNowMutation = useMutation({
     mutationFn: (args: { scope: 'global' | { libraryId: number }; jobType?: ScheduleJobType }) =>
       api.runJobsNow(args.scope, args.jobType),
-    onSuccess: () => showToast('Jobs enqueued'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Jobs enqueued'),
   });
 
   const regenerateThumbnailsMutation = useMutation({
     mutationFn: api.regenerateAllThumbnails,
-    onSuccess: () => showToast('Thumbnail regeneration enqueued'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Thumbnail regeneration enqueued'),
   });
 
   const globals = schedules?.globals ?? {};
@@ -260,7 +256,7 @@ function LibraryScheduleCard({
                   className={`flex items-center justify-between rounded-field px-2.5 py-1.5 transition-colors ${isCustom ? 'bg-amber-600/5' : ''}`}
                 >
                   <div className="flex items-center gap-2">
-                    <JobIcon type={jt.key} />
+                    <jt.icon size={14} className="text-zinc-500" />
                     <span className={`text-[12.5px] ${isCustom ? 'font-medium text-zinc-200' : 'text-zinc-500'}`}>
                       {jt.label}
                     </span>
@@ -294,18 +290,4 @@ function LibraryScheduleCard({
       )}
     </div>
   );
-}
-
-function JobIcon({ type }: { type: ScheduleJobType }) {
-  const cls = 'text-zinc-500';
-  switch (type) {
-    case 'scan':
-      return <Search size={14} className={cls} />;
-    case 'tag':
-      return <Tag size={14} className={cls} />;
-    case 'hash':
-      return <Fingerprint size={14} className={cls} />;
-    case 'cleanup':
-      return <Trash2 size={14} className={cls} />;
-  }
 }

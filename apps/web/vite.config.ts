@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+import { marked } from 'marked';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 // Relative, not @sakuya/shared/config: Vite bundles relative imports of its config, while a bare
@@ -20,8 +21,18 @@ const { config } = loadConfig();
 const wildcard = config.server.host === '0.0.0.0' || config.server.host === '::';
 const apiHost = wildcard ? '127.0.0.1' : config.server.host;
 
+// Release notes ship as HTML: each src/releases/*.md import becomes its rendered markup, so the
+// markdown parser stays out of the bundle.
+const markdown: Plugin = {
+  name: 'markdown-html',
+  transform(src, id) {
+    if (id.split('?')[0].endsWith('.md'))
+      return `export default ${JSON.stringify(marked.parse(src, { async: false }))};`;
+  },
+};
+
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), markdown],
   server: {
     // The web UI is useless on the network without the API behind it, and the API is exposed on
     // purpose when server.host is — so the two follow one setting.

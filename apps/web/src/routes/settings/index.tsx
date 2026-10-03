@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LibrariesTab } from './LibrariesTab';
 import { JobsTab } from './JobsTab';
@@ -9,27 +8,21 @@ import { AppearanceTab, BehaviorTab, SystemTab } from './MiscTabs';
 import { ReleasesTab } from './ReleasesTab';
 
 const TABS = [
-  { key: 'libraries', label: 'Libraries' },
-  { key: 'jobs', label: 'Jobs' },
-  { key: 'tagging', label: 'AI Tagging' },
-  { key: 'duplicates', label: 'Duplicates' },
-  { key: 'uploads', label: 'Uploads' },
-  { key: 'appearance', label: 'Appearance' },
-  { key: 'behavior', label: 'Behaviour' },
-  { key: 'system', label: 'System' },
-  { key: 'releases', label: 'Releases' },
-] as const;
-
-type TabKey = (typeof TABS)[number]['key'];
-
-function isTabKey(value: string | null): value is TabKey {
-  return TABS.some((t) => t.key === value);
-}
+  { key: 'libraries', label: 'Libraries', Tab: LibrariesTab },
+  { key: 'jobs', label: 'Jobs', Tab: JobsTab },
+  { key: 'tagging', label: 'AI Tagging', Tab: TaggingTab },
+  { key: 'duplicates', label: 'Duplicates', Tab: DuplicatesTab },
+  { key: 'uploads', label: 'Uploads', Tab: UploadsTab },
+  { key: 'appearance', label: 'Appearance', Tab: AppearanceTab },
+  { key: 'behavior', label: 'Behaviour', Tab: BehaviorTab },
+  { key: 'system', label: 'System', Tab: SystemTab },
+  { key: 'releases', label: 'Releases', Tab: ReleasesTab },
+];
 
 export function Settings() {
-  const [searchParams] = useSearchParams();
-  const initialTab = searchParams.get('tab');
-  const [tab, setTab] = useState<TabKey>(isTabKey(initialTab) ? initialTab : 'libraries');
+  // The tab lives in ?tab= so links like /settings?tab=jobs work even while Settings is open.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const current = TABS.find((t) => t.key === searchParams.get('tab')) ?? TABS[0];
 
   return (
     <div className="fade-in mx-auto flex h-[calc(100dvh-var(--nav-h)-var(--dock-h))] max-w-[1200px] flex-col gap-4 overflow-hidden px-4 py-5 sm:flex-row sm:gap-8 sm:px-8 sm:py-7">
@@ -37,9 +30,9 @@ export function Settings() {
         {TABS.map((t) => (
           <div
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => setSearchParams({ tab: t.key }, { replace: true })}
             className={`flex-none cursor-pointer whitespace-nowrap rounded-lg border px-3 py-[9px] text-[13.5px] font-semibold glass:rounded-full glass:px-4 glass:transition-colors ${
-              tab === t.key
+              current === t
                 ? 'border-line bg-zinc-900 text-zinc-100 glass:border-white/10 glass:bg-white/10 glass:text-white glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]'
                 : 'border-transparent text-zinc-400 hover:text-zinc-200 glass:font-medium glass:hover:bg-white/5'
             }`}
@@ -49,15 +42,7 @@ export function Settings() {
         ))}
       </div>
       <div className="scrollbar-hide min-w-0 flex-1 overflow-y-auto pb-16">
-        {tab === 'libraries' && <LibrariesTab />}
-        {tab === 'jobs' && <JobsTab />}
-        {tab === 'tagging' && <TaggingTab />}
-        {tab === 'duplicates' && <DuplicatesTab />}
-        {tab === 'uploads' && <UploadsTab />}
-        {tab === 'appearance' && <AppearanceTab />}
-        {tab === 'behavior' && <BehaviorTab />}
-        {tab === 'system' && <SystemTab />}
-        {tab === 'releases' && <ReleasesTab />}
+        <current.Tab />
       </div>
     </div>
   );

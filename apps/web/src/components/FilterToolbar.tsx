@@ -3,17 +3,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus, ListChecks, MoreVertical } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
 import { MenuItem, MenuLabel, MenuPanel } from './Menu';
+import { Segmented, TYPE_OPTIONS } from './Segmented';
 import { api } from '../lib/api';
 import { exploreQueryString } from '../hooks/useFilters';
 import { useOverflowCount } from '../hooks/useOverflowCount';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 import type { SelectionApi } from '../hooks/useSelection';
-
-function segStyle(active: boolean): string {
-  return `cursor-pointer rounded-md px-[13px] py-1.5 text-[12.5px] font-semibold glass:rounded-full ${
-    active ? 'bg-accent text-white' : 'text-zinc-400 hover:text-zinc-200'
-  }`;
-}
 
 function buttonStyle(accent?: boolean): string {
   return `flex flex-none cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-[7px] text-[13px] font-semibold glass:rounded-full glass:px-3.5 ${
@@ -86,12 +81,7 @@ export function FilterToolbar({
     {
       id: 'type',
       inline: (
-        <div className="flex flex-none rounded-lg border border-line bg-zinc-900 p-0.5 glass:rounded-full glass:bg-white/[0.04]">
-          {(['all', 'image', 'video'] as const).map((t) => (
-            <div key={t} className={segStyle(filters.typeParam === t)} onClick={() => actions.setType(t)}>
-              {t === 'all' ? 'All' : t === 'image' ? 'Images' : 'Videos'}
-            </div>
-          ))}
+        <Segmented options={TYPE_OPTIONS} value={filters.typeParam} onChange={actions.setType} className="flex-none">
           <div
             title="Show only liked media"
             className={`flex cursor-pointer items-center rounded-md px-[13px] py-1.5 text-[13px] font-semibold glass:rounded-full ${
@@ -101,17 +91,17 @@ export function FilterToolbar({
           >
             <Heart size={13} fill={filters.liked ? 'currentColor' : 'none'} />
           </div>
-        </div>
+        </Segmented>
       ),
       menu: (
         <div key="type">
           <MenuLabel>Type</MenuLabel>
-          {(['all', 'image', 'video'] as const).map((t) => (
+          {TYPE_OPTIONS.map((t) => (
             <MenuItem
-              key={t}
-              label={t === 'all' ? 'All' : t === 'image' ? 'Images' : 'Videos'}
-              active={filters.typeParam === t}
-              onClick={fromMenu(() => actions.setType(t))}
+              key={t.key}
+              label={t.label}
+              active={filters.typeParam === t.key}
+              onClick={fromMenu(() => actions.setType(t.key))}
             />
           ))}
           <MenuItem
@@ -126,16 +116,20 @@ export function FilterToolbar({
     {
       id: 'sort',
       inline: (
-        <div className="flex flex-none rounded-lg border border-line bg-zinc-900 p-0.5 glass:rounded-full glass:bg-white/[0.04]">
-          {SORTS.map((srt) => (
-            <div key={srt.key} className={segStyle(filters.sort === srt.key)} onClick={() => actions.setSort(srt.key)}>
+        <Segmented
+          options={SORTS.map((srt) => ({
+            key: srt.key,
+            label: (
               <span className="flex items-center gap-1">
                 {srt.label}
                 {filters.sort === srt.key && <DirIcon size={13} />}
               </span>
-            </div>
-          ))}
-        </div>
+            ),
+          }))}
+          value={filters.sort}
+          onChange={actions.setSort}
+          className="flex-none"
+        />
       ),
       menu: (
         <div key="sort">

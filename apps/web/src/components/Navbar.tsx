@@ -5,6 +5,7 @@ import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings, Sparkles 
 import { useJobs } from '../hooks/useJobs';
 import { useAuth } from '../hooks/useAuth';
 import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
+import { useSettings } from '../hooks/useSettings';
 import { TagSearchInput } from './TagSearchInput';
 import { api } from '../lib/api';
 
@@ -174,7 +175,7 @@ export function Navbar() {
   const barRef = useRef<HTMLDivElement>(null);
   const lastPathname = useRef(location.pathname);
   const [searchTags, setSearchTags] = useState<string[]>([]);
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings, staleTime: 60_000 });
+  const settings = useSettings();
   const discoverEnabled = settings?.discover_enabled === '1';
   const items = NAV_ITEMS.filter((item) => item.to !== '/discover' || discoverEnabled);
 

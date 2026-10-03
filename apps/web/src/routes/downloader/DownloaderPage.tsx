@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Download, Pause, Play, RotateCcw, SkipForward, Trash2, Upload as UploadIcon, X } from 'lucide-react';
 import type { DownloadBatchWithItems, DownloadItem, DownloadItemStatus } from '@sakuya/shared';
 import { api } from '../../lib/api';
-import { useToast } from '../../components/Toast';
+import { toast, toastError } from '../../components/Toast';
+import { Modal } from '../../components/Modal';
+import { useDebounce } from '../../hooks/useDebounce';
+import { usePatchSettings, useSettings } from '../../hooks/useSettings';
 import { useJobs } from '../../hooks/useJobs';
 import { useDownloader } from '../../hooks/useDownloader';
 import { DownloaderConsole } from './DownloaderConsole';
@@ -21,11 +24,10 @@ export function DownloaderPage() {
   const { data: status } = useQuery({ queryKey: ['downloader-status'], queryFn: api.downloaderStatus });
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
   const { data: cookies } = useQuery({ queryKey: ['downloader-cookies'], queryFn: api.listCookies });
-  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.settings });
+  const settings = useSettings();
   const jobs = useJobs();
   const { batches } = useDownloader();
   const queryClient = useQueryClient();
-  const showToast = useToast();
 
   const installJob = jobs.find(
     (j) => j.type === 'downloader-install' && (j.status === 'running' || j.status === 'queued'),
@@ -33,8 +35,7 @@ export function DownloaderPage() {
 
   const installMutation = useMutation({
     mutationFn: () => api.installDownloader(),
-    onSuccess: () => showToast('Installing gallery-dl…'),
-    onError: (err: Error) => showToast(err.message),
+    onSuccess: () => toast('Installing gallery-dl…'),
   });
 
   const [tab, setTab] = useState<'downloads' | 'console'>('downloads');
@@ -43,37 +44,28 @@ export function DownloaderPage() {
   const [folderPath, setFolderPath] = useState('');
   const [cookieFileId, setCookieFileId] = useState<number | ''>('');
   const [extraArgs, setExtraArgs] = useState('');
-  const [lockedLibraryName, setLockedLibraryName] = useState<string | null>(null);
   const cookieInputRef = useRef<HTMLInputElement>(null);
 
+  // A folder that already belongs to a library pins the download to that library.
+  const debouncedPath = useDebounce(folderPath.trim(), 400);
+  const { data: resolved } = useQuery({
+    queryKey: ['resolve-path', debouncedPath],
+    queryFn: () => api.resolveDownloaderPath(debouncedPath),
+    enabled: !!debouncedPath,
+    placeholderData: keepPreviousData,
+  });
+  const lockedLibrary = folderPath.trim() ? (resolved?.library ?? null) : null;
+  const lockedLibraryName = lockedLibrary?.name ?? null;
   useEffect(() => {
-    if (!folderPath.trim()) {
-      setLockedLibraryName(null);
-      return;
-    }
-    const handle = setTimeout(() => {
-      api
-        .resolveDownloaderPath(folderPath.trim())
-        .then((res) => {
-          if (res.library) {
-            setLockedLibraryName(res.library.name);
-            setLibraryId(res.library.id);
-          } else {
-            setLockedLibraryName(null);
-          }
-        })
-        .catch(() => {});
-    }, 400);
-    return () => clearTimeout(handle);
-  }, [folderPath]);
+    if (lockedLibrary) setLibraryId(lockedLibrary.id);
+  }, [lockedLibrary]);
 
   const uploadCookiesMutation = useMutation({
     mutationFn: (files: File[]) => api.uploadCookies(files),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['downloader-cookies'] });
-      showToast('Cookie file(s) uploaded');
+      toast('Cookie file(s) uploaded');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const deleteCookieMutation = useMutation({
@@ -81,42 +73,33 @@ export function DownloaderPage() {
     onSuccess: () => {
       setCookieFileId('');
       queryClient.invalidateQueries({ queryKey: ['downloader-cookies'] });
-      showToast('Cookie file removed');
+      toast('Cookie file removed');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
+  const urls = urlsText
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
   const createBatchMutation = useMutation({
-    mutationFn: () => {
-      const urls = urlsText
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean);
-      return api.createDownloadBatch({
+    mutationFn: () =>
+      api.createDownloadBatch({
         libraryId: Number(libraryId),
         folderPath: folderPath.trim(),
         urls,
         extraArgs: extraArgs.trim() || undefined,
         cookieFileId: cookieFileId === '' ? null : Number(cookieFileId),
-      });
-    },
+      }),
     onSuccess: () => {
       setUrlsText('');
-      showToast('Download batch queued');
+      toast('Download batch queued');
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
-  const concurrencyMutation = useMutation({
-    mutationFn: (value: number) => api.patchSettings({ downloader_concurrency: String(value) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings'] }),
-    onError: (err: Error) => showToast(err.message),
-  });
+  const concurrencyMutation = usePatchSettings();
 
-  const urlCount = urlsText
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean).length;
+  const urlCount = urls.length;
   const canSubmit = urlCount > 0 && !!folderPath.trim() && libraryId !== '';
 
   return (
@@ -135,7 +118,7 @@ export function DownloaderPage() {
             defaultValue={Number(settings?.downloader_concurrency ?? 2)}
             onBlur={(e) => {
               const v = Math.min(8, Math.max(1, Number(e.target.value) || 2));
-              concurrencyMutation.mutate(v);
+              concurrencyMutation.mutate({ downloader_concurrency: String(v) });
             }}
             className="w-16 rounded-field border border-line bg-zinc-900 px-2 py-1.5 text-[13px] text-zinc-100 outline-none"
           />
@@ -324,7 +307,6 @@ function ItemRow({ item }: { item: DownloadItem }) {
   const [expanded, setExpanded] = useState(false);
   const [removing, setRemoving] = useState(false);
   const { logs } = useDownloader();
-  const showToast = useToast();
   const queryClient = useQueryClient();
 
   const { data: historyLogs } = useQuery({
@@ -342,30 +324,11 @@ function ItemRow({ item }: { item: DownloadItem }) {
     return [...map.entries()].sort((a, b) => a[0] - b[0]).map(([, line]) => line);
   }, [historyLogs, liveLogs]);
 
-  const pauseMutation = useMutation({
-    mutationFn: () => api.pauseDownloadItem(item.id),
-    onError: (err: Error) => showToast(err.message),
-  });
-  const resumeMutation = useMutation({
-    mutationFn: () => api.resumeDownloadItem(item.id),
-    onError: (err: Error) => showToast(err.message),
-  });
-  const skipMutation = useMutation({
-    mutationFn: () => api.skipDownloadItem(item.id),
-    onError: (err: Error) => showToast(err.message),
-  });
-  const removeMutation = useMutation({
-    mutationFn: (deleteFiles: boolean) => api.removeDownloadItem(item.id, deleteFiles),
-    onSuccess: () => {
+  const remove = (deleteFiles: boolean) =>
+    api.removeDownloadItem(item.id, deleteFiles).then(() => {
       setRemoving(false);
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
-    },
-    onError: (err: Error) => showToast(err.message),
-  });
-  const redoMutation = useMutation({
-    mutationFn: () => api.redoDownloadItem(item.id),
-    onError: (err: Error) => showToast(err.message),
-  });
+    }, toastError);
 
   return (
     <div className="rounded-lg border border-line bg-zinc-900">
@@ -387,22 +350,22 @@ function ItemRow({ item }: { item: DownloadItem }) {
         </span>
         <div className="flex shrink-0 items-center gap-1">
           {item.status === 'running' && (
-            <IconButton title="Pause" onClick={() => pauseMutation.mutate()}>
+            <IconButton title="Pause" onClick={() => api.pauseDownloadItem(item.id).catch(toastError)}>
               <Pause size={13} />
             </IconButton>
           )}
           {(item.status === 'paused' || item.status === 'error' || item.status === 'skipped') && (
-            <IconButton title="Resume" onClick={() => resumeMutation.mutate()}>
+            <IconButton title="Resume" onClick={() => api.resumeDownloadItem(item.id).catch(toastError)}>
               <Play size={13} />
             </IconButton>
           )}
           {(item.status === 'queued' || item.status === 'running') && (
-            <IconButton title="Skip" onClick={() => skipMutation.mutate()}>
+            <IconButton title="Skip" onClick={() => api.skipDownloadItem(item.id).catch(toastError)}>
               <SkipForward size={13} />
             </IconButton>
           )}
           {item.status === 'done' && (
-            <IconButton title="Redo download" onClick={() => redoMutation.mutate()}>
+            <IconButton title="Redo download" onClick={() => api.redoDownloadItem(item.id).catch(toastError)}>
               <RotateCcw size={13} />
             </IconButton>
           )}
@@ -422,8 +385,8 @@ function ItemRow({ item }: { item: DownloadItem }) {
       )}
       {removing && (
         <RemoveItemModal
-          onKeep={() => removeMutation.mutate(false)}
-          onDelete={() => removeMutation.mutate(true)}
+          onKeep={() => remove(false)}
+          onDelete={() => remove(true)}
           onCancel={() => setRemoving(false)}
         />
       )}
@@ -453,39 +416,31 @@ function RemoveItemModal({
   onCancel: () => void;
 }) {
   return (
-    <div
-      className="fade-in fixed inset-0 z-[95] flex items-center justify-center bg-zinc-950/80 p-6 backdrop-blur"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-[380px] rounded-xl border border-line bg-surface p-5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-2 text-[15px] font-bold">Remove download</div>
-        <div className="mb-4 text-[12.5px] leading-relaxed text-zinc-400">
-          Remove this item from the queue. You can keep the files already downloaded, or delete them from disk.
-        </div>
-        <div className="flex justify-end gap-2">
-          <button
-            onClick={onCancel}
-            className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onKeep}
-            className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90"
-          >
-            Keep files
-          </button>
-          <button
-            onClick={onDelete}
-            className="cursor-pointer rounded-btn bg-rose-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-rose-500"
-          >
-            Delete files
-          </button>
-        </div>
+    <Modal onClose={onCancel} className="w-full max-w-[380px] rounded-xl border border-line bg-surface p-5">
+      <div className="mb-2 text-[15px] font-bold">Remove download</div>
+      <div className="mb-4 text-[12.5px] leading-relaxed text-zinc-400">
+        Remove this item from the queue. You can keep the files already downloaded, or delete them from disk.
       </div>
-    </div>
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={onCancel}
+          className="cursor-pointer rounded-btn border border-line px-3.5 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={onKeep}
+          className="cursor-pointer rounded-btn bg-accent px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:opacity-90"
+        >
+          Keep files
+        </button>
+        <button
+          onClick={onDelete}
+          className="cursor-pointer rounded-btn bg-rose-600 px-3.5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-rose-500"
+        >
+          Delete files
+        </button>
+      </div>
+    </Modal>
   );
 }

@@ -4,14 +4,12 @@ import { Trash2 } from 'lucide-react';
 import type { DuplicateGroup } from '@sakuya/shared';
 import { api, thumbUrl } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
-import { useToast } from '../../components/Toast';
+import { toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { TabHeader } from './index';
 
 export function DuplicatesTab() {
   const queryClient = useQueryClient();
-  const showToast = useToast();
-  const [scanned, setScanned] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
 
@@ -21,26 +19,21 @@ export function DuplicatesTab() {
     enabled: false,
   });
 
-  const scanMutation = useMutation({
-    mutationFn: () => refetch(),
-    onSuccess: () => setScanned(true),
-    onError: (err: Error) => showToast(err.message),
-  });
-
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => api.deleteMediaBatch(ids),
     onSuccess: async (res) => {
-      showToast(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
+      toast(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['system'] });
       await refetch();
     },
-    onError: (err: Error) => showToast(err.message),
   });
 
   const groups = data?.groups ?? [];
+  // Nothing runs until the first scan; after that the cached result is what's shown.
+  const scanned = data !== undefined;
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -77,11 +70,11 @@ export function DuplicatesTab() {
             </div>
           </div>
           <button
-            disabled={scanMutation.isPending || isFetching}
-            onClick={() => scanMutation.mutate()}
+            disabled={isFetching}
+            onClick={() => refetch()}
             className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
           >
-            {scanMutation.isPending || isFetching ? 'Scanning…' : scanned ? 'Rescan' : 'Scan for duplicates'}
+            {isFetching ? 'Scanning…' : scanned ? 'Rescan' : 'Scan for duplicates'}
           </button>
         </div>
       </div>
