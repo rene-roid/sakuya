@@ -6,35 +6,35 @@ import { z } from 'zod';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
-import { wrap, intParam } from '../lib/http';
+import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
-import { rowToMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
-import { mediaRowsByIds, chunkIds } from '../lib/mediaByIds';
+import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
+import { mediaRowsByIds, chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
 import { phashBands } from '../lib/phashBands';
-import type {
-  BulkFailure,
-  BulkResult,
-  DuplicatesResponse,
-  MediaDetail,
-  MediaIdsResponse,
-  MediaListResponse,
-  SimilarResponse,
+import {
+  MEDIA_TYPES,
+  TAG_CATEGORIES,
+  type BulkFailure,
+  type BulkResult,
+  type DuplicatesResponse,
+  type MediaDetail,
+  type MediaIdsResponse,
+  type MediaListResponse,
+  type SimilarResponse,
 } from '@sakuya/shared';
 
 export const mediaRouter = Router();
 
-const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
-
 const filterSchema = z.object({
   libraryId: z.coerce.number().int().optional(),
   boardId: z.coerce.number().int().optional(),
-  type: z.enum(['image', 'video']).optional(),
+  type: z.enum(MEDIA_TYPES).optional(),
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
   q: z.union([z.string(), z.array(z.string())]).optional(),
@@ -49,6 +49,12 @@ const listQuerySchema = filterSchema.extend({
 });
 
 type MediaFilterQuery = z.infer<typeof filterSchema>;
+
+/** The bare filename a client asked to rename to, or null when it names no file. */
+function safeFilename(filename: string): string | null {
+  const name = path.basename(filename.trim());
+  return name && name !== '.' && name !== '..' ? name : null;
+}
 
 /**
  * FTS5 query string for a set of free-text search terms.
@@ -141,24 +147,14 @@ mediaRouter.get(
     // pays for it. Infinite scroll fetches page after page with identical filters, and a full
     // filtered COUNT(*) was the most expensive part of each of those fetches; the client keeps
     // the total it got from page one.
-    const total = query.cursor
-      ? null
-      : (
-          sqlite
-            .query(`SELECT COUNT(*) AS c FROM media m ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''}`)
-            .get(...params) as { c: number }
-        ).c;
+    const total = query.cursor ? null : countMedia(conds, params);
 
     const pageConds = [...conds];
     const pageParams = [...params];
     if (query.cursor) {
-      try {
-        const [key, id] = JSON.parse(Buffer.from(query.cursor, 'base64url').toString('utf8'));
-        pageConds.push(`(${keyExpr}, m.id) ${dir === 'asc' ? '>' : '<'} (?, ?)`);
-        pageParams.push(key, id);
-      } catch {
-        throw Object.assign(new Error('Invalid cursor'), { status: 400 });
-      }
+      const [key, id] = decodeCursor(query.cursor);
+      pageConds.push(`(${keyExpr}, m.id) ${dir === 'asc' ? '>' : '<'} (?, ?)`);
+      pageParams.push(key, id);
     }
 
     const sql = `
@@ -174,7 +170,7 @@ mediaRouter.get(
     let nextCursor: string | null = null;
     if (rows.length === query.limit) {
       const last = rows[rows.length - 1];
-      nextCursor = Buffer.from(JSON.stringify([last.sort_key, last.id])).toString('base64url');
+      nextCursor = encodeCursor([last.sort_key, last.id]);
     }
     const body: MediaListResponse = { items: rows.map(rowToMedia), nextCursor, total };
     res.json(body);
@@ -410,8 +406,8 @@ mediaRouter.post(
         failed.push({ id: item.id, error: 'Not found' });
         continue;
       }
-      const safeName = path.basename(item.filename.trim());
-      if (!safeName || safeName === '.' || safeName === '..') {
+      const safeName = safeFilename(item.filename);
+      if (!safeName) {
         failed.push({ id: item.id, error: 'Invalid filename' });
         continue;
       }
@@ -481,6 +477,13 @@ mediaRouter.post(
   }),
 );
 
+/** The media row for an `:id` route param; a missing row is a 404, like intParam's 400. */
+function mediaOr404(param: string): MediaRow {
+  const row = db.select().from(schema.media).where(eq(schema.media.id, intParam(param))).get();
+  if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
+  return row;
+}
+
 function getDetail(id: number): MediaDetail | null {
   const row = sqlite.query(`${MEDIA_SELECT} WHERE m.id = ?`).get(id) as MediaSqlRow | null;
   if (!row) return null;
@@ -514,9 +517,8 @@ mediaRouter.get(
 mediaRouter.get(
   '/api/media/:id/file',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row || !fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
+    if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
     const servePath = row.type === 'video' ? playablePathFor(row.id, row.path) : row.path;
     // res.sendFile handles Range requests, ETag and conditional GETs.
     res.sendFile(servePath, { acceptRanges: true, cacheControl: true, maxAge: '1h' });
@@ -528,14 +530,10 @@ const renameSchema = z.object({ filename: z.string().min(1) });
 mediaRouter.patch(
   '/api/media/:id/rename',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    const { filename } = renameSchema.parse(req.body);
-    const safeName = path.basename(filename.trim());
-    if (!safeName || safeName === '.' || safeName === '..') {
-      return res.status(400).json({ error: 'Invalid filename' });
-    }
+    const row = mediaOr404(req.params.id);
+    const id = row.id;
+    const safeName = safeFilename(renameSchema.parse(req.body).filename);
+    if (!safeName) return res.status(400).json({ error: 'Invalid filename' });
     if (safeName === row.filename) return res.json(getDetail(id));
     const newPath = path.join(path.dirname(row.path), safeName);
     if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
@@ -549,10 +547,8 @@ mediaRouter.patch(
 mediaRouter.delete(
   '/api/media/:id',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    removeMediaRows([id]);
+    const row = mediaOr404(req.params.id);
+    removeMediaRows([row.id]);
     fs.unlink(row.path, () => {});
     res.json({ ok: true });
   }),
@@ -561,9 +557,8 @@ mediaRouter.delete(
 mediaRouter.post(
   '/api/media/:id/reveal',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row || !fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
+    if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Not found' });
     const proc =
       process.platform === 'win32'
         ? spawn('explorer.exe', [`/select,${row.path}`], { detached: true, stdio: 'ignore' })
@@ -579,9 +574,8 @@ mediaRouter.post(
 mediaRouter.get(
   '/api/media/:id/thumbnail',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
+    const id = row.id;
     // When the thumbnail cache is disabled, serve the original image directly.
     // Videos always need a generated frame (a raw video is not a usable thumbnail).
     if (!thumbnailCacheEnabled() && row.type === 'image') {
@@ -601,12 +595,10 @@ mediaRouter.get(
 mediaRouter.post(
   '/api/media/:id/thumbnail/regenerate',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
-    const thumb = await generateThumbnail(row.path, id, row.type, row.durationSeconds);
-    db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, id)).run();
+    const thumb = await generateThumbnail(row.path, row.id, row.type, row.durationSeconds);
+    db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, row.id)).run();
     res.json({ ok: true });
   }),
 );
@@ -622,9 +614,7 @@ const tagsPatchSchema = z.object({
 mediaRouter.patch(
   '/api/media/:id/tags',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const id = mediaOr404(req.params.id).id;
     const body = tagsPatchSchema.parse(req.body);
     const touched: number[] = [];
     for (const raw of body.add) {
@@ -662,9 +652,7 @@ const likeSchema = z.object({ liked: z.boolean() });
 mediaRouter.patch(
   '/api/media/:id/like',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const id = mediaOr404(req.params.id).id;
     const { liked } = likeSchema.parse(req.body);
     db.update(schema.media)
       .set({ liked: liked ? 1 : 0, likedAt: liked ? Date.now() : null })
@@ -678,9 +666,8 @@ mediaRouter.patch(
 mediaRouter.get(
   '/api/media/:id/similar',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
+    const id = row.id;
 
     // Exact duplicates: same cheap content hash (size + first 4 MB).
     const duplicates = row.contentHash
@@ -725,11 +712,9 @@ mediaRouter.get(
 mediaRouter.post(
   '/api/media/:id/retag',
   wrap(async (req, res) => {
-    const id = intParam(req.params.id);
-    const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-    if (!row) return res.status(404).json({ error: 'Not found' });
+    const row = mediaOr404(req.params.id);
     if (!modelReady()) return res.status(409).json({ error: 'Tagger model not downloaded' });
-    const job = enqueueTagJob([id], `AI tag: ${row.filename}`, row.libraryId);
+    const job = enqueueTagJob([row.id], `AI tag: ${row.filename}`, row.libraryId);
     res.json({ job });
   }),
 );

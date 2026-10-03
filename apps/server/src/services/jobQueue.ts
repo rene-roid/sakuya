@@ -22,24 +22,9 @@ interface QueuedJob {
 const queue: QueuedJob[] = [];
 let running = 0;
 
-function rowToJob(row: typeof schema.jobs.$inferSelect): Job {
-  return {
-    id: row.id,
-    type: row.type as JobType,
-    libraryId: row.libraryId,
-    label: row.label,
-    status: row.status,
-    progress: row.progress,
-    total: row.total,
-    log: row.log,
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
-}
-
 function broadcast(id: number) {
   const row = db.select().from(schema.jobs).where(eq(schema.jobs.id, id)).get();
-  if (row) jobEvents.emit('job', rowToJob(row));
+  if (row) jobEvents.emit('job', row);
 }
 
 function patchJob(id: number, patch: Partial<typeof schema.jobs.$inferInsert>) {
@@ -97,11 +82,37 @@ export function enqueueJob(
   queue.push({ id: inserted.id, fn });
   broadcast(inserted.id);
   queueMicrotask(pump);
-  return rowToJob(inserted);
+  return inserted;
 }
 
 export function listJobs(limit = 50): Job[] {
   // Ordering and slicing belong in SQL: this used to pull the entire jobs table into JS and sort
   // it there to hand back 50 rows, and jobs is append-only, so the cost grew with every scan.
-  return db.select().from(schema.jobs).orderBy(desc(schema.jobs.createdAt)).limit(limit).all().map(rowToJob);
+  return db.select().from(schema.jobs).orderBy(desc(schema.jobs.createdAt)).limit(limit).all();
+}
+
+/**
+ * Run `fn` over every item, logging and counting failures rather than aborting on the first one,
+ * with a progress update every 5 items. Resolves with the number of failures.
+ */
+export async function eachWithProgress<T>(
+  job: JobHandle,
+  items: T[],
+  progressLog: (done: number, total: number) => string,
+  failMsg: (item: T) => string,
+  fn: (item: T) => Promise<unknown>,
+): Promise<number> {
+  let errors = 0;
+  for (let i = 0; i < items.length; i++) {
+    try {
+      await fn(items[i]);
+    } catch (err) {
+      errors++;
+      console.error(failMsg(items[i]), err);
+    }
+    if (i % 5 === 0 || i === items.length - 1) {
+      job.update({ progress: i + 1, log: progressLog(i + 1, items.length) });
+    }
+  }
+  return errors;
 }

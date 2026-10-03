@@ -1,6 +1,6 @@
 import express from 'express';
 import sharp from 'sharp';
-import { PORT, HOST, DATA_DIR, CONFIG_FILE, LIMITS, LIMITS_REPORT } from './lib/config';
+import { CONFIG, DATA_DIR, CONFIG_FILE, LIMITS, LIMITS_REPORT } from './lib/config';
 import { describeLimits } from './lib/limits';
 import './db';
 import { librariesRouter } from './routes/libraries';
@@ -17,7 +17,7 @@ import { savedSearchesRouter } from './routes/savedSearches';
 import { boardsRouter } from './routes/boards';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
-import { initScheduler } from './services/jobScheduler';
+import { scheduleAll } from './services/jobScheduler';
 
 // Set once here, before any thumbnail or tagger preprocessing can touch it — sharp is a singleton
 // and this is a runtime setter.
@@ -56,12 +56,13 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(status).json({ error: err?.message ?? 'Internal error', issues: err?.issues });
 });
 
-app.listen(PORT, HOST, () => {
-  console.log(`Sakuya server listening on http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
-  if (HOST === '127.0.0.1') console.log('Bound to loopback only. Set server.host to 0.0.0.0 to serve other machines.');
+const { port, host } = CONFIG.server;
+app.listen(port, host, () => {
+  console.log(`Sakuya server listening on http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`);
+  if (host === '127.0.0.1') console.log('Bound to loopback only. Set server.host to 0.0.0.0 to serve other machines.');
   console.log(`Config: ${CONFIG_FILE}`);
   console.log(`Data dir: ${DATA_DIR}`);
   const limits = describeLimits(LIMITS_REPORT);
   if (limits) console.log(limits);
-  initScheduler();
+  scheduleAll();
 });

@@ -2,11 +2,8 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
-import ffmpegStatic from 'ffmpeg-static';
 import AdmZip from 'adm-zip';
-
-const ffmpegPath: string = (ffmpegStatic as unknown as string) ?? 'ffmpeg';
+import { run, FFMPEG_PATH } from '../lib/run';
 
 // gallery-dl's default pixiv ugoira output: "<illust_id>_p<n>.zip" containing
 // zero-padded, sequentially numbered frame images and nothing else.
@@ -27,16 +24,6 @@ function looksLikeUgoiraZip(zip: AdmZip): boolean {
   const entries = zip.getEntries().filter((e) => !e.isDirectory);
   if (entries.length < 2) return false;
   return entries.every((e) => !e.entryName.includes('/') && UGOIRA_FRAME_NAME.test(e.entryName));
-}
-
-function runFfmpeg(args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    proc.stderr.on('data', (d) => (stderr += d));
-    proc.on('error', reject);
-    proc.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}: ${stderr.slice(-300)}`))));
-  });
 }
 
 /**
@@ -73,7 +60,7 @@ export async function tryConvertUgoiraZip(zipPath: string): Promise<string | nul
     await fsp.writeFile(listPath, listLines.join('\n'));
 
     const tmpGif = `${gifPath}.part`;
-    await runFfmpeg([
+    await run(FFMPEG_PATH, [
       '-y',
       '-f', 'concat',
       '-safe', '0',

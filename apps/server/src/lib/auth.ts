@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request, Response, RequestHandler } from 'express';
-import { AUTH_ENABLED, AUTH_SECRET, AUTH_COOKIE_SECURE } from './config';
+import { CONFIG } from './config';
 
 const COOKIE_NAME = 'sakuya_auth';
 const SESSION_MS = 1000 * 60 * 60 * 24 * 30;
@@ -15,14 +15,7 @@ export function timingSafeEqual(a: string, b: string): boolean {
 // Cookie, not a header: thumbnails/video/EventSource are plain browser requests
 // that can't attach custom headers, but do send cookies automatically.
 function readAuthCookie(req: Request): string | null {
-  const header = req.headers.cookie;
-  if (!header) return null;
-  for (const part of header.split(';')) {
-    const eq = part.indexOf('=');
-    if (eq === -1) continue;
-    if (part.slice(0, eq).trim() === COOKIE_NAME) return decodeURIComponent(part.slice(eq + 1).trim());
-  }
-  return null;
+  return new Bun.CookieMap(req.headers.cookie ?? '').get(COOKIE_NAME);
 }
 
 /**
@@ -37,7 +30,7 @@ function readAuthCookie(req: Request): string | null {
  * no longer verifies.
  */
 function sign(expiry: number): string {
-  return crypto.createHmac('sha256', AUTH_SECRET).update(String(expiry)).digest('hex');
+  return crypto.createHmac('sha256', CONFIG.auth.secret).update(String(expiry)).digest('hex');
 }
 
 export function issueToken(now: number = Date.now()): string {
@@ -64,7 +57,7 @@ export function setAuthCookie(res: Response): void {
     sameSite: 'lax',
     // Off unless SAKUYA_HTTPS=true: a Secure cookie is dropped over plain HTTP, and serving a
     // LAN over HTTP is a supported setup — defaulting this on would lock those users out.
-    secure: AUTH_COOKIE_SECURE,
+    secure: CONFIG.server.https,
     maxAge: SESSION_MS,
   });
 }
@@ -74,7 +67,7 @@ export function clearAuthCookie(res: Response): void {
 }
 
 export function isAuthed(req: Request): boolean {
-  if (!AUTH_ENABLED) return true;
+  if (!CONFIG.auth.enabled) return true;
   return verifyToken(readAuthCookie(req));
 }
 

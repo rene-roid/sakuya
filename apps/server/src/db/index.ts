@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { DB_PATH } from '../lib/config';
 import * as schema from './schema';
-import { phashBands } from '../lib/phashBands';
+import { phashBands, PHASH_BAND_COUNT } from '../lib/phashBands';
 
 export const sqlite = new Database(DB_PATH, { create: true });
 sqlite.exec('PRAGMA journal_mode = WAL;');
@@ -14,16 +14,6 @@ sqlite.exec('PRAGMA synchronous = NORMAL;');
 // A scan or tag job writing on the same connection can briefly hold the write lock; wait for it
 // rather than failing a request with SQLITE_BUSY.
 sqlite.exec('PRAGMA busy_timeout = 5000;');
-
-// A discarded downloader prototype used group_id-based download_groups/download_items tables.
-// The current schema is batch_id-based (download_batches/download_items); drop the legacy pair
-// so the tables below can be (re)created cleanly. Nothing salvageable was left in them: their
-// one row pointed at an already-deleted library and a downloads/ folder that no longer exists on disk.
-const legacyItemColumns = sqlite.query(`PRAGMA table_info(download_items)`).all() as { name: string }[];
-if (legacyItemColumns.some((c) => c.name === 'group_id')) {
-  sqlite.exec('DROP TABLE IF EXISTS download_items');
-  sqlite.exec('DROP TABLE IF EXISTS download_groups');
-}
 
 const isFreshDb = !sqlite.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'libraries'`).get();
 
@@ -229,6 +219,7 @@ END;
 // Add new columns/indexes here (next version number) instead of a bare try/catch —
 // a real failure (locked file, disk full) should crash loudly, not get swallowed
 // alongside "column already exists".
+const BANDS = [...Array(PHASH_BAND_COUNT).keys()];
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: 'ALTER TABLE libraries ADD COLUMN auto_scan_interval INTEGER NOT NULL DEFAULT 0' },
   { version: 2, sql: 'ALTER TABLE libraries ADD COLUMN custom_image_path TEXT' },
@@ -244,14 +235,8 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   // Perceptual-hash bands: eight indexed 8-bit slices of media.perceptual_hash, so similarity
   // search can prefilter candidates rather than scanning every image row. Values are backfilled
   // from the existing hashes below — no re-hashing of files is needed.
-  { version: 12, sql: 'ALTER TABLE media ADD COLUMN phash_b0 INTEGER' },
-  { version: 13, sql: 'ALTER TABLE media ADD COLUMN phash_b1 INTEGER' },
-  { version: 14, sql: 'ALTER TABLE media ADD COLUMN phash_b2 INTEGER' },
-  { version: 15, sql: 'ALTER TABLE media ADD COLUMN phash_b3 INTEGER' },
-  { version: 16, sql: 'ALTER TABLE media ADD COLUMN phash_b4 INTEGER' },
-  { version: 17, sql: 'ALTER TABLE media ADD COLUMN phash_b5 INTEGER' },
-  { version: 18, sql: 'ALTER TABLE media ADD COLUMN phash_b6 INTEGER' },
-  { version: 19, sql: 'ALTER TABLE media ADD COLUMN phash_b7 INTEGER' },
+  // Versions 12-19, one per band.
+  ...BANDS.map((i) => ({ version: 12 + i, sql: `ALTER TABLE media ADD COLUMN phash_b${i} INTEGER` })),
   // Both superseded: media_library_created_idx has library_id as its prefix, and the media_tags
   // primary key (media_id, tag_id) already serves every media_id lookup.
   { version: 20, sql: 'DROP INDEX IF EXISTS media_library_idx' },
@@ -293,8 +278,7 @@ const unbanded = sqlite
   .all() as { id: number; hash: string }[];
 if (unbanded.length > 0) {
   const setBands = sqlite.prepare(
-    `UPDATE media SET phash_b0=?, phash_b1=?, phash_b2=?, phash_b3=?, phash_b4=?, phash_b5=?, phash_b6=?, phash_b7=?
-     WHERE id = ?`,
+    `UPDATE media SET ${BANDS.map((i) => `phash_b${i}=?`).join(', ')} WHERE id = ?`,
   );
   sqlite.transaction(() => {
     for (const row of unbanded) setBands.run(...phashBands(row.hash), row.id);
@@ -306,16 +290,7 @@ if (unbanded.length > 0) {
 // add these columns — on an existing database that block would reference columns that don't exist
 // yet. Creating them after the backfill is also cheaper than maintaining them during it.
 // IF NOT EXISTS keeps this idempotent across both fresh and migrated databases.
-sqlite.exec(`
-CREATE INDEX IF NOT EXISTS media_phash_b0_idx ON media(phash_b0);
-CREATE INDEX IF NOT EXISTS media_phash_b1_idx ON media(phash_b1);
-CREATE INDEX IF NOT EXISTS media_phash_b2_idx ON media(phash_b2);
-CREATE INDEX IF NOT EXISTS media_phash_b3_idx ON media(phash_b3);
-CREATE INDEX IF NOT EXISTS media_phash_b4_idx ON media(phash_b4);
-CREATE INDEX IF NOT EXISTS media_phash_b5_idx ON media(phash_b5);
-CREATE INDEX IF NOT EXISTS media_phash_b6_idx ON media(phash_b6);
-CREATE INDEX IF NOT EXISTS media_phash_b7_idx ON media(phash_b7);
-`);
+sqlite.exec(BANDS.map((i) => `CREATE INDEX IF NOT EXISTS media_phash_b${i}_idx ON media(phash_b${i});`).join('\n'));
 
 // Populate the search index for rows that predate it. Keyed on which rows are missing rather
 // than a migration version, so it also heals a database that lost the index or was written to by

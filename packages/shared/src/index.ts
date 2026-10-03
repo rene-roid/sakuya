@@ -1,23 +1,32 @@
-type LibraryType = 'image' | 'video' | 'mixed';
-type MediaType = 'image' | 'video';
+// Runtime arrays, so the server's drizzle columns and zod schemas validate against the same lists.
+export const LIBRARY_TYPES = ['image', 'video', 'mixed'] as const;
+export const MEDIA_TYPES = ['image', 'video'] as const;
+export const JOB_TYPES = [
+  'scan',
+  'tag',
+  'thumbnail',
+  'model-download',
+  'hash',
+  'cleanup',
+  'downloader-install',
+  'reclassify-gifs',
+  'transcode',
+] as const;
+export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
+export const SCHEDULE_MODES = ['off', 'interval', 'after-scan'] as const;
+export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup'] as const;
+
+type LibraryType = (typeof LIBRARY_TYPES)[number];
+type MediaType = (typeof MEDIA_TYPES)[number];
 type MediaSource = 'folder' | 'upload';
 type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
-export type JobType =
-  | 'scan'
-  | 'tag'
-  | 'thumbnail'
-  | 'model-download'
-  | 'hash'
-  | 'cleanup'
-  | 'downloader-install'
-  | 'reclassify-gifs'
-  | 'transcode';
+export type JobType = (typeof JOB_TYPES)[number];
 type JobStatus = 'queued' | 'running' | 'done' | 'error';
-export type TagCategory = 'rating' | 'general' | 'character' | 'user';
+export type TagCategory = (typeof TAG_CATEGORIES)[number];
 type TagSource = 'ai' | 'user';
 type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
-export type ScheduleMode = 'off' | 'interval' | 'after-scan';
-export type ScheduleJobType = 'scan' | 'tag' | 'hash' | 'cleanup';
+export type ScheduleMode = (typeof SCHEDULE_MODES)[number];
+export type ScheduleJobType = (typeof SCHEDULE_JOB_TYPES)[number];
 
 export interface Library {
   id: number;
@@ -27,7 +36,6 @@ export interface Library {
   customImagePath: string | null;
   createdAt: number;
   lastVisitedAt: number | null;
-  autoScanInterval: number;
   sortOrder: number;
 }
 
@@ -156,7 +164,6 @@ export interface Settings {
   ai_tagging_enabled: string;
   confidence_threshold: string;
   accent_color: string;
-  model_status: ModelStatus;
   remember_mute_state: string;
   remember_volume_level: string;
   continue_where_left: string;

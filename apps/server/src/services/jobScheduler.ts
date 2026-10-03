@@ -1,20 +1,15 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
-import type { ScheduleJobType } from '@sakuya/shared';
+import type { JobSchedule, ScheduleJobType } from '@sakuya/shared';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
-import { enqueueTagJob, enqueueHashJob, modelReady } from './tagger';
+import { enqueueTagJob, enqueueHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
 import { enqueueCleanupJob } from './cleanup';
 import { enqueueTranscodeJob } from './transcoder';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
-
-type ScheduleMode = 'off' | 'interval' | 'after-scan';
-
-interface Schedule {
-  mode: ScheduleMode;
-  intervalMinutes: number;
-}
+import { mediaIdsWhere } from '../lib/mediaByIds';
 
 const timers = new Map<string, ReturnType<typeof setInterval>>();
+const PER_LIBRARY_TYPES: ScheduleJobType[] = ['scan', 'tag', 'hash'];
 
 function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType): boolean {
   const active = db
@@ -31,7 +26,7 @@ function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType)
   return active.length > 0;
 }
 
-export function resolveSchedule(jobType: ScheduleJobType, libraryId: number | null): Schedule {
+export function resolveSchedule(jobType: ScheduleJobType, libraryId: number | null): JobSchedule {
   const row = db
     .select()
     .from(schema.jobSchedules)
@@ -46,49 +41,10 @@ export function resolveSchedule(jobType: ScheduleJobType, libraryId: number | nu
   if (libraryId) {
     // Per-library: if no explicit row or useGlobal is set, fall through to the global default.
     if (!row || row.useGlobal) return resolveSchedule(jobType, null);
-    return { mode: row.mode as ScheduleMode, intervalMinutes: row.intervalMinutes };
+    return { mode: row.mode, intervalMinutes: row.intervalMinutes };
   }
   if (!row) return { mode: 'off', intervalMinutes: 0 };
-  return { mode: row.mode as ScheduleMode, intervalMinutes: row.intervalMinutes };
-}
-
-function untaggedIdsForLibrary(libraryId: number): number[] {
-  return db
-    .select({ id: schema.media.id })
-    .from(schema.media)
-    .where(and(eq(schema.media.libraryId, libraryId), isNull(schema.media.taggedAt)))
-    .all()
-    .map((r) => r.id);
-}
-
-function unhashedImageIdsForLibrary(libraryId: number): number[] {
-  return db
-    .select({ id: schema.media.id })
-    .from(schema.media)
-    .where(
-      and(
-        eq(schema.media.libraryId, libraryId),
-        eq(schema.media.type, 'image'),
-        isNull(schema.media.perceptualHash),
-      ),
-    )
-    .all()
-    .map((r) => r.id);
-}
-
-function untranscodedVideoIdsForLibrary(libraryId: number): number[] {
-  return db
-    .select({ id: schema.media.id })
-    .from(schema.media)
-    .where(
-      and(
-        eq(schema.media.libraryId, libraryId),
-        eq(schema.media.type, 'video'),
-        isNull(schema.media.transcodedAt),
-      ),
-    )
-    .all()
-    .map((r) => r.id);
+  return { mode: row.mode, intervalMinutes: row.intervalMinutes };
 }
 
 function libraryName(libraryId: number): string {
@@ -98,18 +54,18 @@ function libraryName(libraryId: number): string {
 
 function dispatchTagForLibrary(libraryId: number): void {
   if (!aiTaggingEnabled() || !modelReady()) return;
-  const ids = untaggedIdsForLibrary(libraryId);
+  const ids = untaggedMediaIds(libraryId);
   if (ids.length) enqueueTagJob(ids, `AI tag: ${libraryName(libraryId)}`, libraryId);
 }
 
 function dispatchHashForLibrary(libraryId: number): void {
-  const ids = unhashedImageIdsForLibrary(libraryId);
+  const ids = unhashedImageIds(libraryId);
   if (ids.length) enqueueHashJob(ids, libraryId);
 }
 
 function dispatchTranscodeForLibrary(libraryId: number): void {
   if (!videoTranscodeEnabled()) return;
-  const ids = untranscodedVideoIdsForLibrary(libraryId);
+  const ids = mediaIdsWhere(and(eq(schema.media.type, 'video'), isNull(schema.media.transcodedAt)), libraryId);
   if (ids.length) enqueueTranscodeJob(ids, `Transcode: ${libraryName(libraryId)}`, libraryId);
 }
 
@@ -155,22 +111,13 @@ export function runAllNow(scope: 'global' | number, jobType?: ScheduleJobType): 
       : [scope];
 
   for (const libraryId of libraryIds) {
-    if (!jobType || jobType === 'scan') {
-      const scanSchedule = resolveSchedule('scan', libraryId);
-      if (scanSchedule.mode !== 'off' || jobType === 'scan') {
-        dispatchForLibrary('scan', libraryId);
-      }
-    }
-    if (!jobType || jobType === 'tag') {
-      const tagSchedule = resolveSchedule('tag', libraryId);
-      if (jobType === 'tag' || tagSchedule.mode === 'interval') {
-        dispatchForLibrary('tag', libraryId);
-      }
-    }
-    if (!jobType || jobType === 'hash') {
-      const hashSchedule = resolveSchedule('hash', libraryId);
-      if (jobType === 'hash' || hashSchedule.mode === 'interval') {
-        dispatchForLibrary('hash', libraryId);
+    for (const type of PER_LIBRARY_TYPES) {
+      if (jobType && jobType !== type) continue;
+      const { mode } = resolveSchedule(type, libraryId);
+      // A scan runs whenever it isn't switched off; tag/hash only on their own interval (on
+      // 'after-scan' they ride along with the scan instead).
+      if (jobType === type || (type === 'scan' ? mode !== 'off' : mode === 'interval')) {
+        dispatchForLibrary(type, libraryId);
       }
     }
   }
@@ -183,7 +130,7 @@ export function runAllNow(scope: 'global' | number, jobType?: ScheduleJobType): 
   }
 }
 
-function setTimer(jobType: ScheduleJobType, libraryId: number | null, schedule: Schedule): void {
+function setTimer(jobType: ScheduleJobType, libraryId: number | null, schedule: JobSchedule): void {
   const key = `${jobType}:${libraryId ?? 0}`;
   const existing = timers.get(key);
   if (existing) clearInterval(existing);
@@ -194,14 +141,7 @@ function setTimer(jobType: ScheduleJobType, libraryId: number | null, schedule: 
   }
 
   const ms = schedule.intervalMinutes * 60 * 1000;
-  const timer = setInterval(() => {
-    if (libraryId !== null) {
-      dispatchForLibrary(jobType, libraryId);
-    } else {
-      dispatchForLibrary(jobType, 0);
-    }
-  }, ms);
-  timers.set(key, timer);
+  timers.set(key, setInterval(() => dispatchForLibrary(jobType, libraryId ?? 0), ms));
 }
 
 /**
@@ -213,9 +153,8 @@ export function scheduleAll(): void {
   timers.clear();
 
   const libs = db.select({ id: schema.libraries.id }).from(schema.libraries).all();
-  const perLibraryTypes: ScheduleJobType[] = ['scan', 'tag', 'hash'];
 
-  for (const jobType of perLibraryTypes) {
+  for (const jobType of PER_LIBRARY_TYPES) {
     for (const lib of libs) {
       const schedule = resolveSchedule(jobType, lib.id);
       setTimer(jobType, lib.id, schedule);
@@ -226,8 +165,4 @@ export function scheduleAll(): void {
   setTimer('cleanup', null, cleanupSchedule);
 
   console.log(`[job-scheduler] initialized ${timers.size} interval timers`);
-}
-
-export function initScheduler(): void {
-  scheduleAll();
 }

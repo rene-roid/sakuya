@@ -1,8 +1,7 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import { sqlite, db, schema } from '../db';
 import { THUMBS_DIR, TRANSCODES_DIR } from '../lib/config';
-import { thumbPathFor } from './thumbnailer';
-import { transcodePathFor } from './transcoder';
 import { enqueueJob, type JobHandle } from './jobQueue';
 
 /**
@@ -31,31 +30,22 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
   // entry per media row, so the per-file query made this scale quadratically with library size.
   const liveIds = new Set(db.select({ id: schema.media.id }).from(schema.media).all().map((r) => r.id));
 
-  let removedThumbs = 0;
-  if (fs.existsSync(THUMBS_DIR)) {
-    for (const entry of fs.readdirSync(THUMBS_DIR)) {
-      const match = entry.match(/^(\d+)\.webp$/);
-      if (!match) continue;
-      const mediaId = Number(match[1]);
-      if (liveIds.has(mediaId)) continue;
-      fs.rmSync(thumbPathFor(mediaId), { force: true });
-      removedThumbs++;
-    }
-  }
-
-  // Transcodes are the same one-file-per-media-id layout, and far larger; an orphan here is often
+  // Thumbnails and transcodes share the one-file-per-media-id layout; a transcode orphan is often
   // hundreds of megabytes.
-  let removedTranscodes = 0;
-  if (fs.existsSync(TRANSCODES_DIR)) {
-    for (const entry of fs.readdirSync(TRANSCODES_DIR)) {
-      const match = entry.match(/^(\d+)\.mp4$/);
-      if (!match) continue;
-      const mediaId = Number(match[1]);
-      if (liveIds.has(mediaId)) continue;
-      fs.rmSync(transcodePathFor(mediaId), { force: true });
-      removedTranscodes++;
+  const [removedThumbs, removedTranscodes] = [
+    [THUMBS_DIR, '.webp'],
+    [TRANSCODES_DIR, '.mp4'],
+  ].map(([dir, ext]) => {
+    if (!fs.existsSync(dir)) return 0;
+    let removed = 0;
+    for (const entry of fs.readdirSync(dir)) {
+      const match = /^(\d+)(\.\w+)$/.exec(entry);
+      if (!match || match[2] !== ext || liveIds.has(Number(match[1]))) continue;
+      fs.rmSync(path.join(dir, entry), { force: true });
+      removed++;
     }
-  }
+    return removed;
+  });
 
   // Recompute every tag's usage_count. This used to bind one parameter per tag for an
   // `WHERE id IN (...)` listing every id in the table — equivalent to no WHERE at all, and on a

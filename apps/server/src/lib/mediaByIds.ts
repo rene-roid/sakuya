@@ -1,4 +1,4 @@
-import { inArray } from 'drizzle-orm';
+import { and, eq, inArray, type SQL } from 'drizzle-orm';
 import { db, schema } from '../db';
 
 export type MediaRow = typeof schema.media.$inferSelect;
@@ -32,4 +32,14 @@ export function mediaRowsByIds(ids: number[]): Map<number, MediaRow> {
     }
   }
   return byId;
+}
+
+/** Ids of media matching `cond`, optionally narrowed to one library. */
+export function mediaIdsWhere(cond: SQL | undefined, libraryId?: number): number[] {
+  return db
+    .select({ id: schema.media.id })
+    .from(schema.media)
+    .where(libraryId === undefined ? cond : and(eq(schema.media.libraryId, libraryId), cond))
+    .all()
+    .map((r) => r.id);
 }

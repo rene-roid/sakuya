@@ -14,6 +14,20 @@ export function intParam(value: string): number {
   return n;
 }
 
+/** Opaque pagination cursor: the sort key and tiebreakers of the last row served. */
+export function encodeCursor(parts: unknown[]): string {
+  return Buffer.from(JSON.stringify(parts)).toString('base64url');
+}
+
+/** The parts encodeCursor packed; anything that isn't one is a 400. */
+export function decodeCursor(cursor: string): any[] {
+  try {
+    return [...JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))];
+  } catch {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+}
+
 /** Buffer the raw body and let Bun's fetch primitives parse the multipart form. */
 export async function readFormData(req: ExpressRequest) {
   const chunks: Buffer[] = [];

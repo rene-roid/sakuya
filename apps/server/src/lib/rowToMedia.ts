@@ -1,4 +1,6 @@
+import type { SQLQueryBindings } from 'bun:sqlite';
 import type { Media } from '@sakuya/shared';
+import { sqlite } from '../db';
 
 /**
  * A media row joined with its library name and tag count — the shape rowToMedia expects. Append
@@ -8,6 +10,12 @@ export const MEDIA_SELECT = `
   SELECT m.*, l.name AS library_name,
          (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
   FROM media m LEFT JOIN libraries l ON l.id = m.library_id`;
+
+/** How many media rows match `conds` (aliased `m`). Paginated lists compute it for the first page only. */
+export function countMedia(conds: string[], params: SQLQueryBindings[]): number {
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  return (sqlite.query(`SELECT COUNT(*) AS c FROM media m ${where}`).get(...params) as { c: number }).c;
+}
 
 /** A raw sqlite media row: snake_case columns plus the joined ones some queries add. */
 export interface MediaSqlRow {
