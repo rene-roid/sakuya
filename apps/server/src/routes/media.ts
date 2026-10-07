@@ -162,14 +162,23 @@ mediaRouter.get(
       pageParams.push(key, id);
     }
 
+    // Rank on narrow rows, then fetch full rows for the page only: with m.* and the tag_count
+    // subquery in the ranking select, SQLite built every matching row before LIMIT kept 60.
+    const order = dir === 'asc' ? 'ASC' : 'DESC';
     const sql = `
-      SELECT m.*, ${keyExpr} AS sort_key, l.name AS library_name,
+      WITH page AS (
+        SELECT m.id AS id, ${keyExpr} AS sort_key
+        FROM media m
+        ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
+        ORDER BY ${keyExpr} ${order}, m.id ${order}
+        LIMIT ?
+      )
+      SELECT m.*, page.sort_key, l.name AS library_name,
              (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-      FROM media m
+      FROM page
+      JOIN media m ON m.id = page.id
       LEFT JOIN libraries l ON l.id = m.library_id
-      ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
-      ORDER BY ${keyExpr} ${dir === 'asc' ? 'ASC' : 'DESC'}, m.id ${dir === 'asc' ? 'ASC' : 'DESC'}
-      LIMIT ?`;
+      ORDER BY page.sort_key ${order}, m.id ${order}`;
     const rows = sqlite.query(sql).all(...pageParams, query.limit) as MediaSqlRow[];
 
     let nextCursor: string | null = null;
