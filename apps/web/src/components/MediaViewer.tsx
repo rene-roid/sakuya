@@ -309,7 +309,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
     mutationFn: (body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> }) =>
       api.patchTags(item.id, body),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['media-detail', item.id], updated);
+      queryClient.setQueryData(['media-detail', updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
       toast('Tags saved');
@@ -319,7 +319,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   const renameMutation = useMutation({
     mutationFn: (filename: string) => api.renameMedia(item.id, filename),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['media-detail', item.id], updated);
+      queryClient.setQueryData(['media-detail', updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setRenaming(false);
       toast('Renamed');

@@ -16,8 +16,8 @@ export function HeartButton({
   const mutation = useMutation({
     mutationFn: (next: boolean) => api.likeMedia(mediaId, next),
     onSuccess: (detail) => {
-      queryClient.setQueryData(['media-detail', mediaId], detail);
-      patchCachedMedia(queryClient, mediaId, { liked: detail.liked, likedAt: detail.likedAt });
+      queryClient.setQueryData(['media-detail', detail.id], detail);
+      patchCachedMedia(queryClient, detail.id, { liked: detail.liked, likedAt: detail.likedAt });
       queryClient.invalidateQueries({ predicate: (query) => isLikedMediaList(query.queryKey) });
       // Only the liked count and cover need the server; the rows were patched above.
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
