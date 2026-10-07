@@ -1,5 +1,5 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
-import type { JobSchedule, ScheduleJobType } from '@sakuya/shared';
+import type { JobSchedule, JobType, ScheduleJobType } from '@sakuya/shared';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
 import { enqueueTagJob, enqueueHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
@@ -11,7 +11,7 @@ import { mediaIdsWhere } from '../lib/mediaByIds';
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 const PER_LIBRARY_TYPES: ScheduleJobType[] = ['scan', 'tag', 'hash'];
 
-function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType): boolean {
+function activeJobForLibrary(libraryId: number | null, jobType: JobType): boolean {
   const active = db
     .select({ id: schema.jobs.id })
     .from(schema.jobs)
@@ -83,16 +83,20 @@ function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
 
 /**
  * Enqueue the follow-up jobs configured to run right after a scan.
- * Called from the scan handler once indexing completes.
+ * Called from the scan handler once indexing completes. A follow-up of a type already queued or
+ * running for this library is skipped: it would pick the same ids, and two transcodes of one id
+ * write the same output file.
  */
 export function dispatchAfterScan(libraryId: number): void {
+  const idle = (jobType: JobType) => !activeJobForLibrary(libraryId, jobType);
+
   const tagSchedule = resolveSchedule('tag', libraryId);
-  if (tagSchedule.mode === 'after-scan') dispatchTagForLibrary(libraryId);
+  if (tagSchedule.mode === 'after-scan' && idle('tag')) dispatchTagForLibrary(libraryId);
 
   const hashSchedule = resolveSchedule('hash', libraryId);
-  if (hashSchedule.mode === 'after-scan') dispatchHashForLibrary(libraryId);
+  if (hashSchedule.mode === 'after-scan' && idle('hash')) dispatchHashForLibrary(libraryId);
 
-  dispatchTranscodeForLibrary(libraryId);
+  if (idle('transcode')) dispatchTranscodeForLibrary(libraryId);
 }
 
 /**
