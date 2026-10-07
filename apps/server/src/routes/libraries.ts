@@ -106,7 +106,11 @@ librariesRouter.patch(
   '/api/libraries/:id',
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
-    const body = libraryBodySchema.partial().extend({ thumbnailMediaId: z.number().nullable().optional() }).parse(req.body);
+    const body = libraryBodySchema
+      .partial()
+      .extend({ thumbnailMediaId: z.number().int().nullable().optional() })
+      .parse(req.body);
+    if (!Object.keys(body).length) return res.status(400).json({ error: 'Nothing to update' });
     const row = db.update(schema.libraries).set(body).where(eq(schema.libraries.id, id)).returning().get();
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(libraryWithStats(row));

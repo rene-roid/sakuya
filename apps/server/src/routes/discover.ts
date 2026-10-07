@@ -209,6 +209,9 @@ discoverRouter.get(
     let cursor: { key: number; id: number; snapshot: number } | null = null;
     if (query.cursor) {
       const [key, id, snapshot] = decodeCursor(query.cursor);
+      if (typeof key !== 'number' || typeof id !== 'number' || typeof snapshot !== 'number') {
+        return res.status(400).json({ error: 'Invalid cursor' });
+      }
       cursor = { key, id, snapshot };
     }
     // A cursor whose snapshot has aged out falls back to the current one: the rest of that scroll
