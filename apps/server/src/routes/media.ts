@@ -337,23 +337,19 @@ mediaRouter.post(
     const rows = mediaRowsByIds(body.ids);
     const failed: BulkFailure[] = [];
     let updated = 0;
+    // Prepared once: building a Drizzle query per link added ~280ms to a 5000-item batch.
+    const link = sqlite.prepare(
+      `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, NULL, 'user') ON CONFLICT DO NOTHING`,
+    );
+    const unlink = sqlite.prepare('DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?');
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
         if (!rows.has(id)) {
           failed.push({ id, error: 'Not found' });
           continue;
         }
-        for (const tagId of addTagIds) {
-          db.insert(schema.mediaTags)
-            .values({ mediaId: id, tagId, confidence: null, source: 'user' })
-            .onConflictDoNothing()
-            .run();
-        }
-        for (const tagId of removeTagIds) {
-          db.delete(schema.mediaTags)
-            .where(and(eq(schema.mediaTags.mediaId, id), eq(schema.mediaTags.tagId, tagId)))
-            .run();
-        }
+        for (const tagId of addTagIds) link.run(id, tagId);
+        for (const tagId of removeTagIds) unlink.run(id, tagId);
         updated++;
       }
     });
