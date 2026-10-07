@@ -737,7 +737,7 @@ mediaRouter.post(
 );
 
 const progressSchema = z.object({
-  progress: z.number().min(0).max(1),
+  progress: z.number().min(0).max(1).optional(),
   view: z.boolean().optional(),
   watchedDelta: z.number().min(0).max(60).optional(),
   // Dwell is flushed on close/tab-hide, so a single delta can be much longer than a video tick.
@@ -749,7 +749,8 @@ mediaRouter.patch(
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
     const body = progressSchema.parse(req.body);
-    const updates: Record<string, unknown> = { viewProgress: body.progress, lastViewedAt: Date.now() };
+    const updates: Record<string, unknown> = { lastViewedAt: Date.now() };
+    if (body.progress !== undefined) updates.viewProgress = body.progress;
     if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
     if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;

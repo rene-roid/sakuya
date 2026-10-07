@@ -5,6 +5,7 @@ import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, 
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
+import { patchCachedMedia } from '../lib/mediaCache';
 import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
@@ -150,7 +151,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       lastSavedProgress.current = progress;
       const watchedDelta = pendingWatchedSeconds.current;
       pendingWatchedSeconds.current = 0;
-      api.saveProgress(item.id, progress, { watchedDelta }).catch(() => {});
+      api.saveProgress(item.id, { progress, watchedDelta }).catch(() => {});
     },
     [item],
   );
@@ -162,7 +163,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     lastSavedProgress.current = item.viewProgress ?? 0;
     lastPlayedTime.current = 0;
     pendingWatchedSeconds.current = 0;
-    api.saveProgress(item.id, item.viewProgress ?? 0, { view: true }).catch(() => {});
+    api.saveProgress(item.id, { view: true }).catch(() => {});
   }, [item?.id]);
 
   // Dwell time: the still-image counterpart to a video's watched seconds. Counts only while the
@@ -170,8 +171,6 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   useEffect(() => {
     if (!item || (item.type === 'video' && !isGifName(item.filename))) return;
     const mediaId = item.id;
-    // Echo the current progress back rather than 0 — this endpoint writes whatever it's given.
-    const progress = item.viewProgress ?? 0;
     let startedAt = document.visibilityState === 'visible' ? Date.now() : 0;
     let pending = 0;
 
@@ -181,7 +180,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       const seconds = pending / 1000;
       if (seconds < MIN_DWELL_SECONDS) return;
       pending = 0;
-      api.saveProgress(mediaId, progress, { dwellDelta: Math.min(seconds, 3600) }).catch(() => {});
+      api.saveProgress(mediaId, { dwellDelta: Math.min(seconds, 3600) }).catch(() => {});
     };
 
     const onVisibility = () => {
@@ -224,15 +223,17 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       const delta = video.currentTime - lastPlayedTime.current;
       if (delta > 0 && delta < 2) pendingWatchedSeconds.current += delta;
       if (!completedRef.current && pendingWatchedSeconds.current > 0 && video.duration) {
-        const progress = Math.min(video.currentTime / video.duration, 1);
-        api.saveProgress(mediaId, progress, { watchedDelta: pendingWatchedSeconds.current }).catch(() => {});
+        lastSavedProgress.current = Math.min(video.currentTime / video.duration, 1);
+        api.saveProgress(mediaId, { progress: lastSavedProgress.current, watchedDelta: pendingWatchedSeconds.current }).catch(() => {});
         pendingWatchedSeconds.current = 0;
       }
+      // Reopening resumes from the cached list row, which still holds the progress it was fetched with.
+      patchCachedMedia(queryClient, mediaId, { viewProgress: lastSavedProgress.current });
       video.pause();
       video.removeAttribute('src');
       video.load();
     };
-  }, [item?.id]);
+  }, [item?.id, queryClient]);
 
   useEffect(() => {
     setRenaming(false);
