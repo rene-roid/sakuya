@@ -62,7 +62,8 @@ export function TagSearchInput({
     staleTime: 30_000,
   });
   const visible = (suggestions ?? []).filter((s) => !tags.includes(s.name));
-  const showDropdown = focused && segment.trim().length > 0 && visible.length > 0;
+  // Until the debounce catches up the list belongs to an older segment, and Tab would complete it.
+  const showDropdown = focused && segment.trim().length > 0 && debounced === segment.trim() && visible.length > 0;
 
   // The list is fixed-positioned, so it has to follow the box: the toolbar it sits in is sticky,
   // and both page scroll and a resize move the box out from under a stale measurement.
