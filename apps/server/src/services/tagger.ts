@@ -227,6 +227,11 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   return out;
 }
 
+/** Tags are stored lowercase with underscores for spaces; every user-typed name goes through this. */
+export function normalizeTagName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '_');
+}
+
 export function upsertTag(name: string, category: TagCategory): number {
   const existing = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
   if (existing) return existing.id;

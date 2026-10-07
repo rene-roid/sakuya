@@ -262,3 +262,26 @@ test('rename-batch refuses a name a missing file still holds, and still applies 
   expect(fs.readFileSync(okRow!.path, 'utf8')).toBe('ghost-batch-ok.png');
   expect(fs.readFileSync(blocked.path, 'utf8')).toBe('ghost-batch-blocked.png');
 });
+
+test('a tag typed with spaces can be filtered on and removed the way it was added', async () => {
+  const a = addMedia('spaced-tag.png');
+  const b = addMedia('spaced-tag-batch.png');
+  const patchTags = (id: number, body: unknown) =>
+    fetch(`${BASE}/api/media/${id}/tags`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  await patchTags(a.id, { add: ['Blue Hair'] });
+  await post('/api/media/tags-batch', { ids: [b.id], add: ['Blue Hair'] });
+  expect(tagsOf(a.id)).toEqual(['blue_hair']);
+
+  const filtered = await json(fetch(`${BASE}/api/media?libraryId=${library.id}&tags=${encodeURIComponent('Blue Hair')}`));
+  expect(filtered.items.map((m: { id: number }) => m.id).sort()).toEqual([a.id, b.id].sort());
+
+  await patchTags(a.id, { remove: ['Blue Hair'] });
+  await post('/api/media/tags-batch', { ids: [b.id], remove: ['Blue Hair'] });
+  expect(tagsOf(a.id)).toEqual([]);
+  expect(tagsOf(b.id)).toEqual([]);
+});

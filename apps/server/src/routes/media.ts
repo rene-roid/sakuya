@@ -8,7 +8,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, normalizeTagName } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
@@ -85,7 +85,7 @@ function ftsMatchExpr(terms: string[]): string {
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
   const tagNames = (query.tags ?? '')
     .split(',')
-    .map((t) => t.trim().toLowerCase())
+    .map(normalizeTagName)
     .filter(Boolean);
 
   const conds: string[] = [];
@@ -312,8 +312,8 @@ mediaRouter.post(
   '/api/media/tags-batch',
   wrap(async (req, res) => {
     const body = tagsBatchSchema.parse(req.body);
-    const addNames = body.add.map((raw) => raw.trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
-    const removeNames = body.remove.map((raw) => raw.trim().toLowerCase()).filter(Boolean);
+    const addNames = body.add.map(normalizeTagName).filter(Boolean);
+    const removeNames = body.remove.map(normalizeTagName).filter(Boolean);
     if (!addNames.length && !removeNames.length) {
       return res.status(400).json({ error: 'Nothing to add or remove' });
     }
@@ -630,7 +630,7 @@ mediaRouter.patch(
     const body = tagsPatchSchema.parse(req.body);
     const touched: number[] = [];
     for (const raw of body.add) {
-      const name = raw.trim().toLowerCase().replace(/\s+/g, '_');
+      const name = normalizeTagName(raw);
       if (!name) continue;
       const tagId = upsertTag(name, body.category);
       db.insert(schema.mediaTags)
@@ -640,7 +640,7 @@ mediaRouter.patch(
       touched.push(tagId);
     }
     for (const raw of body.remove) {
-      const name = raw.trim().toLowerCase();
+      const name = normalizeTagName(raw);
       const tag = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
       if (!tag) continue;
       db.delete(schema.mediaTags)
@@ -650,7 +650,7 @@ mediaRouter.patch(
     }
     if (body.setCategory) {
       for (const [rawName, category] of Object.entries(body.setCategory)) {
-        const name = rawName.trim().toLowerCase();
+        const name = normalizeTagName(rawName);
         db.update(schema.tags).set({ category }).where(eq(schema.tags.name, name)).run();
       }
     }
