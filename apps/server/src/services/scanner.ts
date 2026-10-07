@@ -203,10 +203,14 @@ export async function indexFile(
  * folder. Pruning then would erase every item's tags, likes and watch history with nothing to
  * restore them from, so those rows are withheld and the folder is flagged instead. A folder that
  * really was emptied can be detached from its library, which removes its rows.
+ *
+ * Rows under `nestedRoots`, deeper folders of the same library, belong to those folders, so an
+ * unmounted inner folder gets its own guard instead of being pruned through the outer one.
  */
 async function pruneMissing(
   libraryId: number,
   rootPath: string,
+  nestedRoots: string[],
   rootHasFiles: boolean,
   walked: Set<string>,
 ): Promise<{ removed: number; withheld: number }> {
@@ -215,14 +219,17 @@ async function pruneMissing(
     .from(schema.media)
     .where(and(eq(schema.media.libraryId, libraryId), eq(schema.media.source, 'folder')))
     .all()
-    .filter((row) => isUnder(row.path, rootPath));
+    .filter((row) => isUnder(row.path, rootPath) && !nestedRoots.some((nested) => isUnder(row.path, nested)));
   const gone: number[] = [];
   for (const row of rows) {
     if (walked.has(row.path)) continue;
     try {
       await fs.access(row.path);
-    } catch {
-      gone.push(row.id);
+    } catch (err) {
+      // Only a path that doesn't exist is gone. EACCES, EIO or a stale network mount says nothing
+      // about whether the file was deleted.
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT' || code === 'ENOTDIR') gone.push(row.id);
     }
   }
   if (!rootHasFiles && gone.length > 0 && gone.length === rows.length) return { removed: 0, withheld: gone.length };
@@ -293,12 +300,13 @@ export function enqueueScanJob(libraryId: number) {
         db.update(schema.folders).set({ status: 'scanning' }).where(eq(schema.folders.id, folder.id)).run();
       }
 
+      // A folder inside another folder of this library is already covered by the outer walk.
+      const nestedIn = (folder: { path: string }) =>
+        libFolders.filter((other) => other.path !== folder.path && isUnder(other.path, folder.path)).map((f) => f.path);
       const files: string[] = [];
-      const rootHasFiles = new Map<number, boolean>();
       for (const folder of libFolders) {
-        const before = files.length;
+        if (libFolders.some((outer) => outer.path !== folder.path && isUnder(folder.path, outer.path))) continue;
         await walk(folder.path, files);
-        rootHasFiles.set(folder.id, files.length > before);
       }
       job.update({ total: files.length, log: `Found ${files.length} files, indexing…` });
 
@@ -317,7 +325,9 @@ export function enqueueScanJob(libraryId: number) {
       let withheld = 0;
       const walked = new Set(files);
       for (const folder of libFolders) {
-        const result = await pruneMissing(libraryId, folder.path, rootHasFiles.get(folder.id) ?? false, walked);
+        const nested = nestedIn(folder);
+        const rootHasFiles = files.some((file) => isUnder(file, folder.path) && !nested.some((n) => isUnder(file, n)));
+        const result = await pruneMissing(libraryId, folder.path, nested, rootHasFiles, walked);
         pruned += result.removed;
         withheld += result.withheld;
         if (result.withheld) unreachable.push(folder.path);

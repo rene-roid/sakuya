@@ -84,3 +84,50 @@ test('replacing every file in a folder still prunes the old ones', async () => {
   expect(mediaCount()).toBe(1);
   expect(db.select().from(schema.media).where(eq(schema.media.libraryId, lib.id)).get()!.filename).toBe('c.png');
 });
+
+test.skipIf(process.getuid?.() === 0)('files in a folder the server cannot read are kept', async () => {
+  const locked = path.join(root, 'locked');
+  fs.mkdirSync(locked);
+  await writeImage('locked/d.png', '#ffff00');
+  expect((await scan()).status).toBe('done');
+  expect(mediaCount()).toBe(2);
+
+  fs.chmodSync(locked, 0o000);
+  try {
+    await scan();
+    expect(mediaCount()).toBe(2);
+  } finally {
+    fs.chmodSync(locked, 0o755);
+  }
+  fs.rmSync(locked, { recursive: true });
+  await scan();
+  expect(mediaCount()).toBe(1);
+});
+
+test('an unmounted folder nested inside another folder of the library keeps its media', async () => {
+  const inner = path.join(root, 'inner');
+  const innerParked = path.join(dataDir, 'inner-unmounted');
+  fs.mkdirSync(inner);
+  await writeImage('inner/e.png', '#00ffff');
+  await writeImage('inner/f.png', '#ff00ff');
+  const innerFolder = db
+    .insert(schema.folders)
+    .values({ libraryId: lib.id, path: inner, createdAt: Date.now() })
+    .returning()
+    .get();
+  const first = await scan();
+  expect(first.status).toBe('done');
+  expect(first.log).toContain('2 indexed, 1 unchanged');
+  expect(mediaCount()).toBe(3);
+
+  fs.renameSync(inner, innerParked);
+  fs.mkdirSync(inner);
+  const job = await scan();
+  expect(job.status).toBe('error');
+  expect(job.log).toContain('Kept 2 items');
+  expect(mediaCount()).toBe(3);
+  expect(db.select().from(schema.folders).where(eq(schema.folders.id, innerFolder.id)).get()!.status).toBe('error');
+  expect(db.select().from(schema.folders).where(eq(schema.folders.id, folder.id)).get()!.status).toBe('indexed');
+  fs.rmdirSync(inner);
+  fs.renameSync(innerParked, inner);
+});
