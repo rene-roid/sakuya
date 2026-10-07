@@ -44,6 +44,7 @@ CREATE TABLE media (
   liked_at INTEGER,
   perceptual_hash TEXT
 );
+CREATE INDEX media_type_idx ON media(type);
 `);
 legacy.close();
 
@@ -74,6 +75,19 @@ describe('schema migrations', () => {
     // These are created after the migrations rather than in the CREATE TABLE block, because that
     // block runs first and would reference columns an existing database doesn't have yet.
     for (let i = 0; i < 8; i++) expect(indexes).toContain(`media_phash_b${i}_idx`);
+  });
+
+  test('the single-column type index is replaced by the (type, created_at) one', async () => {
+    await import('./db');
+
+    const db = new Database(path.join(dataDir, 'tbge.db'));
+    const indexes = (db.query(`SELECT name FROM sqlite_master WHERE type = 'index'`).all() as { name: string }[]).map(
+      (r) => r.name,
+    );
+    db.close();
+
+    expect(indexes).toContain('media_type_created_idx');
+    expect(indexes).not.toContain('media_type_idx');
   });
 
   test('the live schema matches the Drizzle definitions', async () => {

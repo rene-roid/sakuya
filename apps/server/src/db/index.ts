@@ -78,7 +78,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
 CREATE INDEX IF NOT EXISTS media_library_created_idx ON media(library_id, created_at);
 CREATE INDEX IF NOT EXISTS media_created_idx ON media(created_at);
 CREATE INDEX IF NOT EXISTS media_last_viewed_idx ON media(last_viewed_at);
-CREATE INDEX IF NOT EXISTS media_type_idx ON media(type);
+-- (type, created_at) rather than type alone, which made a ?type= listing sort every matching row
+-- in a temp b-tree to serve the default recent sort.
+CREATE INDEX IF NOT EXISTS media_type_created_idx ON media(type, created_at);
 CREATE INDEX IF NOT EXISTS media_hash_idx ON media(content_hash);
 CREATE INDEX IF NOT EXISTS media_liked_idx ON media(liked);
 CREATE TABLE IF NOT EXISTS tags (
@@ -241,6 +243,8 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   // primary key (media_id, tag_id) already serves every media_id lookup.
   { version: 20, sql: 'DROP INDEX IF EXISTS media_library_idx' },
   { version: 21, sql: 'DROP INDEX IF EXISTS media_tags_media_idx' },
+  // Superseded by media_type_created_idx, which the CREATE block above adds.
+  { version: 22, sql: 'DROP INDEX IF EXISTS media_type_idx' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;
