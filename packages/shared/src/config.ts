@@ -230,10 +230,18 @@ const RETIRED_ENV = [
   'SAKUYA_SHARP_CONCURRENCY',
 ];
 
+/** true/false, 1/0 or yes/no in any case; anything else passes through for validation to reject. */
+function envBool(raw: string): unknown {
+  const value = raw.trim().toLowerCase();
+  if (value === 'true' || value === '1' || value === 'yes') return true;
+  if (value === 'false' || value === '0' || value === 'no') return false;
+  return raw;
+}
+
 /** Coerce an env string into the JSON value the file would hold, for the given setting path. */
 function envValue(setting: string, raw: string): unknown {
   if (setting === 'server.port') return /^\d+$/.test(raw.trim()) ? Number(raw) : raw;
-  if (setting === 'server.https' || setting === 'auth.enabled') return raw.trim() === 'true';
+  if (setting === 'server.https' || setting === 'auth.enabled') return envBool(raw);
   if (setting === 'limits.cpus') return raw.trim() && Number.isFinite(Number(raw)) ? Number(raw) : raw;
   return raw;
 }
@@ -397,7 +405,8 @@ export function loadConfig({ env = process.env, create = false }: LoadOptions = 
 
   // The one ignored variable that must not just be a warning: someone who turned login on the old
   // way would otherwise upgrade into a server that is silently open.
-  const wantsAuth = env.AUTH_ENABLED === 'true' || (!docker && env.SAKUYA_AUTH_ENABLED === 'true');
+  const wantsAuth =
+    envBool(env.AUTH_ENABLED ?? '') === true || (!docker && envBool(env.SAKUYA_AUTH_ENABLED ?? '') === true);
   if (wantsAuth && !config.auth.enabled) {
     throw new ConfigError(
       file,
