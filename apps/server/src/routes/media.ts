@@ -56,6 +56,11 @@ function safeFilename(filename: string): string | null {
   return name && name !== '.' && name !== '..' ? name : null;
 }
 
+/** Whether a media row owns `filePath`, including one whose file is gone from disk. */
+function pathIndexed(filePath: string): boolean {
+  return sqlite.query('SELECT 1 FROM media WHERE path = ?').get(filePath) !== null;
+}
+
 /**
  * FTS5 query string for a set of free-text search terms.
  *
@@ -426,31 +431,37 @@ mediaRouter.post(
         failed.push({ id: item.id, error: 'A file with that name already exists' });
         continue;
       }
+      if (pathIndexed(newPath)) {
+        failed.push({ id: item.id, error: 'Another item already has that name' });
+        continue;
+      }
       claimed.add(newPath);
       planned.push({ id: item.id, from: row.path, to: newPath, filename: safeName });
     }
 
-    // Phase 2: move on disk first; only rows whose file actually moved get their path updated.
-    const renamed: typeof planned = [];
+    // Phase 2: each row follows its own file right away, and a row that can't be updated puts its
+    // file back, so a failure never leaves a moved file behind a row pointing at the old path.
+    let renamed = 0;
     for (const move of planned) {
       try {
         fs.renameSync(move.from, move.to);
-        renamed.push(move);
       } catch (err) {
         failed.push({ id: move.id, error: err instanceof Error ? err.message : 'Rename failed' });
+        continue;
       }
-    }
-    const commit = sqlite.transaction(() => {
-      for (const move of renamed) {
+      try {
         db.update(schema.media)
           .set({ path: move.to, filename: move.filename })
           .where(eq(schema.media.id, move.id))
           .run();
+        renamed++;
+      } catch (err) {
+        fs.renameSync(move.to, move.from);
+        failed.push({ id: move.id, error: err instanceof Error ? err.message : 'Rename failed' });
       }
-    });
-    commit();
+    }
 
-    const body: BulkResult = { ok: true, updated: renamed.length, failed };
+    const body: BulkResult = { ok: true, updated: renamed, failed };
     res.json(body);
   }),
 );
@@ -537,6 +548,7 @@ mediaRouter.patch(
     if (safeName === row.filename) return res.json(getDetail(id));
     const newPath = path.join(path.dirname(row.path), safeName);
     if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
+    if (pathIndexed(newPath)) return res.status(409).json({ error: 'Another item already has that name' });
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source file missing' });
     fs.renameSync(row.path, newPath);
     db.update(schema.media).set({ path: newPath, filename: safeName }).where(eq(schema.media.id, id)).run();

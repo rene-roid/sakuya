@@ -219,3 +219,46 @@ test('a board can drop a whole selection at once, leaving the media alone', asyn
   expect(db.select().from(schema.media).where(eq(schema.media.id, a.id)).get()).toBeTruthy();
   expect(fs.existsSync(a.path)).toBe(true);
 });
+
+/** A row whose file is gone from disk: it still owns its path in the unique media.path index. */
+function addGhost(filename: string) {
+  const row = addMedia(filename);
+  fs.rmSync(row.path);
+  return row;
+}
+
+test('rename refuses a name a missing file still holds, and leaves the file where it was', async () => {
+  const a = addMedia('ghost-src.png');
+  addGhost('ghost-target.png');
+
+  const res = await fetch(`${BASE}/api/media/${a.id}/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: 'ghost-target.png' }),
+  });
+  expect(res.status).toBe(409);
+  expect(fs.readFileSync(a.path, 'utf8')).toBe('ghost-src.png');
+  expect(db.select().from(schema.media).where(eq(schema.media.id, a.id)).get()?.path).toBe(a.path);
+});
+
+test('rename-batch refuses a name a missing file still holds, and still applies the rest', async () => {
+  const ok = addMedia('ghost-batch-ok.png');
+  const blocked = addMedia('ghost-batch-blocked.png');
+  addGhost('ghost-batch-taken.png');
+
+  const res = await post('/api/media/rename-batch', {
+    items: [
+      { id: ok.id, filename: 'ghost-batch-renamed.png' },
+      { id: blocked.id, filename: 'ghost-batch-taken.png' },
+    ],
+  });
+  expect(res.status).toBe(200);
+  const body = await json(res);
+  expect(body.updated).toBe(1);
+  expect(body.failed).toEqual([{ id: blocked.id, error: 'Another item already has that name' }]);
+
+  const okRow = db.select().from(schema.media).where(eq(schema.media.id, ok.id)).get();
+  expect(okRow?.path).toBe(path.join(MEDIA_DIR, 'ghost-batch-renamed.png'));
+  expect(fs.readFileSync(okRow!.path, 'utf8')).toBe('ghost-batch-ok.png');
+  expect(fs.readFileSync(blocked.path, 'utf8')).toBe('ghost-batch-blocked.png');
+});
