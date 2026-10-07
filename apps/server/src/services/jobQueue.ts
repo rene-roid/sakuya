@@ -101,7 +101,9 @@ export function enqueueJob(
 export function listJobs(limit = 50): Job[] {
   // Ordering and slicing belong in SQL: this used to pull the entire jobs table into JS and sort
   // it there to hand back 50 rows, and jobs is append-only, so the cost grew with every scan.
-  return db.select().from(schema.jobs).orderBy(desc(schema.jobs.createdAt)).limit(limit).all();
+  // By id rather than created_at: ids are AUTOINCREMENT and assigned at enqueue, the same moment
+  // created_at is stamped, so the order matches and the rowid walk needs no sort over the table.
+  return db.select().from(schema.jobs).orderBy(desc(schema.jobs.id)).limit(limit).all();
 }
 
 /**
