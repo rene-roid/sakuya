@@ -46,8 +46,13 @@ async function transcodeVideo(sourcePath: string, mediaId: number): Promise<stri
     '-crf', '23',
     '-c:a', 'aac',
     '-movflags', '+faststart',
+    // ffmpeg picks the muxer from the extension and has none for ".part".
+    '-f', 'mp4',
     tmp,
-  ]);
+  ]).catch((err) => {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  });
   fs.renameSync(tmp, dest);
   return dest;
 }
