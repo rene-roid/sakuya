@@ -23,8 +23,8 @@ const WATCHED_FLUSH_SECONDS = 10;
 
 interface MediaViewerProps {
   items: Media[];
-  index: number;
-  onIndexChange: (index: number) => void;
+  itemId: number;
+  onItemChange: (id: number) => void;
   onClose: () => void;
   onNearEnd?: () => void;
 }
@@ -80,7 +80,7 @@ function useFitSize(width: number | null, height: number | null) {
   return { paneRef, size };
 }
 
-export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
+export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }: MediaViewerProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [tagInput, setTagInput] = useState('');
@@ -90,7 +90,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   // Tracks the item we jumped from via the similar/duplicates panel, so it can be
   // highlighted and pinned first in that panel for the newly viewed item.
   const [previousPanelId, setPreviousPanelId] = useState<number | null>(null);
-  const item = jumpItem ?? items[index];
+  // Tracked by id: a refetch of the list (a tag removed here, a finished scan) shifts indexes.
+  // If the open item drops out of the list, it stays on screen and stepping resumes from its slot.
+  const index = items.findIndex((m) => m.id === itemId);
+  const [lastListed, setLastListed] = useState({ item: items[index], index });
+  if (index >= 0 && (items[index] !== lastListed.item || index !== lastListed.index)) {
+    setLastListed({ item: items[index], index });
+  }
+  const item = jumpItem ?? (index >= 0 ? items[index] : lastListed.item);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -251,13 +258,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       if (!items.length) return;
       setJumpItem(null);
       setPreviousPanelId(null);
-      let next = index + dir;
+      // Once the open item has left the list, its successor has slid into its old slot.
+      let next = index >= 0 ? index + dir : dir > 0 ? lastListed.index : lastListed.index - 1;
       if (next < 0) next = items.length - 1;
       if (next >= items.length) next = 0;
-      onIndexChange(next);
+      onItemChange(items[next].id);
       if (items.length - next < 10) onNearEnd?.();
     },
-    [index, items.length, onIndexChange, onNearEnd],
+    [index, lastListed.index, items, onItemChange, onNearEnd],
   );
 
   useEffect(() => {

@@ -31,7 +31,7 @@ export function MediaBrowser({
   const query = { ...filters, boardId };
   const media = useMediaInfinite(query);
   const selection = useSelection(media.items, JSON.stringify(query));
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerId, setViewerId] = useState<number | null>(null);
   const centered = sidebar ? '' : 'mx-auto max-w-[1400px] ';
 
   const page = (
@@ -57,7 +57,7 @@ export function MediaBrowser({
           isFetchingNextPage={media.isFetchingNextPage}
           fetchNextPage={media.fetchNextPage}
           isLoading={media.isLoading}
-          onOpen={setViewerIndex}
+          onOpen={(index) => setViewerId(media.items[index].id)}
           selection={selection}
         />
       </div>
@@ -69,12 +69,12 @@ export function MediaBrowser({
       {sidebar}
       {sidebar ? <div className="min-w-0 flex-1">{page}</div> : page}
       {selection.active && <SelectionBar selection={selection} filters={query} total={media.total} boardId={boardId} />}
-      {viewerIndex !== null && (
+      {viewerId !== null && (
         <MediaViewer
           items={media.items}
-          index={viewerIndex}
-          onIndexChange={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
+          itemId={viewerId}
+          onItemChange={setViewerId}
+          onClose={() => setViewerId(null)}
           onNearEnd={() => media.hasNextPage && !media.isFetchingNextPage && media.fetchNextPage()}
         />
       )}
