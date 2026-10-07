@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, type NavigateOptions } from 'react-router-dom';
 import { Sparkles, ListChecks } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { api } from '../lib/api';
@@ -32,7 +32,14 @@ export function Discover() {
   const seed = Number(params.get('seed') ?? 1) || 1;
 
   // The slider thumb has to track the pointer at 60fps; the feed only refetches once it settles.
-  const [surprise, setSurprise] = useState(() => Number(params.get('surprise') ?? 0.25));
+  const surpriseParam = params.get('surprise');
+  const [surprise, setSurprise] = useState(() => Number(surpriseParam ?? 0.25));
+  // Back/forward or a nav link moved the URL under the slider: follow it.
+  const [syncedParam, setSyncedParam] = useState(surpriseParam);
+  if (surpriseParam !== syncedParam) {
+    setSyncedParam(surpriseParam);
+    setSurprise(Number(surpriseParam ?? 0.25));
+  }
   const debouncedSurprise = useDebounce(surprise, 300);
 
   const feed = useDiscoverInfinite({
@@ -47,12 +54,12 @@ export function Discover() {
   const [lucky, setLucky] = useState<{ items: Media[]; id: number } | null>(null);
   const [luckyPending, setLuckyPending] = useState(false);
 
-  const update = (fn: (next: URLSearchParams) => void) =>
+  const update = (fn: (next: URLSearchParams) => void, options?: NavigateOptions) =>
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       fn(next);
       return next;
-    });
+    }, options);
 
   const feelLucky = async () => {
     setLuckyPending(true);
@@ -131,7 +138,7 @@ export function Discover() {
                 onChange={(e) => {
                   const value = Number(e.target.value);
                   setSurprise(value);
-                  update((p) => p.set('surprise', String(value)));
+                  update((p) => p.set('surprise', String(value)), { replace: true });
                 }}
                 className="w-[150px] cursor-pointer"
                 title="Left: only what matches your taste. Right: pure chance."
