@@ -20,7 +20,7 @@ interface LabelEntry {
   category: TagCategory;
 }
 
-let session: any = null;
+let session: Promise<any> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
@@ -54,7 +54,7 @@ function releaseSession(): void {
   const old = session;
   session = null;
   old
-    ?.release()
+    ?.then((loaded) => loaded.release())
     .then(trimNativeHeap)
     .catch((err: unknown) => console.error('tagger: failed to release model session:', err));
 }
@@ -111,6 +111,7 @@ export function taggerStatus(): TaggerStatus {
 /** Switch the active tagger model. Clears cached model files/session so the new one must be downloaded. */
 export function selectModel(modelId: string): void {
   if (downloading) throw new Error('Cannot switch models while a download is in progress');
+  if (inFlight > 0) throw new Error('Cannot switch models while images are being tagged');
   if (!MODEL_REGISTRY.some((m) => m.id === modelId)) throw new Error(`Unknown model: ${modelId}`);
   if (selectedModelId() === modelId) return;
   setSetting('tagger_model', modelId);
@@ -136,10 +137,21 @@ function loadLabels(): LabelEntry[] {
   return labels;
 }
 
-async function getSession(): Promise<any> {
+/** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
+function getSession(): Promise<any> {
   if (session) return session;
+  const load = loadSession();
+  session = load;
+  // A failed load must not stick, or every later tag would get the same rejection.
+  load.catch(() => {
+    if (session === load) session = null;
+  });
+  return load;
+}
+
+async function loadSession() {
   const ort = await import('onnxruntime-node');
-  session = await ort.InferenceSession.create(MODEL_PATH, {
+  return ort.InferenceSession.create(MODEL_PATH, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
     // Cap threads so bulk tagging can't monopolize every core and starve
@@ -149,7 +161,6 @@ async function getSession(): Promise<any> {
     intraOpNumThreads: LIMITS.onnxIntraOpThreads,
     interOpNumThreads: LIMITS.onnxInterOpThreads,
   });
-  return session;
 }
 
 /** Pad to square (white), resize to 448x448, RGB→BGR, float32 0-255, NHWC. */
