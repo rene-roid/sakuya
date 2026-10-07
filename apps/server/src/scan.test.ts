@@ -131,3 +131,27 @@ test('an unmounted folder nested inside another folder of the library keeps its 
   fs.rmdirSync(inner);
   fs.renameSync(innerParked, inner);
 });
+
+test('scans of one library never run at the same time', async () => {
+  for (let i = 0; i < 20; i++) await writeImage(`burst-${i}.png`, `#${(i * 12).toString(16).padStart(2, '0')}8080`);
+  const queuedTwice = [enqueueScanJob(lib.id), enqueueScanJob(lib.id)];
+  expect(queuedTwice[1].id).toBe(queuedTwice[0].id);
+
+  const status = (id: number) => db.select().from(schema.jobs).where(eq(schema.jobs.id, id)).get()!;
+  while (status(queuedTwice[0].id).status === 'queued') await Bun.sleep(1);
+  const second = enqueueScanJob(lib.id);
+  expect(second.id).not.toBe(queuedTwice[0].id);
+
+  let overlapped = false;
+  for (;;) {
+    const [a, b] = [status(queuedTwice[0].id), status(second.id)];
+    if (a.status === 'running' && b.status === 'running') overlapped = true;
+    if (['done', 'error'].includes(a.status) && ['done', 'error'].includes(b.status)) {
+      expect(a.log).not.toContain('error');
+      expect(b.log).not.toContain('error');
+      break;
+    }
+    await Bun.sleep(1);
+  }
+  expect(overlapped).toBe(false);
+});

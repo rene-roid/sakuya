@@ -351,5 +351,6 @@ export function enqueueScanJob(libraryId: number) {
       return `Completed. ${summary}.`;
     },
     libraryId,
+    `scan:${libraryId}`,
   );
 }
