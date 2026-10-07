@@ -271,17 +271,19 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+      // Alt+Arrow is browser history; keys typed into a field (Escape included) are the field's.
+      if (e.altKey || e.metaKey || e.ctrlKey || target?.closest('input, textarea, [contenteditable]')) return;
+      // On the board picker the arrows choose a board, and the step would leave it pointed at the next item.
+      const inSelect = target?.tagName === 'SELECT';
       if (e.key === 'Escape') {
-        if (renaming) setRenaming(false);
-        else if (showDeleteConfirm) setShowDeleteConfirm(false);
+        if (showDeleteConfirm) setShowDeleteConfirm(false);
         else handleClose();
-      } else if (!isTextInput && e.key === 'ArrowRight') step(1);
-      else if (!isTextInput && e.key === 'ArrowLeft') step(-1);
+      } else if (!inSelect && e.key === 'ArrowRight') step(1);
+      else if (!inSelect && e.key === 'ArrowLeft') step(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleClose, step, renaming, showDeleteConfirm]);
+  }, [handleClose, step, showDeleteConfirm]);
 
   const onLoadedMetadata = useCallback(
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
