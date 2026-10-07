@@ -18,6 +18,8 @@ let buffer = '';
 // A real pty (used on Linux, see startConsoleSession) echoes typed input back through stdout on
 // its own, so we must not also echo it into the buffer ourselves or every line would double up.
 let usingPty = false;
+// Set across the await in startConsoleSession, so a second start can't slip in before `child` is.
+let starting = false;
 
 function appendBuffer(chunk: string) {
   buffer = (buffer + chunk).slice(-MAX_BUFFER);
@@ -37,9 +39,12 @@ function quoteShellArg(arg: string): string {
 }
 
 export async function startConsoleSession(commandText: string): Promise<void> {
-  if (child) throw Object.assign(new Error('A console session is already running'), { status: 409 });
+  if (child || starting) throw Object.assign(new Error('A console session is already running'), { status: 409 });
 
-  const galleryDl = await detectGalleryDl();
+  starting = true;
+  const galleryDl = await detectGalleryDl().finally(() => {
+    starting = false;
+  });
   if (!galleryDl.installed || !galleryDl.path) throw new Error('gallery-dl is not installed');
 
   const args = parseShellArgs(commandText);
