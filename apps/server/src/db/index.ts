@@ -316,6 +316,8 @@ if (pendingIndex > 0) {
 sqlite.exec(
   `UPDATE jobs SET status = 'error', log = log || ' (interrupted by restart)' WHERE status IN ('queued', 'running')`,
 );
+// Their folders would otherwise show "scanning" until the next scan of that library.
+sqlite.exec(`UPDATE folders SET status = 'error' WHERE status = 'scanning'`);
 
 // Download items interrupted by a server restart lose their tracked process — mark running as queued
 // (gallery-dl resumes safely on re-run) and clear stale pids.
