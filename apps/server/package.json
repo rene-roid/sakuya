@@ -10,14 +10,14 @@
   },
   "dependencies": {
     "@sakuya/shared": "workspace:*",
-    "adm-zip": "^0.6.0",
-    "drizzle-orm": "^0.44.2",
+    "adm-zip": "^0.6.1",
+    "drizzle-orm": "^0.45.3",
     "express": "^4.21.2",
     "express-rate-limit": "^7.4.1",
     "ffmpeg-static": "^5.2.0",
     "ffprobe-static": "^3.1.0",
     "onnxruntime-node": "^1.20.1",
-    "sharp": "^0.34.1",
+    "sharp": "^0.35.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {
