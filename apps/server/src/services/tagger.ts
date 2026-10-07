@@ -238,8 +238,19 @@ export function upsertTag(name: string, category: TagCategory): number {
   return db.insert(schema.tags).values({ name, category }).returning().get().id;
 }
 
+let tagLinksChanges = 0;
+
+/**
+ * Moves whenever a media gains or loses a tag. Every media_tags write reaches refreshUsageCounts,
+ * so caches derived from media_tags compare this instead of re-reading the table.
+ */
+export function tagLinksVersion(): number {
+  return tagLinksChanges;
+}
+
 export function refreshUsageCounts(tagIds: number[]): void {
   if (!tagIds.length) return;
+  tagLinksChanges++;
   // Chunked: a library delete can touch most of the tag vocabulary at once.
   for (const part of chunkIds(tagIds)) {
     const placeholders = part.map(() => '?').join(',');
