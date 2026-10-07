@@ -11,6 +11,8 @@ const dataDir = useTestConfig('scan');
 
 const { db, schema } = await import('./db');
 const { enqueueScanJob } = await import('./services/scanner');
+const { jobEvents } = await import('./services/jobQueue');
+const { removeMediaRows } = await import('./services/mediaRemoval');
 
 const root = path.join(dataDir, 'library-root');
 const parked = path.join(dataDir, 'library-root-unmounted');
@@ -154,4 +156,57 @@ test('scans of one library never run at the same time', async () => {
     await Bun.sleep(1);
   }
   expect(overlapped).toBe(false);
+});
+
+/**
+ * Scan a fresh library of three images, running `remove` (what the delete-library or
+ * detach-folder route does) as soon as the first file is indexed, while the scan is mid-way.
+ */
+async function scanWhileRemoving(name: string, remove: (libraryId: number, folderId: number) => void) {
+  const dir = path.join(dataDir, name);
+  fs.mkdirSync(dir);
+  for (const color of ['#101010', '#202020', '#303030']) {
+    await sharp({ create: { width: 8, height: 8, channels: 3, background: color } })
+      .png()
+      .toFile(path.join(dir, `${color.slice(1)}.png`));
+  }
+  const library = db.insert(schema.libraries).values({ name, createdAt: Date.now() }).returning().get();
+  const attached = db
+    .insert(schema.folders)
+    .values({ libraryId: library.id, path: dir, createdAt: Date.now() })
+    .returning()
+    .get();
+  const job = enqueueScanJob(library.id);
+  const onJob = (row: { id: number; progress: number }) => {
+    if (row.id !== job.id || row.progress !== 1) return;
+    jobEvents.off('job', onJob);
+    remove(library.id, attached.id);
+  };
+  jobEvents.on('job', onJob);
+  for (;;) {
+    const row = db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id)).get()!;
+    if (row.status === 'done' || row.status === 'error') break;
+    await Bun.sleep(10);
+  }
+  return db.select().from(schema.media).where(eq(schema.media.libraryId, library.id)).all().length;
+}
+
+const indexedIn = (libraryId: number) =>
+  db.select({ id: schema.media.id }).from(schema.media).where(eq(schema.media.libraryId, libraryId)).all();
+
+test('a folder detached mid-scan gets no rows back from that scan', async () => {
+  const left = await scanWhileRemoving('detached-mid-scan', (libraryId, folderId) => {
+    removeMediaRows(indexedIn(libraryId).map((m) => m.id));
+    db.delete(schema.folders).where(eq(schema.folders.id, folderId)).run();
+  });
+  expect(left).toBe(0);
+});
+
+test('a library deleted mid-scan gets no rows back from that scan', async () => {
+  const left = await scanWhileRemoving('deleted-mid-scan', (libraryId) => {
+    removeMediaRows(indexedIn(libraryId).map((m) => m.id));
+    db.delete(schema.folders).where(eq(schema.folders.libraryId, libraryId)).run();
+    db.delete(schema.libraries).where(eq(schema.libraries.id, libraryId)).run();
+  });
+  expect(left).toBe(0);
 });

@@ -109,6 +109,23 @@ async function walk(dir: string, out: string[]): Promise<void> {
 }
 
 /**
+ * Whether `filePath` still has an owner to index into: an attached folder of the library for a
+ * scanned file, the library itself for an upload. A scan or upload can outlive a library delete or
+ * folder detach, and would otherwise write rows back for what was just removed.
+ */
+function ownerExists(filePath: string, libraryId: number, source: 'folder' | 'upload'): boolean {
+  if (source === 'upload') {
+    return db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get() !== undefined;
+  }
+  return db
+    .select({ path: schema.folders.path })
+    .from(schema.folders)
+    .where(eq(schema.folders.libraryId, libraryId))
+    .all()
+    .some((folder) => isUnder(filePath, folder.path));
+}
+
+/**
  * Index a single file into `media` (used by both folder scans and uploads).
  * Returns the media id, or null if the file is unchanged since last index.
  */
@@ -143,6 +160,8 @@ export async function indexFile(
   }
 
   const probe = type === 'video' ? await probeVideo(filePath) : await probeImage(filePath);
+  // Checked after the last await so nothing can be removed between the check and the write.
+  if (!ownerExists(filePath, libraryId, source)) return null;
   const now = Date.now();
   const values = {
     libraryId,
