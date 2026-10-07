@@ -45,9 +45,9 @@ export function Dashboard() {
 
   const libraryCover = (lib: NonNullable<typeof data>['libraries'][number]) =>
     lib.customImagePath ? (
-      <img src={libraryCoverUrl(lib.id)} alt={lib.name} className="h-full w-full object-cover" />
+      <img src={libraryCoverUrl(lib.id)} alt={lib.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
     ) : lib.thumbMediaId ? (
-      <img src={thumbUrl(lib.thumbMediaId)} alt={lib.name} className="h-full w-full object-cover" />
+      <img src={thumbUrl(lib.thumbMediaId)} alt={lib.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
     ) : (
       <div className="flex h-full w-full items-center justify-center text-2xl text-zinc-700">◌</div>
     );

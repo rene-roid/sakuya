@@ -484,7 +484,7 @@ function ThumbnailPickerModal({
               currentThumbId === m.id ? 'border-accent' : 'border-transparent hover:border-line-strong'
             }`}
           >
-            <img src={thumbUrl(m.id, bust)} alt="" className="h-full w-full object-cover" />
+            <img src={thumbUrl(m.id, bust)} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
           </div>
         ))}
         {media && media.items.length === 0 && (
