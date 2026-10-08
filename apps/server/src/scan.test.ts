@@ -23,8 +23,8 @@ async function writeImage(name: string, color: string) {
     .toFile(path.join(root, name));
 }
 
-async function scan() {
-  const job = enqueueScanJob(lib.id);
+async function scan(libraryId = lib.id) {
+  const job = enqueueScanJob(libraryId);
   for (;;) {
     const row = db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id)).get()!;
     if (row.status === 'done' || row.status === 'error') return row;
@@ -132,6 +132,26 @@ test('an unmounted folder nested inside another folder of the library keeps its 
   expect(db.select().from(schema.folders).where(eq(schema.folders.id, folder.id)).get()!.status).toBe('indexed');
   fs.rmdirSync(inner);
   fs.renameSync(innerParked, inner);
+});
+
+test('a folder symlinked inside another folder of the library gets its files indexed', async () => {
+  const outer = path.join(dataDir, 'linked-outer');
+  const share = path.join(dataDir, 'linked-share');
+  fs.mkdirSync(outer);
+  fs.mkdirSync(share);
+  fs.symlinkSync(share, path.join(outer, 'nas'));
+  await sharp({ create: { width: 8, height: 8, channels: 3, background: '#404040' } })
+    .png()
+    .toFile(path.join(share, 'g.png'));
+  const library = db.insert(schema.libraries).values({ name: 'linked', createdAt: Date.now() }).returning().get();
+  for (const folderPath of [outer, path.join(outer, 'nas')]) {
+    db.insert(schema.folders).values({ libraryId: library.id, path: folderPath, createdAt: Date.now() }).run();
+  }
+
+  const job = await scan(library.id);
+  expect(job.status).toBe('done');
+  const indexed = db.select().from(schema.media).where(eq(schema.media.libraryId, library.id)).all();
+  expect(indexed.map((m) => m.path)).toEqual([path.join(outer, 'nas', 'g.png')]);
 });
 
 test('scans of one library never run at the same time', async () => {
