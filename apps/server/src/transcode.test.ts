@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { useTestConfig } from './testConfig';
 
 const dataDir = useTestConfig('transcode');
@@ -39,27 +39,78 @@ test('a video in a container browsers cannot play is transcoded to mp4', async (
   expect(fs.readdirSync(path.dirname(transcodePathFor(media.id))).filter((f) => f.endsWith('.part'))).toEqual([]);
 });
 
-test('a scan finishing while a transcode of its library runs does not queue a second one', async () => {
-  const { dispatchAfterScan } = await import('./services/jobScheduler');
-  const { setSetting } = await import('./lib/settings');
-  setSetting('video_transcode_enabled', '1');
-  const lib = db.insert(schema.libraries).values({ name: 'busy', createdAt: Date.now() }).returning().get();
-  db.insert(schema.media)
-    .values({
-      libraryId: lib.id,
-      source: 'folder',
-      path: path.join(dataDir, 'pending.mkv'),
-      filename: 'pending.mkv',
-      type: 'video',
-      createdAt: Date.now(),
-    })
-    .run();
-  // The transcode an earlier scan of this library queued, still working through the same ids.
-  db.insert(schema.jobs)
-    .values({ type: 'transcode', label: 'Transcode: busy', libraryId: lib.id, status: 'running', createdAt: 0, updatedAt: 0 })
-    .run();
+const { dispatchAfterScan } = await import('./services/jobScheduler');
+const { jobEvents } = await import('./services/jobQueue');
+const { setSetting } = await import('./lib/settings');
 
+/** A library with two generated videos. `index` adds the next one as a scan would. */
+async function videoLibrary(name: string) {
+  setSetting('video_transcode_enabled', '1');
+  const lib = db.insert(schema.libraries).values({ name, createdAt: Date.now() }).returning().get();
+  const sources: string[] = [];
+  for (const video of ['first', 'second']) {
+    const source = path.join(dataDir, `${name}-${video}.mkv`);
+    await run(FFMPEG_PATH, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=64x64:rate=10', source]);
+    sources.push(source);
+  }
+  const indexed: { id: number }[] = [];
+  const index = () => {
+    const source = sources[indexed.length];
+    const row = db
+      .insert(schema.media)
+      .values({
+        libraryId: lib.id,
+        source: 'folder',
+        path: source,
+        filename: path.basename(source),
+        type: 'video',
+        createdAt: Date.now(),
+      })
+      .returning()
+      .get();
+    indexed.push(row);
+  };
+  const transcoded = async () => {
+    const jobs = () =>
+      db
+        .select()
+        .from(schema.jobs)
+        .where(and(eq(schema.jobs.libraryId, lib.id), eq(schema.jobs.type, 'transcode')))
+        .all();
+    while (jobs().some((job) => job.status === 'queued' || job.status === 'running')) await Bun.sleep(20);
+    return indexed.map((m) => fs.existsSync(transcodePathFor(m.id)));
+  };
+  return { lib, index, transcoded };
+}
+
+test('a video a later scan finds while a transcode of its library runs still gets transcoded', async () => {
+  const { lib, index, transcoded } = await videoLibrary('running');
+  const running = new Set<number>();
+  let overlapped = false;
+  let rescanned = false;
+  jobEvents.on('job', (row: { id: number; type: string; libraryId: number | null; status: string }) => {
+    if (row.type !== 'transcode' || row.libraryId !== lib.id) return;
+    if (row.status === 'running') running.add(row.id);
+    else running.delete(row.id);
+    if (running.size > 1) overlapped = true;
+    if (row.status === 'running' && !rescanned) {
+      rescanned = true;
+      index();
+      dispatchAfterScan(lib.id);
+    }
+  });
+
+  index();
   dispatchAfterScan(lib.id);
-  const transcodes = db.select().from(schema.jobs).where(eq(schema.jobs.libraryId, lib.id)).all();
-  expect(transcodes.map((job) => [job.type, job.status])).toEqual([['transcode', 'running']]);
+  expect(await transcoded()).toEqual([true, true]);
+  expect(overlapped).toBe(false);
+});
+
+test('a video a later scan finds while a transcode of its library waits in the queue still gets transcoded', async () => {
+  const { lib, index, transcoded } = await videoLibrary('waiting');
+  index();
+  dispatchAfterScan(lib.id);
+  index();
+  dispatchAfterScan(lib.id);
+  expect(await transcoded()).toEqual([true, true]);
 });
