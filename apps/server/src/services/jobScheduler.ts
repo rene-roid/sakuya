@@ -1,17 +1,18 @@
 import { eq, and, inArray, isNull } from 'drizzle-orm';
-import type { JobSchedule, JobType, ScheduleJobType } from '@sakuya/shared';
+import type { JobSchedule, ScheduleJobType } from '@sakuya/shared';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
-import { enqueueTagJob, enqueueHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
+import { runTagJob, runHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
 import { enqueueCleanupJob } from './cleanup';
-import { enqueueTranscodeJob } from './transcoder';
+import { runTranscodeJob } from './transcoder';
+import { enqueueJob, type JobHandle } from './jobQueue';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
 import { mediaIdsWhere } from '../lib/mediaByIds';
 
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 const PER_LIBRARY_TYPES: ScheduleJobType[] = ['scan', 'tag', 'hash'];
 
-function activeJobForLibrary(libraryId: number | null, jobType: JobType): boolean {
+function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType): boolean {
   const active = db
     .select({ id: schema.jobs.id })
     .from(schema.jobs)
@@ -52,21 +53,42 @@ function libraryName(libraryId: number): string {
   return lib?.name ?? 'Library';
 }
 
+/**
+ * Queue a job that brings one library up to date. It reads the pending ids when it starts, not when
+ * it is queued, so one still waiting covers what later scans index. One per library and type runs
+ * at a time, so the next one starts after the current one has marked its ids done.
+ */
+function enqueueCatchUp(
+  jobType: 'tag' | 'hash' | 'transcode',
+  label: string,
+  libraryId: number,
+  pending: () => number[],
+  run: (job: JobHandle, ids: number[]) => Promise<string>,
+): void {
+  if (!pending().length) return;
+  enqueueJob(
+    jobType,
+    `${label}: ${libraryName(libraryId)}`,
+    (job) => run(job, pending()),
+    libraryId,
+    `${jobType}:${libraryId}`,
+  );
+}
+
 function dispatchTagForLibrary(libraryId: number): void {
   if (!aiTaggingEnabled() || !modelReady()) return;
-  const ids = untaggedMediaIds(libraryId);
-  if (ids.length) enqueueTagJob(ids, `AI tag: ${libraryName(libraryId)}`, libraryId);
+  enqueueCatchUp('tag', 'AI tag', libraryId, () => untaggedMediaIds(libraryId), runTagJob);
 }
 
 function dispatchHashForLibrary(libraryId: number): void {
-  const ids = unhashedImageIds(libraryId);
-  if (ids.length) enqueueHashJob(ids, libraryId);
+  enqueueCatchUp('hash', 'Compute image hashes', libraryId, () => unhashedImageIds(libraryId), runHashJob);
 }
 
 function dispatchTranscodeForLibrary(libraryId: number): void {
   if (!videoTranscodeEnabled()) return;
-  const ids = mediaIdsWhere(and(eq(schema.media.type, 'video'), isNull(schema.media.transcodedAt)), libraryId);
-  if (ids.length) enqueueTranscodeJob(ids, `Transcode: ${libraryName(libraryId)}`, libraryId);
+  const pending = () =>
+    mediaIdsWhere(and(eq(schema.media.type, 'video'), isNull(schema.media.transcodedAt)), libraryId);
+  enqueueCatchUp('transcode', 'Transcode', libraryId, pending, runTranscodeJob);
 }
 
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
@@ -83,20 +105,16 @@ function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
 
 /**
  * Enqueue the follow-up jobs configured to run right after a scan.
- * Called from the scan handler once indexing completes. A follow-up of a type already queued or
- * running for this library is skipped: it would pick the same ids, and two transcodes of one id
- * write the same output file.
+ * Called from the scan handler once indexing completes.
  */
 export function dispatchAfterScan(libraryId: number): void {
-  const idle = (jobType: JobType) => !activeJobForLibrary(libraryId, jobType);
-
   const tagSchedule = resolveSchedule('tag', libraryId);
-  if (tagSchedule.mode === 'after-scan' && idle('tag')) dispatchTagForLibrary(libraryId);
+  if (tagSchedule.mode === 'after-scan') dispatchTagForLibrary(libraryId);
 
   const hashSchedule = resolveSchedule('hash', libraryId);
-  if (hashSchedule.mode === 'after-scan' && idle('hash')) dispatchHashForLibrary(libraryId);
+  if (hashSchedule.mode === 'after-scan') dispatchHashForLibrary(libraryId);
 
-  if (idle('transcode')) dispatchTranscodeForLibrary(libraryId);
+  dispatchTranscodeForLibrary(libraryId);
 }
 
 /**

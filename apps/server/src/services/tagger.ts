@@ -315,60 +315,48 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
 }
 
 export function enqueueTagJob(mediaIds: number[], label: string, libraryId: number | null = null) {
-  return enqueueJob(
-    'tag',
-    label,
-    async (job: JobHandle) => {
-      job.update({ total: mediaIds.length, log: `Tagging ${mediaIds.length} files…` });
-      const errors = await eachWithProgress(
-        job,
-        mediaIds,
-        (done, total) => `Tagged ${done}/${total} files…`,
-        (id) => `tagging failed for media ${id}:`,
-        tagOneMedia,
-        1,
-      );
-      const tagged = mediaIds.length - errors;
-      return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;
-    },
-    libraryId,
+  return enqueueJob('tag', label, (job) => runTagJob(job, mediaIds), libraryId);
+}
+
+export async function runTagJob(job: JobHandle, mediaIds: number[]): Promise<string> {
+  job.update({ total: mediaIds.length, log: `Tagging ${mediaIds.length} files…` });
+  const errors = await eachWithProgress(
+    job,
+    mediaIds,
+    (done, total) => `Tagged ${done}/${total} files…`,
+    (id) => `tagging failed for media ${id}:`,
+    tagOneMedia,
+    1,
   );
+  const tagged = mediaIds.length - errors;
+  return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;
 }
 
 export function unhashedImageIds(libraryId?: number): number[] {
   return mediaIdsWhere(and(eq(schema.media.type, 'image'), isNull(schema.media.perceptualHash)), libraryId);
 }
 
-export function enqueueHashJob(mediaIds: number[], libraryId: number | null = null) {
-  const lib = libraryId
-    ? db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get()
-    : null;
-  const label = lib
-    ? `Compute image hashes: ${lib.name} (${mediaIds.length} files)`
-    : `Compute image hashes (${mediaIds.length} files)`;
-  return enqueueJob(
-    'hash',
-    label,
-    async (job: JobHandle) => {
-      job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
-      let hashed = 0;
-      const errors = await eachWithProgress(
-        job,
-        mediaIds,
-        (done, total) => `Hashed ${done}/${total} images…`,
-        (id) => `hashing failed for media ${id}:`,
-        async (id) => {
-          const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-          if (!row || row.type !== 'image' || !fs.existsSync(row.path)) return;
-          const hash = await computeDHash(row.path);
-          db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, id)).run();
-          hashed++;
-        },
-      );
-      return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
+export function enqueueHashJob(mediaIds: number[]) {
+  return enqueueJob('hash', `Compute image hashes (${mediaIds.length} files)`, (job) => runHashJob(job, mediaIds));
+}
+
+export async function runHashJob(job: JobHandle, mediaIds: number[]): Promise<string> {
+  job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
+  let hashed = 0;
+  const errors = await eachWithProgress(
+    job,
+    mediaIds,
+    (done, total) => `Hashed ${done}/${total} images…`,
+    (id) => `hashing failed for media ${id}:`,
+    async (id) => {
+      const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+      if (!row || row.type !== 'image' || !fs.existsSync(row.path)) return;
+      const hash = await computeDHash(row.path);
+      db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, id)).run();
+      hashed++;
     },
-    libraryId,
   );
+  return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
 }
 
 export function enqueueModelDownload() {
