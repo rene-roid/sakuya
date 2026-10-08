@@ -319,14 +319,13 @@ export function enqueueScanJob(libraryId: number) {
         db.update(schema.folders).set({ status: 'scanning' }).where(eq(schema.folders.id, folder.id)).run();
       }
 
-      // A folder inside another folder of this library is already covered by the outer walk.
       const nestedIn = (folder: { path: string }) =>
         libFolders.filter((other) => other.path !== folder.path && isUnder(other.path, folder.path)).map((f) => f.path);
-      const files: string[] = [];
-      for (const folder of libFolders) {
-        if (libFolders.some((outer) => outer.path !== folder.path && isUnder(folder.path, outer.path))) continue;
-        await walk(folder.path, files);
-      }
+      // Every folder is walked, nested ones too: the outer walk skips dot-directories and symlinks,
+      // so it may never reach them. The Set drops the files both walks found.
+      const found: string[] = [];
+      for (const folder of libFolders) await walk(folder.path, found);
+      const files = [...new Set(found)];
       job.update({ total: files.length, log: `Found ${files.length} files, indexing…` });
 
       const errors = await eachWithProgress(
