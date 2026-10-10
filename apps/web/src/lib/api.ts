@@ -196,8 +196,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mediaIds }),
     }),
-  saveProgress: (id: number, progress: number, opts?: { view?: boolean; watchedDelta?: number; dwellDelta?: number }) =>
-    request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify({ progress, ...opts }) }),
+  saveProgress: (id: number, body: { progress?: number; view?: boolean; watchedDelta?: number; dwellDelta?: number }) =>
+    request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify(body) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
     const params = new URLSearchParams();
     if (opts.q) params.set('q', opts.q);

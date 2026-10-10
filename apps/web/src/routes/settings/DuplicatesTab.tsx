@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import type { DuplicateGroup } from '@sakuya/shared';
@@ -35,14 +35,14 @@ export function DuplicatesTab() {
   // Nothing runs until the first scan; after that the cached result is what's shown.
   const scanned = data !== undefined;
 
-  function toggle(id: number) {
+  const toggle = useCallback((id: number) => {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  }
+  }, []);
 
   function autoSelect() {
     setSelected(new Set(groups.flatMap((g) => g.items.slice(1).map((m) => m.id))));
@@ -149,36 +149,51 @@ function DuplicateGroupCard({
       </div>
       <div className="flex flex-wrap gap-2.5">
         {group.items.map((m, i) => (
-          <label
-            key={m.id}
-            className={`flex w-[140px] cursor-pointer flex-col gap-1.5 rounded-lg border p-1.5 ${
-              selected.has(m.id) ? 'border-rose-700 bg-rose-950/20' : 'border-line hover:border-line-strong'
-            }`}
-          >
-            <div className="relative aspect-square overflow-hidden rounded-md bg-zinc-900">
-              <img src={thumbUrl(m.id)} alt={m.filename} className="h-full w-full object-cover" />
-              {i === 0 && (
-                <span className="absolute left-1 top-1 rounded bg-zinc-950/80 px-1.5 py-0.5 text-[9px] font-bold text-zinc-300">
-                  OLDEST
-                </span>
-              )}
-              <input
-                type="checkbox"
-                checked={selected.has(m.id)}
-                onChange={() => onToggle(m.id)}
-                className="absolute right-1 top-1 h-4 w-4 cursor-pointer accent-rose-600"
-              />
-            </div>
-            <div className="truncate text-[11px] font-medium text-zinc-300" title={m.filename}>
-              {m.filename}
-            </div>
-            <div className="text-[10px] text-zinc-500">
-              {formatBytes(m.sizeBytes)}
-              {m.libraryName ? ` · ${m.libraryName}` : ''}
-            </div>
-          </label>
+          <DuplicateTile key={m.id} item={m} oldest={i === 0} selected={selected.has(m.id)} onToggle={onToggle} />
         ))}
       </div>
     </div>
   );
 }
+
+const DuplicateTile = memo(function DuplicateTile({
+  item: m,
+  oldest,
+  selected,
+  onToggle,
+}: {
+  item: DuplicateGroup['items'][number];
+  oldest: boolean;
+  selected: boolean;
+  onToggle: (id: number) => void;
+}) {
+  return (
+    <label
+      className={`flex w-[140px] cursor-pointer flex-col gap-1.5 rounded-lg border p-1.5 ${
+        selected ? 'border-rose-700 bg-rose-950/20' : 'border-line hover:border-line-strong'
+      }`}
+    >
+      <div className="relative aspect-square overflow-hidden rounded-md bg-zinc-900">
+        <img src={thumbUrl(m.id)} alt={m.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+        {oldest && (
+          <span className="absolute left-1 top-1 rounded bg-zinc-950/80 px-1.5 py-0.5 text-[9px] font-bold text-zinc-300">
+            OLDEST
+          </span>
+        )}
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggle(m.id)}
+          className="absolute right-1 top-1 h-4 w-4 cursor-pointer accent-rose-600"
+        />
+      </div>
+      <div className="truncate text-[11px] font-medium text-zinc-300" title={m.filename}>
+        {m.filename}
+      </div>
+      <div className="text-[10px] text-zinc-500">
+        {formatBytes(m.sizeBytes)}
+        {m.libraryName ? ` · ${m.libraryName}` : ''}
+      </div>
+    </label>
+  );
+});

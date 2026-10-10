@@ -69,3 +69,32 @@ test('/api/media and /api/media/ids agree on what matches', async () => {
   expect(ids.total).toBe(page.total);
   expect(ids.ids).toEqual(page.items.map((m: any) => m.id));
 });
+
+test('every sort walks the same order as /api/media/ids, page after page', async () => {
+  for (const sort of ['recent', 'name', 'size', 'random']) {
+    for (const dir of ['asc', 'desc']) {
+      const filter = `sort=${sort}&dir=${dir}&seed=5`;
+      const seen: number[] = [];
+      let cursor = '';
+      for (let guard = 0; guard < 10; guard++) {
+        const page = await json(`/api/media?limit=7&${filter}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+        seen.push(...page.items.map((m: any) => m.id));
+        if (!page.nextCursor) break;
+        cursor = page.nextCursor;
+      }
+      expect({ filter, seen }).toEqual({ filter, seen: (await json(`/api/media/ids?${filter}`)).ids });
+    }
+  }
+});
+
+test('a page row carries its library name and tag count', async () => {
+  const smallest = (await json('/api/media?limit=1&sort=size&dir=asc')).items[0];
+  const tag = db.insert(schema.tags).values({ name: 'list_tag' }).returning().get();
+  db.insert(schema.mediaTags).values({ mediaId: smallest.id, tagId: tag.id }).run();
+
+  const page = await json('/api/media?limit=2&sort=size&dir=asc');
+  expect(page.items.map((m: any) => [m.filename, m.libraryName, m.tagCount])).toEqual([
+    ['list-0.png', 'list', 1],
+    ['list-1.png', 'list', 0],
+  ]);
+});

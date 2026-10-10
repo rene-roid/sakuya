@@ -85,3 +85,25 @@ test('deleting a library removes its media, tag links and job schedules', async 
   expect(db.select().from(schema.jobSchedules).where(eq(schema.jobSchedules.libraryId, lib.id)).all()).toHaveLength(0);
   expect(usage('lib_tag')).toBe(0);
 });
+
+test('library tag autocomplete reflects every tag edit and delete since the last keystroke', async () => {
+  const lib = addLibrary('autocomplete');
+  const a = addMedia(lib.id, 'auto-a.png', []);
+  const b = addMedia(lib.id, 'auto-b.png', []);
+  const send = (url: string, method: string, body: unknown) =>
+    fetch(BASE + url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const suggest = async () =>
+    ((await (await fetch(`${BASE}/api/tags?libraryId=${lib.id}&q=auto_`)).json()) as { name: string; count: number }[]).map(
+      (t) => `${t.name}:${t.count}`,
+    );
+
+  expect(await suggest()).toEqual([]);
+  await send(`/api/media/${a.id}/tags`, 'PATCH', { add: ['auto_one', 'auto_two'] });
+  expect(await suggest()).toEqual(['auto_one:1', 'auto_two:1']);
+  await send('/api/media/tags-batch', 'POST', { ids: [a.id, b.id], add: ['auto_two'] });
+  expect(await suggest()).toEqual(['auto_two:2', 'auto_one:1']);
+  await send(`/api/media/${a.id}/tags`, 'PATCH', { remove: ['auto_one'] });
+  expect(await suggest()).toEqual(['auto_two:2']);
+  await fetch(`${BASE}/api/media/${b.id}`, { method: 'DELETE' });
+  expect(await suggest()).toEqual(['auto_two:1']);
+});

@@ -119,6 +119,24 @@ describe('environment variables', () => {
     expect(warnings).toEqual([]);
   });
 
+  test('boolean overrides accept the usual spellings, and refuse anything else', () => {
+    const { env } = withFile({ auth: { secret: 'pw' } });
+    const load = (value: string) =>
+      loadConfig({ env: { ...env, SAKUYA_DOCKER: '1', SAKUYA_AUTH_ENABLED: value, SAKUYA_HTTPS: value } }).config;
+    for (const on of ['1', 'TRUE', 'Yes', ' true ']) {
+      expect([on, load(on).auth.enabled, load(on).server.https]).toEqual([on, true, true]);
+    }
+    for (const off of ['0', 'False', 'NO']) {
+      expect([off, load(off).auth.enabled, load(off).server.https]).toEqual([off, false, false]);
+    }
+    expect(() => load('enabled')).toThrow('must be true or false');
+  });
+
+  test('an old AUTH_ENABLED=1 with auth off in the file also refuses to start', () => {
+    const { env } = withFile({});
+    expect(() => loadConfig({ env: { ...env, AUTH_ENABLED: '1' } })).toThrow('auth.enabled');
+  });
+
   test('a bad override gets the same validation as the file', () => {
     const { env } = withFile({});
     expect(() => loadConfig({ env: { ...env, SAKUYA_DOCKER: '1', SAKUYA_MAX_MEMORY: 'lots' } })).toThrow(

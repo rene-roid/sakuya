@@ -39,15 +39,15 @@ export function Dashboard() {
   const glass = useUiStyle() === 'glass';
   const { data } = useQuery({ queryKey: ['dashboard'], queryFn: api.dashboard });
   const settings = useSettings();
-  const [viewer, setViewer] = useState<{ items: Media[]; index: number } | null>(null);
+  const [viewer, setViewer] = useState<{ items: Media[]; id: number } | null>(null);
 
   const hideHeroMutation = usePatchSettings(() => toast('Banner hidden. Bring it back in Settings → Appearance'));
 
   const libraryCover = (lib: NonNullable<typeof data>['libraries'][number]) =>
     lib.customImagePath ? (
-      <img src={libraryCoverUrl(lib.id)} alt={lib.name} className="h-full w-full object-cover" />
+      <img src={libraryCoverUrl(lib.id)} alt={lib.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
     ) : lib.thumbMediaId ? (
-      <img src={thumbUrl(lib.thumbMediaId)} alt={lib.name} className="h-full w-full object-cover" />
+      <img src={thumbUrl(lib.thumbMediaId)} alt={lib.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
     ) : (
       <div className="flex h-full w-full items-center justify-center text-2xl text-zinc-700">◌</div>
     );
@@ -109,12 +109,12 @@ export function Dashboard() {
           <Fragment key={row.key}>
             <SectionHeader title={row.title} onSeeAll={() => navigate(row.seeAll)} />
             <div className={`${r < ROWS.length - 1 ? 'mb-9 ' : ''}flex gap-3.5 overflow-x-auto pb-2`}>
-              {items.map((item, i) => (
+              {items.map((item) => (
                 <WideCard
                   key={item.id}
                   item={item}
                   showProgress={row.progress(item)}
-                  onClick={() => setViewer({ items, index: i })}
+                  onClick={() => setViewer({ items, id: item.id })}
                 />
               ))}
               {data && items.length === 0 && <div className="py-6 text-[12.5px] text-zinc-600">{row.empty}</div>}
@@ -126,8 +126,8 @@ export function Dashboard() {
       {viewer && (
         <MediaViewer
           items={viewer.items}
-          index={viewer.index}
-          onIndexChange={(index) => setViewer({ ...viewer, index })}
+          itemId={viewer.id}
+          onItemChange={(id) => setViewer({ ...viewer, id })}
           onClose={() => setViewer(null)}
         />
       )}

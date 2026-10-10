@@ -2,6 +2,8 @@ import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import crypto from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { db, schema } from '../db';
 import { UPLOADS_DIR } from '../lib/config';
 import { wrap, readFormData, formFiles, sanitizeFilename } from '../lib/http';
 import { indexFile, mediaTypeForExt } from '../services/scanner';
@@ -18,6 +20,9 @@ uploadsRouter.post(
     const libraryId = Number(form.get('libraryId'));
     if (!Number.isInteger(libraryId) || libraryId <= 0) {
       return res.status(400).json({ error: 'libraryId is required' });
+    }
+    if (!db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get()) {
+      return res.status(404).json({ error: 'Library not found' });
     }
     const files = formFiles(form, 'files');
     if (!files.length) return res.status(400).json({ error: 'No files provided' });

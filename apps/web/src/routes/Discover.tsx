@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, type NavigateOptions } from 'react-router-dom';
 import { Sparkles, ListChecks } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { api } from '../lib/api';
@@ -32,7 +32,14 @@ export function Discover() {
   const seed = Number(params.get('seed') ?? 1) || 1;
 
   // The slider thumb has to track the pointer at 60fps; the feed only refetches once it settles.
-  const [surprise, setSurprise] = useState(() => Number(params.get('surprise') ?? 0.25));
+  const surpriseParam = params.get('surprise');
+  const [surprise, setSurprise] = useState(() => Number(surpriseParam ?? 0.25));
+  // Back/forward or a nav link moved the URL under the slider: follow it.
+  const [syncedParam, setSyncedParam] = useState(surpriseParam);
+  if (surpriseParam !== syncedParam) {
+    setSyncedParam(surpriseParam);
+    setSurprise(Number(surpriseParam ?? 0.25));
+  }
   const debouncedSurprise = useDebounce(surprise, 300);
 
   const feed = useDiscoverInfinite({
@@ -41,18 +48,18 @@ export function Discover() {
     seed,
   });
   const selection = useSelection(feed.items, `${typeParam}|${debouncedSurprise}|${seed}`);
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerId, setViewerId] = useState<number | null>(null);
   // "I'm feeling lucky" opens its pick outside the feed's list, on a max-surprise run of its own
   // so you can keep paging past the first pick instead of being stuck on one item.
-  const [lucky, setLucky] = useState<{ items: Media[]; index: number } | null>(null);
+  const [lucky, setLucky] = useState<{ items: Media[]; id: number } | null>(null);
   const [luckyPending, setLuckyPending] = useState(false);
 
-  const update = (fn: (next: URLSearchParams) => void) =>
+  const update = (fn: (next: URLSearchParams) => void, options?: NavigateOptions) =>
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       fn(next);
       return next;
-    });
+    }, options);
 
   const feelLucky = async () => {
     setLuckyPending(true);
@@ -64,7 +71,7 @@ export function Discover() {
         surprise: 1,
         seed: randomSeed(),
       });
-      if (res.items.length) setLucky({ items: res.items, index: 0 });
+      if (res.items.length) setLucky({ items: res.items, id: res.items[0].id });
       else toast('No media to pick from yet');
     } catch (err) {
       toast(`Failed: ${(err as Error).message}`);
@@ -131,7 +138,7 @@ export function Discover() {
                 onChange={(e) => {
                   const value = Number(e.target.value);
                   setSurprise(value);
-                  update((p) => p.set('surprise', String(value)));
+                  update((p) => p.set('surprise', String(value)), { replace: true });
                 }}
                 className="w-[150px] cursor-pointer"
                 title="Left: only what matches your taste. Right: pure chance."
@@ -172,7 +179,7 @@ export function Discover() {
           isFetchingNextPage={feed.isFetchingNextPage}
           fetchNextPage={feed.fetchNextPage}
           isLoading={feed.isLoading}
-          onOpen={setViewerIndex}
+          onOpen={(index) => setViewerId(feed.items[index].id)}
           selection={selection}
         />
       </div>
@@ -180,17 +187,17 @@ export function Discover() {
       {lucky && (
         <MediaViewer
           items={lucky.items}
-          index={lucky.index}
-          onIndexChange={(index) => setLucky((l) => l && { ...l, index })}
+          itemId={lucky.id}
+          onItemChange={(id) => setLucky((l) => l && { ...l, id })}
           onClose={() => setLucky(null)}
         />
       )}
-      {viewerIndex !== null && (
+      {viewerId !== null && (
         <MediaViewer
           items={feed.items}
-          index={viewerIndex}
-          onIndexChange={setViewerIndex}
-          onClose={() => setViewerIndex(null)}
+          itemId={viewerId}
+          onItemChange={setViewerId}
+          onClose={() => setViewerId(null)}
           onNearEnd={() => feed.hasNextPage && !feed.isFetchingNextPage && feed.fetchNextPage()}
         />
       )}

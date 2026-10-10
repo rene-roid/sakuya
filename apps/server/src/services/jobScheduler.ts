@@ -2,9 +2,10 @@ import { eq, and, inArray, isNull } from 'drizzle-orm';
 import type { JobSchedule, ScheduleJobType } from '@sakuya/shared';
 import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
-import { enqueueTagJob, enqueueHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
+import { runTagJob, runHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
 import { enqueueCleanupJob } from './cleanup';
-import { enqueueTranscodeJob } from './transcoder';
+import { runTranscodeJob } from './transcoder';
+import { enqueueJob, type JobHandle } from './jobQueue';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
 import { mediaIdsWhere } from '../lib/mediaByIds';
 
@@ -52,21 +53,42 @@ function libraryName(libraryId: number): string {
   return lib?.name ?? 'Library';
 }
 
+/**
+ * Queue a job that brings one library up to date. It reads the pending ids when it starts, not when
+ * it is queued, so one still waiting covers what later scans index. One per library and type runs
+ * at a time, so the next one starts after the current one has marked its ids done.
+ */
+function enqueueCatchUp(
+  jobType: 'tag' | 'hash' | 'transcode',
+  label: string,
+  libraryId: number,
+  pending: () => number[],
+  run: (job: JobHandle, ids: number[]) => Promise<string>,
+): void {
+  if (!pending().length) return;
+  enqueueJob(
+    jobType,
+    `${label}: ${libraryName(libraryId)}`,
+    (job) => run(job, pending()),
+    libraryId,
+    `${jobType}:${libraryId}`,
+  );
+}
+
 function dispatchTagForLibrary(libraryId: number): void {
   if (!aiTaggingEnabled() || !modelReady()) return;
-  const ids = untaggedMediaIds(libraryId);
-  if (ids.length) enqueueTagJob(ids, `AI tag: ${libraryName(libraryId)}`, libraryId);
+  enqueueCatchUp('tag', 'AI tag', libraryId, () => untaggedMediaIds(libraryId), runTagJob);
 }
 
 function dispatchHashForLibrary(libraryId: number): void {
-  const ids = unhashedImageIds(libraryId);
-  if (ids.length) enqueueHashJob(ids, libraryId);
+  enqueueCatchUp('hash', 'Compute image hashes', libraryId, () => unhashedImageIds(libraryId), runHashJob);
 }
 
 function dispatchTranscodeForLibrary(libraryId: number): void {
   if (!videoTranscodeEnabled()) return;
-  const ids = mediaIdsWhere(and(eq(schema.media.type, 'video'), isNull(schema.media.transcodedAt)), libraryId);
-  if (ids.length) enqueueTranscodeJob(ids, `Transcode: ${libraryName(libraryId)}`, libraryId);
+  const pending = () =>
+    mediaIdsWhere(and(eq(schema.media.type, 'video'), isNull(schema.media.transcodedAt)), libraryId);
+  enqueueCatchUp('transcode', 'Transcode', libraryId, pending, runTranscodeJob);
 }
 
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {

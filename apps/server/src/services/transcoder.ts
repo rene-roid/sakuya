@@ -46,8 +46,13 @@ async function transcodeVideo(sourcePath: string, mediaId: number): Promise<stri
     '-crf', '23',
     '-c:a', 'aac',
     '-movflags', '+faststart',
+    // ffmpeg picks the muxer from the extension and has none for ".part".
+    '-f', 'mp4',
     tmp,
-  ]);
+  ]).catch((err) => {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  });
   fs.renameSync(tmp, dest);
   return dest;
 }
@@ -63,30 +68,27 @@ async function processOne(mediaId: number): Promise<'transcoded' | 'skipped'> {
   return outcome;
 }
 
-export function enqueueTranscodeJob(mediaIds: number[], label: string, libraryId: number | null = null) {
-  return enqueueJob(
-    'transcode',
-    label,
-    async (job: JobHandle) => {
-      job.update({ total: mediaIds.length, log: `Checking ${mediaIds.length} videos…` });
-      let transcoded = 0;
-      let skipped = 0;
-      const errors = await eachWithProgress(
-        job,
-        mediaIds,
-        (done, total) => `Processed ${done}/${total}…`,
-        (id) => `transcode failed for media ${id}:`,
-        async (id) => {
-          if ((await processOne(id)) === 'transcoded') transcoded++;
-          else skipped++;
-        },
-        // One transcode can run for an hour, so report after every item.
-        1,
-      );
-      return `Completed. ${transcoded} transcoded, ${skipped} already playable${errors ? `, ${errors} errors` : ''}.`;
+export function enqueueTranscodeJob(mediaIds: number[], label: string) {
+  return enqueueJob('transcode', label, (job) => runTranscodeJob(job, mediaIds));
+}
+
+export async function runTranscodeJob(job: JobHandle, mediaIds: number[]): Promise<string> {
+  job.update({ total: mediaIds.length, log: `Checking ${mediaIds.length} videos…` });
+  let transcoded = 0;
+  let skipped = 0;
+  const errors = await eachWithProgress(
+    job,
+    mediaIds,
+    (done, total) => `Processed ${done}/${total}…`,
+    (id) => `transcode failed for media ${id}:`,
+    async (id) => {
+      if ((await processOne(id)) === 'transcoded') transcoded++;
+      else skipped++;
     },
-    libraryId,
+    // One transcode can run for an hour, so report after every item.
+    1,
   );
+  return `Completed. ${transcoded} transcoded, ${skipped} already playable${errors ? `, ${errors} errors` : ''}.`;
 }
 
 export function enqueueBulkTranscodeCheck() {

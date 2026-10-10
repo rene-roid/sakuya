@@ -96,7 +96,7 @@ function BoardCard({ board }: { board: BoardWithStats }) {
         onClick={() => navigate(`/boards/${board.id}`)}
       >
         {board.thumbMediaId ? (
-          <img src={thumbUrl(board.thumbMediaId)} alt={board.name} className="h-full w-full object-cover" />
+          <img src={thumbUrl(board.thumbMediaId)} alt={board.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-zinc-700">
             <Images size={30} />

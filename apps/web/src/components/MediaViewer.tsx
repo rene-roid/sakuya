@@ -5,6 +5,7 @@ import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, 
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
+import { patchCachedMedia } from '../lib/mediaCache';
 import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
@@ -22,8 +23,8 @@ const WATCHED_FLUSH_SECONDS = 10;
 
 interface MediaViewerProps {
   items: Media[];
-  index: number;
-  onIndexChange: (index: number) => void;
+  itemId: number;
+  onItemChange: (id: number) => void;
   onClose: () => void;
   onNearEnd?: () => void;
 }
@@ -79,7 +80,7 @@ function useFitSize(width: number | null, height: number | null) {
   return { paneRef, size };
 }
 
-export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }: MediaViewerProps) {
+export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }: MediaViewerProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [tagInput, setTagInput] = useState('');
@@ -89,7 +90,14 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   // Tracks the item we jumped from via the similar/duplicates panel, so it can be
   // highlighted and pinned first in that panel for the newly viewed item.
   const [previousPanelId, setPreviousPanelId] = useState<number | null>(null);
-  const item = jumpItem ?? items[index];
+  // Tracked by id: a refetch of the list (a tag removed here, a finished scan) shifts indexes.
+  // If the open item drops out of the list, it stays on screen and stepping resumes from its slot.
+  const index = items.findIndex((m) => m.id === itemId);
+  const [lastListed, setLastListed] = useState({ item: items[index], index });
+  if (index >= 0 && (items[index] !== lastListed.item || index !== lastListed.index)) {
+    setLastListed({ item: items[index], index });
+  }
+  const item = jumpItem ?? (index >= 0 ? items[index] : lastListed.item);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -150,7 +158,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       lastSavedProgress.current = progress;
       const watchedDelta = pendingWatchedSeconds.current;
       pendingWatchedSeconds.current = 0;
-      api.saveProgress(item.id, progress, { watchedDelta }).catch(() => {});
+      api.saveProgress(item.id, { progress, watchedDelta }).catch(() => {});
     },
     [item],
   );
@@ -162,7 +170,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     lastSavedProgress.current = item.viewProgress ?? 0;
     lastPlayedTime.current = 0;
     pendingWatchedSeconds.current = 0;
-    api.saveProgress(item.id, item.viewProgress ?? 0, { view: true }).catch(() => {});
+    api.saveProgress(item.id, { view: true }).catch(() => {});
   }, [item?.id]);
 
   // Dwell time: the still-image counterpart to a video's watched seconds. Counts only while the
@@ -170,8 +178,6 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   useEffect(() => {
     if (!item || (item.type === 'video' && !isGifName(item.filename))) return;
     const mediaId = item.id;
-    // Echo the current progress back rather than 0 — this endpoint writes whatever it's given.
-    const progress = item.viewProgress ?? 0;
     let startedAt = document.visibilityState === 'visible' ? Date.now() : 0;
     let pending = 0;
 
@@ -181,7 +187,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       const seconds = pending / 1000;
       if (seconds < MIN_DWELL_SECONDS) return;
       pending = 0;
-      api.saveProgress(mediaId, progress, { dwellDelta: Math.min(seconds, 3600) }).catch(() => {});
+      api.saveProgress(mediaId, { dwellDelta: Math.min(seconds, 3600) }).catch(() => {});
     };
 
     const onVisibility = () => {
@@ -224,15 +230,17 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       const delta = video.currentTime - lastPlayedTime.current;
       if (delta > 0 && delta < 2) pendingWatchedSeconds.current += delta;
       if (!completedRef.current && pendingWatchedSeconds.current > 0 && video.duration) {
-        const progress = Math.min(video.currentTime / video.duration, 1);
-        api.saveProgress(mediaId, progress, { watchedDelta: pendingWatchedSeconds.current }).catch(() => {});
+        lastSavedProgress.current = Math.min(video.currentTime / video.duration, 1);
+        api.saveProgress(mediaId, { progress: lastSavedProgress.current, watchedDelta: pendingWatchedSeconds.current }).catch(() => {});
         pendingWatchedSeconds.current = 0;
       }
+      // Reopening resumes from the cached list row, which still holds the progress it was fetched with.
+      patchCachedMedia(queryClient, mediaId, { viewProgress: lastSavedProgress.current });
       video.pause();
       video.removeAttribute('src');
       video.load();
     };
-  }, [item?.id]);
+  }, [item?.id, queryClient]);
 
   useEffect(() => {
     setRenaming(false);
@@ -250,29 +258,32 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
       if (!items.length) return;
       setJumpItem(null);
       setPreviousPanelId(null);
-      let next = index + dir;
+      // Once the open item has left the list, its successor has slid into its old slot.
+      let next = index >= 0 ? index + dir : dir > 0 ? lastListed.index : lastListed.index - 1;
       if (next < 0) next = items.length - 1;
       if (next >= items.length) next = 0;
-      onIndexChange(next);
+      onItemChange(items[next].id);
       if (items.length - next < 10) onNearEnd?.();
     },
-    [index, items.length, onIndexChange, onNearEnd],
+    [index, lastListed.index, items, onItemChange, onNearEnd],
   );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
-      const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+      // Alt+Arrow is browser history; keys typed into a field (Escape included) are the field's.
+      if (e.altKey || e.metaKey || e.ctrlKey || target?.closest('input, textarea, [contenteditable]')) return;
+      // On the board picker the arrows choose a board, and the step would leave it pointed at the next item.
+      const inSelect = target?.tagName === 'SELECT';
       if (e.key === 'Escape') {
-        if (renaming) setRenaming(false);
-        else if (showDeleteConfirm) setShowDeleteConfirm(false);
+        if (showDeleteConfirm) setShowDeleteConfirm(false);
         else handleClose();
-      } else if (!isTextInput && e.key === 'ArrowRight') step(1);
-      else if (!isTextInput && e.key === 'ArrowLeft') step(-1);
+      } else if (!inSelect && e.key === 'ArrowRight') step(1);
+      else if (!inSelect && e.key === 'ArrowLeft') step(-1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [handleClose, step, renaming, showDeleteConfirm]);
+  }, [handleClose, step, showDeleteConfirm]);
 
   const onLoadedMetadata = useCallback(
     (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -298,7 +309,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
     mutationFn: (body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> }) =>
       api.patchTags(item.id, body),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['media-detail', item.id], updated);
+      queryClient.setQueryData(['media-detail', updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
       toast('Tags saved');
@@ -308,7 +319,7 @@ export function MediaViewer({ items, index, onIndexChange, onClose, onNearEnd }:
   const renameMutation = useMutation({
     mutationFn: (filename: string) => api.renameMedia(item.id, filename),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['media-detail', item.id], updated);
+      queryClient.setQueryData(['media-detail', updated.id], updated);
       queryClient.invalidateQueries({ queryKey: ['media'] });
       setRenaming(false);
       toast('Renamed');

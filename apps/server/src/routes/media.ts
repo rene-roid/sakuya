@@ -8,7 +8,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, normalizeTagName } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
@@ -56,6 +56,11 @@ function safeFilename(filename: string): string | null {
   return name && name !== '.' && name !== '..' ? name : null;
 }
 
+/** Whether a media row owns `filePath`, including one whose file is gone from disk. */
+function pathIndexed(filePath: string): boolean {
+  return sqlite.query('SELECT 1 FROM media WHERE path = ?').get(filePath) !== null;
+}
+
 /**
  * FTS5 query string for a set of free-text search terms.
  *
@@ -80,7 +85,7 @@ function ftsMatchExpr(terms: string[]): string {
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
   const tagNames = (query.tags ?? '')
     .split(',')
-    .map((t) => t.trim().toLowerCase())
+    .map(normalizeTagName)
     .filter(Boolean);
 
   const conds: string[] = [];
@@ -157,14 +162,23 @@ mediaRouter.get(
       pageParams.push(key, id);
     }
 
+    // Rank on narrow rows, then fetch full rows for the page only: with m.* and the tag_count
+    // subquery in the ranking select, SQLite built every matching row before LIMIT kept 60.
+    const order = dir === 'asc' ? 'ASC' : 'DESC';
     const sql = `
-      SELECT m.*, ${keyExpr} AS sort_key, l.name AS library_name,
+      WITH page AS (
+        SELECT m.id AS id, ${keyExpr} AS sort_key
+        FROM media m
+        ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
+        ORDER BY ${keyExpr} ${order}, m.id ${order}
+        LIMIT ?
+      )
+      SELECT m.*, page.sort_key, l.name AS library_name,
              (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-      FROM media m
+      FROM page
+      JOIN media m ON m.id = page.id
       LEFT JOIN libraries l ON l.id = m.library_id
-      ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
-      ORDER BY ${keyExpr} ${dir === 'asc' ? 'ASC' : 'DESC'}, m.id ${dir === 'asc' ? 'ASC' : 'DESC'}
-      LIMIT ?`;
+      ORDER BY page.sort_key ${order}, m.id ${order}`;
     const rows = sqlite.query(sql).all(...pageParams, query.limit) as MediaSqlRow[];
 
     let nextCursor: string | null = null;
@@ -307,8 +321,8 @@ mediaRouter.post(
   '/api/media/tags-batch',
   wrap(async (req, res) => {
     const body = tagsBatchSchema.parse(req.body);
-    const addNames = body.add.map((raw) => raw.trim().toLowerCase().replace(/\s+/g, '_')).filter(Boolean);
-    const removeNames = body.remove.map((raw) => raw.trim().toLowerCase()).filter(Boolean);
+    const addNames = body.add.map(normalizeTagName).filter(Boolean);
+    const removeNames = body.remove.map(normalizeTagName).filter(Boolean);
     if (!addNames.length && !removeNames.length) {
       return res.status(400).json({ error: 'Nothing to add or remove' });
     }
@@ -323,23 +337,19 @@ mediaRouter.post(
     const rows = mediaRowsByIds(body.ids);
     const failed: BulkFailure[] = [];
     let updated = 0;
+    // Prepared once: building a Drizzle query per link added ~280ms to a 5000-item batch.
+    const link = sqlite.prepare(
+      `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, NULL, 'user') ON CONFLICT DO NOTHING`,
+    );
+    const unlink = sqlite.prepare('DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?');
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
         if (!rows.has(id)) {
           failed.push({ id, error: 'Not found' });
           continue;
         }
-        for (const tagId of addTagIds) {
-          db.insert(schema.mediaTags)
-            .values({ mediaId: id, tagId, confidence: null, source: 'user' })
-            .onConflictDoNothing()
-            .run();
-        }
-        for (const tagId of removeTagIds) {
-          db.delete(schema.mediaTags)
-            .where(and(eq(schema.mediaTags.mediaId, id), eq(schema.mediaTags.tagId, tagId)))
-            .run();
-        }
+        for (const tagId of addTagIds) link.run(id, tagId);
+        for (const tagId of removeTagIds) unlink.run(id, tagId);
         updated++;
       }
     });
@@ -426,31 +436,37 @@ mediaRouter.post(
         failed.push({ id: item.id, error: 'A file with that name already exists' });
         continue;
       }
+      if (pathIndexed(newPath)) {
+        failed.push({ id: item.id, error: 'Another item already has that name' });
+        continue;
+      }
       claimed.add(newPath);
       planned.push({ id: item.id, from: row.path, to: newPath, filename: safeName });
     }
 
-    // Phase 2: move on disk first; only rows whose file actually moved get their path updated.
-    const renamed: typeof planned = [];
+    // Phase 2: each row follows its own file right away, and a row that can't be updated puts its
+    // file back, so a failure never leaves a moved file behind a row pointing at the old path.
+    let renamed = 0;
     for (const move of planned) {
       try {
         fs.renameSync(move.from, move.to);
-        renamed.push(move);
       } catch (err) {
         failed.push({ id: move.id, error: err instanceof Error ? err.message : 'Rename failed' });
+        continue;
       }
-    }
-    const commit = sqlite.transaction(() => {
-      for (const move of renamed) {
+      try {
         db.update(schema.media)
           .set({ path: move.to, filename: move.filename })
           .where(eq(schema.media.id, move.id))
           .run();
+        renamed++;
+      } catch (err) {
+        fs.renameSync(move.to, move.from);
+        failed.push({ id: move.id, error: err instanceof Error ? err.message : 'Rename failed' });
       }
-    });
-    commit();
+    }
 
-    const body: BulkResult = { ok: true, updated: renamed.length, failed };
+    const body: BulkResult = { ok: true, updated: renamed, failed };
     res.json(body);
   }),
 );
@@ -537,6 +553,7 @@ mediaRouter.patch(
     if (safeName === row.filename) return res.json(getDetail(id));
     const newPath = path.join(path.dirname(row.path), safeName);
     if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
+    if (pathIndexed(newPath)) return res.status(409).json({ error: 'Another item already has that name' });
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source file missing' });
     fs.renameSync(row.path, newPath);
     db.update(schema.media).set({ path: newPath, filename: safeName }).where(eq(schema.media.id, id)).run();
@@ -618,7 +635,7 @@ mediaRouter.patch(
     const body = tagsPatchSchema.parse(req.body);
     const touched: number[] = [];
     for (const raw of body.add) {
-      const name = raw.trim().toLowerCase().replace(/\s+/g, '_');
+      const name = normalizeTagName(raw);
       if (!name) continue;
       const tagId = upsertTag(name, body.category);
       db.insert(schema.mediaTags)
@@ -628,7 +645,7 @@ mediaRouter.patch(
       touched.push(tagId);
     }
     for (const raw of body.remove) {
-      const name = raw.trim().toLowerCase();
+      const name = normalizeTagName(raw);
       const tag = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
       if (!tag) continue;
       db.delete(schema.mediaTags)
@@ -638,7 +655,7 @@ mediaRouter.patch(
     }
     if (body.setCategory) {
       for (const [rawName, category] of Object.entries(body.setCategory)) {
-        const name = rawName.trim().toLowerCase();
+        const name = normalizeTagName(rawName);
         db.update(schema.tags).set({ category }).where(eq(schema.tags.name, name)).run();
       }
     }
@@ -682,7 +699,7 @@ mediaRouter.get(
     if (row.perceptualHash) {
       // Candidates are narrowed by perceptual-hash bands before any distance is computed.
       // Written as a UNION of single-band lookups rather than an OR chain on purpose: with an OR,
-      // SQLite planned the whole thing through media_type_idx and never touched the band indexes.
+      // SQLite planned the whole thing through the media type index and never touched the band indexes.
       // This form gives eight covering-index probes, taking a viewer open from ~146ms to ~11ms on
       // a 30k-image library. See lib/phashBands.ts for the recall tradeoff this accepts.
       const bands = phashBands(row.perceptualHash);
@@ -720,7 +737,7 @@ mediaRouter.post(
 );
 
 const progressSchema = z.object({
-  progress: z.number().min(0).max(1),
+  progress: z.number().min(0).max(1).optional(),
   view: z.boolean().optional(),
   watchedDelta: z.number().min(0).max(60).optional(),
   // Dwell is flushed on close/tab-hide, so a single delta can be much longer than a video tick.
@@ -732,7 +749,8 @@ mediaRouter.patch(
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
     const body = progressSchema.parse(req.body);
-    const updates: Record<string, unknown> = { viewProgress: body.progress, lastViewedAt: Date.now() };
+    const updates: Record<string, unknown> = { lastViewedAt: Date.now() };
+    if (body.progress !== undefined) updates.viewProgress = body.progress;
     if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
     if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;

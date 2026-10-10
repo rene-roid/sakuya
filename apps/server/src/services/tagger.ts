@@ -20,7 +20,7 @@ interface LabelEntry {
   category: TagCategory;
 }
 
-let session: any = null;
+let session: Promise<any> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
@@ -54,7 +54,7 @@ function releaseSession(): void {
   const old = session;
   session = null;
   old
-    ?.release()
+    ?.then((loaded) => loaded.release())
     .then(trimNativeHeap)
     .catch((err: unknown) => console.error('tagger: failed to release model session:', err));
 }
@@ -111,6 +111,7 @@ export function taggerStatus(): TaggerStatus {
 /** Switch the active tagger model. Clears cached model files/session so the new one must be downloaded. */
 export function selectModel(modelId: string): void {
   if (downloading) throw new Error('Cannot switch models while a download is in progress');
+  if (inFlight > 0) throw new Error('Cannot switch models while images are being tagged');
   if (!MODEL_REGISTRY.some((m) => m.id === modelId)) throw new Error(`Unknown model: ${modelId}`);
   if (selectedModelId() === modelId) return;
   setSetting('tagger_model', modelId);
@@ -136,10 +137,21 @@ function loadLabels(): LabelEntry[] {
   return labels;
 }
 
-async function getSession(): Promise<any> {
+/** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
+function getSession(): Promise<any> {
   if (session) return session;
+  const load = loadSession();
+  session = load;
+  // A failed load must not stick, or every later tag would get the same rejection.
+  load.catch(() => {
+    if (session === load) session = null;
+  });
+  return load;
+}
+
+async function loadSession() {
   const ort = await import('onnxruntime-node');
-  session = await ort.InferenceSession.create(MODEL_PATH, {
+  return ort.InferenceSession.create(MODEL_PATH, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
     // Cap threads so bulk tagging can't monopolize every core and starve
@@ -149,7 +161,6 @@ async function getSession(): Promise<any> {
     intraOpNumThreads: LIMITS.onnxIntraOpThreads,
     interOpNumThreads: LIMITS.onnxInterOpThreads,
   });
-  return session;
 }
 
 /** Pad to square (white), resize to 448x448, RGB→BGR, float32 0-255, NHWC. */
@@ -216,14 +227,30 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   return out;
 }
 
+/** Tags are stored lowercase with underscores for spaces; every user-typed name goes through this. */
+export function normalizeTagName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '_');
+}
+
 export function upsertTag(name: string, category: TagCategory): number {
   const existing = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
   if (existing) return existing.id;
   return db.insert(schema.tags).values({ name, category }).returning().get().id;
 }
 
+let tagLinksChanges = 0;
+
+/**
+ * Moves whenever a media gains or loses a tag. Every media_tags write reaches refreshUsageCounts,
+ * so caches derived from media_tags compare this instead of re-reading the table.
+ */
+export function tagLinksVersion(): number {
+  return tagLinksChanges;
+}
+
 export function refreshUsageCounts(tagIds: number[]): void {
   if (!tagIds.length) return;
+  tagLinksChanges++;
   // Chunked: a library delete can touch most of the tag vocabulary at once.
   for (const part of chunkIds(tagIds)) {
     const placeholders = part.map(() => '?').join(',');
@@ -288,60 +315,48 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
 }
 
 export function enqueueTagJob(mediaIds: number[], label: string, libraryId: number | null = null) {
-  return enqueueJob(
-    'tag',
-    label,
-    async (job: JobHandle) => {
-      job.update({ total: mediaIds.length, log: `Tagging ${mediaIds.length} files…` });
-      const errors = await eachWithProgress(
-        job,
-        mediaIds,
-        (done, total) => `Tagged ${done}/${total} files…`,
-        (id) => `tagging failed for media ${id}:`,
-        tagOneMedia,
-        1,
-      );
-      const tagged = mediaIds.length - errors;
-      return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;
-    },
-    libraryId,
+  return enqueueJob('tag', label, (job) => runTagJob(job, mediaIds), libraryId);
+}
+
+export async function runTagJob(job: JobHandle, mediaIds: number[]): Promise<string> {
+  job.update({ total: mediaIds.length, log: `Tagging ${mediaIds.length} files…` });
+  const errors = await eachWithProgress(
+    job,
+    mediaIds,
+    (done, total) => `Tagged ${done}/${total} files…`,
+    (id) => `tagging failed for media ${id}:`,
+    tagOneMedia,
+    1,
   );
+  const tagged = mediaIds.length - errors;
+  return `Completed. ${tagged} files tagged${errors ? `, ${errors} errors` : ''}.`;
 }
 
 export function unhashedImageIds(libraryId?: number): number[] {
   return mediaIdsWhere(and(eq(schema.media.type, 'image'), isNull(schema.media.perceptualHash)), libraryId);
 }
 
-export function enqueueHashJob(mediaIds: number[], libraryId: number | null = null) {
-  const lib = libraryId
-    ? db.select().from(schema.libraries).where(eq(schema.libraries.id, libraryId)).get()
-    : null;
-  const label = lib
-    ? `Compute image hashes: ${lib.name} (${mediaIds.length} files)`
-    : `Compute image hashes (${mediaIds.length} files)`;
-  return enqueueJob(
-    'hash',
-    label,
-    async (job: JobHandle) => {
-      job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
-      let hashed = 0;
-      const errors = await eachWithProgress(
-        job,
-        mediaIds,
-        (done, total) => `Hashed ${done}/${total} images…`,
-        (id) => `hashing failed for media ${id}:`,
-        async (id) => {
-          const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
-          if (!row || row.type !== 'image' || !fs.existsSync(row.path)) return;
-          const hash = await computeDHash(row.path);
-          db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, id)).run();
-          hashed++;
-        },
-      );
-      return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
+export function enqueueHashJob(mediaIds: number[]) {
+  return enqueueJob('hash', `Compute image hashes (${mediaIds.length} files)`, (job) => runHashJob(job, mediaIds));
+}
+
+export async function runHashJob(job: JobHandle, mediaIds: number[]): Promise<string> {
+  job.update({ total: mediaIds.length, log: `Hashing ${mediaIds.length} images…` });
+  let hashed = 0;
+  const errors = await eachWithProgress(
+    job,
+    mediaIds,
+    (done, total) => `Hashed ${done}/${total} images…`,
+    (id) => `hashing failed for media ${id}:`,
+    async (id) => {
+      const row = db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+      if (!row || row.type !== 'image' || !fs.existsSync(row.path)) return;
+      const hash = await computeDHash(row.path);
+      db.update(schema.media).set(phashColumns(hash)).where(eq(schema.media.id, id)).run();
+      hashed++;
     },
-    libraryId,
   );
+  return `Completed. ${hashed} hashed${errors ? `, ${errors} errors` : ''}.`;
 }
 
 export function enqueueModelDownload() {

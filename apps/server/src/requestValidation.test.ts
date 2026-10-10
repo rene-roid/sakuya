@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
+import sharp from 'sharp';
 import { useTestConfig } from './testConfig';
 
 useTestConfig('validation', { port: 38780 });
@@ -95,4 +96,31 @@ test('system info reports the thumbnail folder size', async () => {
   fs.writeFileSync(path.join(THUMBS_DIR, 'size-probe.webp'), Buffer.alloc(1234));
   const info = (await (await fetch(BASE + '/api/system')).json()) as { thumbBytes: number };
   expect(info.thumbBytes).toBeGreaterThanOrEqual(1234);
+});
+
+test('an upload into a library that does not exist is a 404 and indexes nothing', async () => {
+  const png = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#f00' } }).png().toBuffer();
+  const form = new FormData();
+  form.append('libraryId', '999999');
+  form.append('files', new File([png], 'orphan.png'));
+  const res = await fetch(BASE + '/api/uploads', { method: 'POST', body: form });
+  expect(res.status).toBe(404);
+  expect(sqlite.query(`SELECT COUNT(*) AS c FROM media WHERE library_id = 999999`).get()).toEqual({ c: 0 });
+});
+
+test('a library patch with nothing to change, or a fractional cover id, is a 400', async () => {
+  const lib = db.insert(schema.libraries).values({ name: 'patch-me', createdAt: Date.now() }).returning().get();
+  expect((await send('PATCH', `/api/libraries/${lib.id}`, {})).status).toBe(400);
+  expect((await send('PATCH', `/api/libraries/${lib.id}`, { thumbnailMediaId: 1.5 })).status).toBe(400);
+  const renamed = await send('PATCH', `/api/libraries/${lib.id}`, { name: 'patched' });
+  expect(((await renamed.json()) as { name: string }).name).toBe('patched');
+});
+
+test('a cursor that is not a list of plain values is a 400', async () => {
+  const cursor = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const list = (c: string) => fetch(`${BASE}/api/media?cursor=${c}`);
+  expect((await list(cursor([{ a: 1 }, 1]))).status).toBe(400);
+  expect((await list(cursor('ab'))).status).toBe(400);
+  expect((await list(cursor([0, 0]))).status).toBe(200);
+  expect((await fetch(`${BASE}/api/discover?cursor=${cursor(['a', 1, 1])}`)).status).toBe(400);
 });

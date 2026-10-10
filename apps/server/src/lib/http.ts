@@ -19,13 +19,23 @@ export function encodeCursor(parts: unknown[]): string {
   return Buffer.from(JSON.stringify(parts)).toString('base64url');
 }
 
+type CursorPart = string | number | null;
+
+const isCursorPart = (part: unknown): part is CursorPart =>
+  part === null || typeof part === 'string' || typeof part === 'number';
+
 /** The parts encodeCursor packed; anything that isn't one is a 400. */
-export function decodeCursor(cursor: string): any[] {
+export function decodeCursor(cursor: string): CursorPart[] {
+  let parts: unknown;
   try {
-    return [...JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'))];
+    parts = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
   } catch {
+    parts = undefined;
+  }
+  if (!Array.isArray(parts) || !parts.every(isCursorPart)) {
     throw Object.assign(new Error('Invalid cursor'), { status: 400 });
   }
+  return parts;
 }
 
 /** Buffer the raw body and let Bun's fetch primitives parse the multipart form. */

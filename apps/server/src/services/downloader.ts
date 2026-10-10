@@ -5,7 +5,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { eq, and, gt, inArray } from 'drizzle-orm';
 import { db, schema } from '../db';
-import { downloaderConcurrency } from '../lib/settings';
+import { downloaderConcurrency, getSetting } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
 import { removeMediaRows } from './mediaRemoval';
@@ -128,14 +128,31 @@ function pump() {
   }
 }
 
+/** The located binary per configured path, so a batch doesn't spawn `gallery-dl --version` per item. */
+let located: { setting: string | null; path: Promise<string | null> } | null = null;
+
+function locateGalleryDl(): Promise<string | null> {
+  const setting = getSetting('gallery_dl_path');
+  if (located?.setting === setting) return located.path;
+  const lookup = detectGalleryDl().then((status) => status.path);
+  located = { setting, path: lookup };
+  // A miss isn't remembered, so installing gallery-dl is picked up by the next item.
+  void lookup.then((found) => {
+    if (!found && located?.path === lookup) located = null;
+  });
+  return lookup;
+}
+
 async function runOne(itemId: number): Promise<void> {
   const item = getItem(itemId);
   if (!item || item.status !== 'queued') return;
   const batch = db.select().from(schema.downloadBatches).where(eq(schema.downloadBatches.id, item.batchId)).get();
   if (!batch) return;
 
-  const galleryDl = await detectGalleryDl();
-  if (!galleryDl.installed || !galleryDl.path) {
+  const galleryDlPath = await locateGalleryDl();
+  // Paused, skipped or removed while gallery-dl was being located.
+  if (getItem(itemId)?.status !== 'queued') return;
+  if (!galleryDlPath) {
     patchItem(itemId, { status: 'error', errorMessage: 'gallery-dl is not installed' });
     maybeCompleteBatch(item.batchId);
     return;
@@ -163,7 +180,7 @@ async function runOne(itemId: number): Promise<void> {
 
   await new Promise<void>((resolve) => {
     const env = ffmpegDir ? { ...process.env, PATH: `${ffmpegDir}${path.delimiter}${process.env.PATH ?? ''}` } : process.env;
-    const child = spawn(galleryDl.path!, args, { cwd: batch.folderPath, stdio: ['ignore', 'pipe', 'pipe'], env });
+    const child = spawn(galleryDlPath, args, { cwd: batch.folderPath, stdio: ['ignore', 'pipe', 'pipe'], env });
     runningProcs.set(itemId, { child, killIntent: null });
     patchItem(itemId, { pid: child.pid ?? null });
 
