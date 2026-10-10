@@ -88,7 +88,7 @@ test('a video a later scan finds while a transcode of its library runs still get
   const running = new Set<number>();
   let overlapped = false;
   let rescanned = false;
-  jobEvents.on('job', (row: { id: number; type: string; libraryId: number | null; status: string }) => {
+  const onJob = (row: { id: number; type: string; libraryId: number | null; status: string }) => {
     if (row.type !== 'transcode' || row.libraryId !== lib.id) return;
     if (row.status === 'running') running.add(row.id);
     else running.delete(row.id);
@@ -98,11 +98,14 @@ test('a video a later scan finds while a transcode of its library runs still get
       index();
       dispatchAfterScan(lib.id);
     }
-  });
+  };
+  jobEvents.on('job', onJob);
 
   index();
   dispatchAfterScan(lib.id);
-  expect(await transcoded()).toEqual([true, true]);
+  const done = await transcoded();
+  jobEvents.off('job', onJob);
+  expect(done).toEqual([true, true]);
   expect(overlapped).toBe(false);
 });
 

@@ -699,7 +699,7 @@ mediaRouter.get(
     if (row.perceptualHash) {
       // Candidates are narrowed by perceptual-hash bands before any distance is computed.
       // Written as a UNION of single-band lookups rather than an OR chain on purpose: with an OR,
-      // SQLite planned the whole thing through media_type_idx and never touched the band indexes.
+      // SQLite planned the whole thing through the media type index and never touched the band indexes.
       // This form gives eight covering-index probes, taking a viewer open from ~146ms to ~11ms on
       // a 30k-image library. See lib/phashBands.ts for the recall tradeoff this accepts.
       const bands = phashBands(row.perceptualHash);
