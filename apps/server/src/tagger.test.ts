@@ -4,7 +4,7 @@ import { useTestConfig } from './testConfig';
 // The tagger module opens the database on import, so it needs a throwaway data dir.
 useTestConfig('tagger');
 
-const { normalizeTagName, parseLabels, selectTags } = await import('./services/tagger');
+const { parseLabels, selectTags } = await import('./services/tagger');
 
 const labels = parseLabels(
   [
@@ -58,10 +58,4 @@ describe('selectTags', () => {
     expect(names(selectTags(new Float32Array([0.9, 0.1, 0.7]), labels, 0.5))).toEqual(['general', '1girl']);
     expect(names(selectTags(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]), labels, 0.5))).toEqual(['general']);
   });
-});
-
-test('normalizeTagName lowercases and turns runs of whitespace into one underscore', () => {
-  expect(normalizeTagName('  Blue   Hair ')).toBe('blue_hair');
-  expect(normalizeTagName('Hakurei\tReimu')).toBe('hakurei_reimu');
-  expect(normalizeTagName('   ')).toBe('');
 });

@@ -1,5 +1,5 @@
 import { afterEach, expect, setSystemTime, test } from 'bun:test';
-import { formatBytes, formatDuration, normalizeTag, timeAgo } from './format';
+import { formatBytes, formatDuration, timeAgo } from './format';
 
 afterEach(() => {
   setSystemTime();
@@ -36,8 +36,4 @@ test('timeAgo counts minutes, hours and days, then falls back to a date', () => 
   expect(timeAgo(now - 29 * 24 * 60 * 60_000)).toBe('29 days ago');
   const old = now - 45 * 24 * 60 * 60_000;
   expect(timeAgo(old)).toBe(new Date(old).toLocaleDateString());
-});
-
-test('normalizeTag matches how the server stores tag names', () => {
-  expect(normalizeTag('  Blue   Hair ')).toBe('blue_hair');
 });

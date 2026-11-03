@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { MediaFilters } from '../lib/api';
-import { normalizeTag } from '../lib/format';
+import { normalizeTagName } from '@sakuya/shared';
 
 export type SortMode = MediaFilters['sort'];
 
@@ -107,7 +107,7 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
       addTag: (tag) =>
         update((p) => {
           const tags = (p.get('tags') ?? '').split(',').filter(Boolean);
-          const clean = normalizeTag(tag);
+          const clean = normalizeTagName(tag);
           if (clean && !tags.includes(clean)) p.set('tags', [...tags, clean].join(','));
         }),
       removeTag: (tag) =>

@@ -33,8 +33,3 @@ export function timeAgo(ts: number | null): string {
 
 /** Tag categories, in the order every category picker lists them. */
 export const CATEGORIES: TagCategory[] = ['general', 'character', 'rating', 'user'];
-
-/** Tags are stored lowercase with underscores for spaces. */
-export function normalizeTag(tag: string): string {
-  return tag.trim().toLowerCase().replace(/\s+/g, '_');
-}

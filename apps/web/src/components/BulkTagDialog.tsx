@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
-import type { Media, TagCategory } from '@sakuya/shared';
+import { normalizeTagName, type Media, type TagCategory } from '@sakuya/shared';
 import { api } from '../lib/api';
-import { CATEGORIES, normalizeTag } from '../lib/format';
+import { CATEGORIES } from '../lib/format';
 import { TagSearchInput } from './TagSearchInput';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
 import { Modal } from './Modal';
@@ -108,7 +108,7 @@ export function BulkTagDialog({
         onAddTag={(tag) => setAdd((prev) => (prev.includes(tag) ? prev : [...prev, tag]))}
         onRemoveTag={(tag) => setAdd((prev) => prev.filter((t) => t !== tag))}
         onFreeText={(text) => {
-          const tag = normalizeTag(text);
+          const tag = normalizeTagName(text);
           if (tag) setAdd((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
         }}
         libraryId={libraryId}

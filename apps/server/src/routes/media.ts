@@ -8,7 +8,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, normalizeTagName } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
@@ -20,6 +20,7 @@ import { phashBands } from '../lib/phashBands';
 import {
   MEDIA_TYPES,
   TAG_CATEGORIES,
+  normalizeTagName,
   type BulkFailure,
   type BulkResult,
   type DuplicatesResponse,
