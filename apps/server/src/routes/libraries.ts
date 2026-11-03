@@ -4,7 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, ne } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, readFormData } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
@@ -182,13 +182,23 @@ librariesRouter.delete(
     const id = intParam(req.params.id);
     const folder = db.select().from(schema.folders).where(eq(schema.folders.id, id)).get();
     if (!folder) return res.status(404).json({ error: 'Not found' });
-    // Remove indexed media that lives under this folder root.
+    // Remove indexed media that lives under this folder root, except what another folder of the
+    // library still covers: one nested inside this one, or one this folder is nested inside.
+    const others = db
+      .select({ path: schema.folders.path })
+      .from(schema.folders)
+      .where(and(eq(schema.folders.libraryId, folder.libraryId), ne(schema.folders.id, id)))
+      .all();
     const rows = db
       .select({ id: schema.media.id, path: schema.media.path })
       .from(schema.media)
       .where(and(eq(schema.media.libraryId, folder.libraryId), eq(schema.media.source, 'folder')))
       .all();
-    removeMediaRows(rows.filter((m) => isUnder(m.path, folder.path)).map((m) => m.id));
+    removeMediaRows(
+      rows
+        .filter((m) => isUnder(m.path, folder.path) && !others.some((other) => isUnder(m.path, other.path)))
+        .map((m) => m.id),
+    );
     db.delete(schema.folders).where(eq(schema.folders.id, id)).run();
     res.json({ ok: true });
   }),

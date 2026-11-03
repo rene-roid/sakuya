@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { useTestConfig } from './testConfig';
 
@@ -106,4 +107,47 @@ test('library tag autocomplete reflects every tag edit and delete since the last
   expect(await suggest()).toEqual(['auto_two:2']);
   await fetch(`${BASE}/api/media/${b.id}`, { method: 'DELETE' });
   expect(await suggest()).toEqual(['auto_two:1']);
+});
+
+/** A library with `/root` and `/root/nested` attached and one indexed file in each. */
+function nestedLibrary(name: string) {
+  const lib = addLibrary(name);
+  const root = `/tmp/removal-${name}`;
+  const folder = (folderPath: string) =>
+    db.insert(schema.folders).values({ libraryId: lib.id, path: folderPath, createdAt: Date.now() }).returning().get();
+  const file = (filePath: string) =>
+    db
+      .insert(schema.media)
+      .values({
+        libraryId: lib.id,
+        source: 'folder',
+        path: filePath,
+        filename: path.basename(filePath),
+        type: 'image',
+        createdAt: Date.now(),
+      })
+      .returning()
+      .get();
+  return {
+    outer: folder(root),
+    inner: folder(`${root}/nested`),
+    outerFile: file(`${root}/top.png`),
+    innerFile: file(`${root}/nested/deep.png`),
+  };
+}
+
+const mediaExists = (id: number) => !!db.select().from(schema.media).where(eq(schema.media.id, id)).get();
+
+test('detaching a folder keeps media under a nested folder that is still attached', async () => {
+  const { outer, outerFile, innerFile } = nestedLibrary('detach-outer');
+  expect((await fetch(`${BASE}/api/folders/${outer.id}`, { method: 'DELETE' })).status).toBe(200);
+  expect(mediaExists(outerFile.id)).toBe(false);
+  expect(mediaExists(innerFile.id)).toBe(true);
+});
+
+test('detaching a nested folder keeps its media, which the outer folder still covers', async () => {
+  const { inner, outerFile, innerFile } = nestedLibrary('detach-inner');
+  expect((await fetch(`${BASE}/api/folders/${inner.id}`, { method: 'DELETE' })).status).toBe(200);
+  expect(mediaExists(outerFile.id)).toBe(true);
+  expect(mediaExists(innerFile.id)).toBe(true);
 });
