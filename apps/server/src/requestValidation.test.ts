@@ -116,6 +116,16 @@ test('a library patch with nothing to change, or a fractional cover id, is a 400
   expect(((await renamed.json()) as { name: string }).name).toBe('patched');
 });
 
+test('renaming a library leaves its type alone', async () => {
+  const lib = db
+    .insert(schema.libraries)
+    .values({ name: 'videos', type: 'video', createdAt: Date.now() })
+    .returning()
+    .get();
+  const res = await send('PATCH', `/api/libraries/${lib.id}`, { name: 'clips' });
+  expect(await res.json()).toMatchObject({ name: 'clips', type: 'video' });
+});
+
 test('a cursor that is not a list of plain values is a 400', async () => {
   const cursor = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
   const list = (c: string) => fetch(`${BASE}/api/media?cursor=${c}`);

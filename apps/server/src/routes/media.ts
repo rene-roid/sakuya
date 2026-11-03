@@ -636,7 +636,7 @@ const tagsPatchSchema = z.object({
   remove: z.array(z.string().min(1)).default([]),
   category: z.enum(TAG_CATEGORIES).default('user'),
   // Change an existing tag's global category: { name -> category }.
-  setCategory: z.record(z.enum(TAG_CATEGORIES)).optional(),
+  setCategory: z.record(z.string(), z.enum(TAG_CATEGORIES)).optional(),
 });
 
 mediaRouter.patch(

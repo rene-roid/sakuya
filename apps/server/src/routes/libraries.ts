@@ -60,10 +60,18 @@ librariesRouter.get(
   }),
 );
 
-const libraryBodySchema = z.object({
+const libraryFields = z.object({
   name: z.string().min(1).max(120),
-  type: z.enum(LIBRARY_TYPES).default('mixed'),
+  type: z.enum(LIBRARY_TYPES),
 });
+
+const libraryBodySchema = libraryFields.extend({ type: libraryFields.shape.type.default('mixed') });
+
+// No defaults here: zod 4 still fills a default into a partial object, and a rename would then
+// reset the library's type to 'mixed'.
+const libraryPatchSchema = libraryFields
+  .partial()
+  .extend({ thumbnailMediaId: z.number().int().nullable().optional() });
 
 /** New libraries land at the bottom of the list. */
 function nextSortOrder(): number {
@@ -106,10 +114,7 @@ librariesRouter.patch(
   '/api/libraries/:id',
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
-    const body = libraryBodySchema
-      .partial()
-      .extend({ thumbnailMediaId: z.number().int().nullable().optional() })
-      .parse(req.body);
+    const body = libraryPatchSchema.parse(req.body);
     if (!Object.keys(body).length) return res.status(400).json({ error: 'Nothing to update' });
     const row = db.update(schema.libraries).set(body).where(eq(schema.libraries.id, id)).returning().get();
     if (!row) return res.status(404).json({ error: 'Not found' });
