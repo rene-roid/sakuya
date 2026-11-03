@@ -56,6 +56,18 @@ function safeFilename(filename: string): string | null {
   return name && name !== '.' && name !== '..' ? name : null;
 }
 
+/**
+ * Whether renaming `from` to `to` would land on a different file. On a case-insensitive filesystem
+ * (Windows, macOS) renaming photo.JPG to photo.jpg finds the source itself at the new path.
+ */
+function nameTaken(from: string, to: string): boolean {
+  const target = fs.statSync(to, { throwIfNoEntry: false });
+  if (!target) return false;
+  if (from.toLowerCase() !== to.toLowerCase()) return true;
+  const source = fs.statSync(from, { throwIfNoEntry: false });
+  return !source || source.dev !== target.dev || source.ino !== target.ino;
+}
+
 /** Whether a media row owns `filePath`, including one whose file is gone from disk. */
 function pathIndexed(filePath: string): boolean {
   return sqlite.query('SELECT 1 FROM media WHERE path = ?').get(filePath) !== null;
@@ -431,7 +443,7 @@ mediaRouter.post(
         continue;
       }
       // A swap (a→b while b→a) also lands here: refusing is safer than a rename dance.
-      if (fs.existsSync(newPath)) {
+      if (nameTaken(row.path, newPath)) {
         failed.push({ id: item.id, error: 'A file with that name already exists' });
         continue;
       }
@@ -551,7 +563,7 @@ mediaRouter.patch(
     if (!safeName) return res.status(400).json({ error: 'Invalid filename' });
     if (safeName === row.filename) return res.json(getDetail(id));
     const newPath = path.join(path.dirname(row.path), safeName);
-    if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
+    if (nameTaken(row.path, newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
     if (pathIndexed(newPath)) return res.status(409).json({ error: 'Another item already has that name' });
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source file missing' });
     fs.renameSync(row.path, newPath);
