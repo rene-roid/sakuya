@@ -224,8 +224,9 @@ downloaderRouter.post(
     const body = consoleStartSchema.parse(req.body);
     try {
       await startConsoleSession(body.command.trim());
-    } catch (err: any) {
-      return res.status(err.status ?? 400).json({ error: err.message });
+    } catch (err) {
+      const { status, message } = err as Error & { status?: number };
+      return res.status(status ?? 400).json({ error: message });
     }
     res.json(getConsoleStatus());
   }),

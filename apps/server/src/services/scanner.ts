@@ -28,12 +28,18 @@ interface ProbeResult {
   audioCodec?: string | null;
 }
 
+/** The parts of `ffprobe -print_format json -show_format -show_streams` read here. */
+interface FfprobeOutput {
+  format?: { duration?: string };
+  streams?: { codec_type?: string; codec_name?: string; width?: number; height?: number; duration?: string }[];
+}
+
 export async function probeVideo(filePath: string): Promise<ProbeResult> {
   const json = await run(ffprobePath, ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', filePath]);
-  const data = JSON.parse(json);
+  const data = JSON.parse(json) as FfprobeOutput;
   const streams = data.streams ?? [];
-  const video = streams.find((s: any) => s.codec_type === 'video');
-  const audio = streams.find((s: any) => s.codec_type === 'audio');
+  const video = streams.find((s) => s.codec_type === 'video');
+  const audio = streams.find((s) => s.codec_type === 'audio');
   const duration = Number(data.format?.duration ?? video?.duration);
   return {
     width: video?.width ?? null,
@@ -139,11 +145,11 @@ export async function indexFile(
   let stat;
   try {
     stat = await fs.stat(filePath);
-  } catch (err: any) {
+  } catch (err) {
     // Benign race: the file was present when the scan listed the folder but has since been
     // removed/renamed — most commonly by an in-progress download writing into the same
     // folder. Treat it as "nothing to index" instead of a scan error.
-    if (err?.code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
   const existing = db.select().from(schema.media).where(eq(schema.media.path, filePath)).get();

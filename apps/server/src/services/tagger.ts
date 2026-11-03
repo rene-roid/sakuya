@@ -12,6 +12,8 @@ import { phashColumns } from '../lib/phashBands';
 import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
 import { downloadFile } from '../lib/download';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
+// Type-only: the native module itself is imported lazily, when a tag actually runs.
+import type { InferenceSession } from 'onnxruntime-node';
 
 const INPUT_SIZE = 448;
 
@@ -20,7 +22,7 @@ export interface LabelEntry {
   category: TagCategory;
 }
 
-let session: Promise<any> | null = null;
+let session: Promise<InferenceSession> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
@@ -142,7 +144,7 @@ function loadLabels(): LabelEntry[] {
 }
 
 /** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
-function getSession(): Promise<any> {
+function getSession(): Promise<InferenceSession> {
   if (session) return session;
   const load = loadSession();
   session = load;
