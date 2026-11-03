@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import { and, eq } from 'drizzle-orm';
-import { useTestConfig } from './testConfig';
+import { useTestConfig, waitForJob } from './testConfig';
 
 const dataDir = useTestConfig('transcode');
 
@@ -29,18 +29,9 @@ async function mkvMedia(name: string) {
     .get();
 }
 
-async function finished(jobId: number) {
-  let row;
-  do {
-    await Bun.sleep(20);
-    row = db.select().from(schema.jobs).where(eq(schema.jobs.id, jobId)).get()!;
-  } while (row.status !== 'done' && row.status !== 'error');
-  return row;
-}
-
 test('a video in a container browsers cannot play is transcoded to mp4', async () => {
   const media = await mkvMedia('clip');
-  const row = await finished(enqueueTranscodeJob([media.id], 'transcode').id);
+  const row = await waitForJob(enqueueTranscodeJob([media.id], 'transcode').id);
 
   expect(row.log).toContain('1 transcoded');
   expect(fs.existsSync(transcodePathFor(media.id))).toBe(true);
@@ -52,7 +43,7 @@ test('two jobs transcoding the same video at once share one encode', async () =>
   // after-scan transcode. Both used to encode into the same <id>.mp4.part.
   const media = await mkvMedia('shared');
   const [a, b] = [enqueueTranscodeJob([media.id], 'first'), enqueueTranscodeJob([media.id], 'second')];
-  const rows = [await finished(a.id), await finished(b.id)];
+  const rows = [await waitForJob(a.id), await waitForJob(b.id)];
 
   for (const row of rows) {
     expect(row.status).toBe('done');
@@ -63,10 +54,10 @@ test('two jobs transcoding the same video at once share one encode', async () =>
 
 test('a video whose transcode is newer than its source is not encoded again', async () => {
   const media = await mkvMedia('kept');
-  await finished(enqueueTranscodeJob([media.id], 'first').id);
+  await waitForJob(enqueueTranscodeJob([media.id], 'first').id);
   const before = fs.statSync(transcodePathFor(media.id)).mtimeMs;
 
-  const again = await finished(enqueueTranscodeJob([media.id], 'again').id);
+  const again = await waitForJob(enqueueTranscodeJob([media.id], 'again').id);
   expect(again.log).toContain('0 transcoded, 1 already playable');
   expect(fs.statSync(transcodePathFor(media.id)).mtimeMs).toBe(before);
 });

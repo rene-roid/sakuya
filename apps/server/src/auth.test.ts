@@ -11,6 +11,13 @@ await import('./index');
 
 const DAY = 86_400_000;
 
+const login = (secret: string) =>
+  fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ secret }),
+  });
+
 describe('session tokens', () => {
   test('a freshly issued token verifies', () => {
     expect(verifyToken(issueToken())).toBe(true);
@@ -49,13 +56,6 @@ describe('session tokens', () => {
 });
 
 describe('login flow', () => {
-  const login = (secret: string) =>
-    fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret }),
-    });
-
   test('protected routes are closed until login', async () => {
     const res = await fetch(`${BASE}/api/media`);
     expect(res.status).toBe(401);
@@ -104,12 +104,6 @@ describe('login flow', () => {
 
 // Last on purpose: it uses up this process's login attempts for the rest of the window.
 test('logins are rate limited, and the right password is refused too once the limit is hit', async () => {
-  const login = (secret: string) =>
-    fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ secret }),
-    });
   let res = await login('guess');
   for (let attempt = 0; attempt < 10 && res.status !== 429; attempt++) res = await login('guess');
   expect(res.status).toBe(429);

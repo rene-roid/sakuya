@@ -19,3 +19,19 @@ export function useTestConfig(
   process.env.SAKUYA_CONFIG = file;
   return dataDir;
 }
+
+/**
+ * Poll a job row until it is done or errored, and return it. Imports the database lazily: this
+ * module is loaded before useTestConfig runs, so it must not open the database itself.
+ */
+export async function waitForJob(id: number, timeoutMs = 30_000) {
+  const { db, schema } = await import('./db');
+  const { eq } = await import('drizzle-orm');
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const row = db.select().from(schema.jobs).where(eq(schema.jobs.id, id)).get()!;
+    if (row.status === 'done' || row.status === 'error') return row;
+    if (Date.now() > deadline) throw new Error(`job ${id} still ${row.status} after ${timeoutMs}ms`);
+    await Bun.sleep(10);
+  }
+}

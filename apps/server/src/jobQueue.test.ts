@@ -1,18 +1,11 @@
 import { expect, test } from 'bun:test';
-import { eq } from 'drizzle-orm';
-import { useTestConfig } from './testConfig';
+import { useTestConfig, waitForJob } from './testConfig';
 
 useTestConfig('jobqueue');
 
-const { db, schema } = await import('./db');
 const { enqueueJob, listJobs } = await import('./services/jobQueue');
 
-const status = (id: number) => db.select().from(schema.jobs).where(eq(schema.jobs.id, id)).get()!.status;
-
-async function settled(id: number) {
-  for (let i = 0; i < 200 && !['done', 'error'].includes(status(id)); i++) await Bun.sleep(5);
-  return status(id);
-}
+const settled = async (id: number) => (await waitForJob(id, 2_000)).status;
 
 test('the job list is newest first and capped at the limit', () => {
   for (const label of ['first', 'second', 'third']) enqueueJob('cleanup', label, async () => {});

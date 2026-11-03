@@ -44,8 +44,7 @@ describe('sanitizeFilename', () => {
 
   test('drops any directory part, including Windows separators', () => {
     expect(sanitizeFilename('../../etc/passwd')).toBe('passwd');
-    expect(sanitizeFilename('..\\..\\evil.png')).not.toContain('\\');
-    expect(sanitizeFilename('..\\..\\evil.png')).not.toContain('/');
+    expect(sanitizeFilename('..\\..\\evil.png')).not.toMatch(/[\\/]/);
   });
 
   test('replaces characters outside the safe set', () => {
