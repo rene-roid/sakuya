@@ -12,15 +12,17 @@ import { phashColumns } from '../lib/phashBands';
 import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
 import { downloadFile } from '../lib/download';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
+// Type-only: the native module itself is imported lazily, when a tag actually runs.
+import type { InferenceSession } from 'onnxruntime-node';
 
 const INPUT_SIZE = 448;
 
-interface LabelEntry {
+export interface LabelEntry {
   name: string;
   category: TagCategory;
 }
 
-let session: Promise<any> | null = null;
+let session: Promise<InferenceSession> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
@@ -122,23 +124,27 @@ export function selectModel(modelId: string): void {
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
 }
 
-function loadLabels(): LabelEntry[] {
-  labels ??= fs
-    .readFileSync(MODEL_TAGS_PATH, 'utf8')
+/** The model's selected_tags.csv: a header, then `tag_id,name,category,count` per output. */
+export function parseLabels(csv: string): LabelEntry[] {
+  return csv
     .trim()
     .split('\n')
     .slice(1)
     .map((line) => {
-      // tag_id,name,category,count — names never contain commas in this dataset
+      // names never contain commas in this dataset
       const [, name, rawCategory] = line.split(',');
       const category = Number(rawCategory);
       return { name, category: category === 9 ? 'rating' : category === 4 ? 'character' : 'general' };
     });
+}
+
+function loadLabels(): LabelEntry[] {
+  labels ??= parseLabels(fs.readFileSync(MODEL_TAGS_PATH, 'utf8'));
   return labels;
 }
 
 /** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
-function getSession(): Promise<any> {
+function getSession(): Promise<InferenceSession> {
   if (session) return session;
   const load = loadSession();
   session = load;
@@ -203,12 +209,17 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
     inFlight--;
     scheduleSessionRelease();
   }
-  const allLabels = loadLabels();
+  return selectTags(probs, loadLabels(), confidenceThreshold());
+}
 
+/**
+ * The tags a model output picks: every general and character tag scoring at least `threshold`,
+ * plus the single best rating whatever its score, highest confidence first.
+ */
+export function selectTags(scores: Float32Array, allLabels: LabelEntry[], threshold: number): PredictedTag[] {
   // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
-  if (probs.some((v) => v < -0.0001 || v > 1.0001)) probs = probs.map((v) => 1 / (1 + Math.exp(-v))) as Float32Array;
+  const probs = scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
 
-  const threshold = confidenceThreshold();
   const out: PredictedTag[] = [];
   let bestRating: PredictedTag | null = null;
   for (let i = 0; i < allLabels.length && i < probs.length; i++) {
@@ -225,11 +236,6 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   if (bestRating) out.push(bestRating);
   out.sort((a, b) => b.confidence - a.confidence);
   return out;
-}
-
-/** Tags are stored lowercase with underscores for spaces; every user-typed name goes through this. */
-export function normalizeTagName(raw: string): string {
-  return raw.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
 export function upsertTag(name: string, category: TagCategory): number {

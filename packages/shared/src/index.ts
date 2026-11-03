@@ -16,6 +16,15 @@ export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as cons
 export const SCHEDULE_MODES = ['off', 'interval', 'after-scan'] as const;
 export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup'] as const;
 
+/**
+ * Tags are stored lowercase with underscores for spaces. Every user-typed name goes through this, on
+ * the server before it is stored or matched and in the web app before it lands in a filter, so both
+ * spell a tag the same way.
+ */
+export function normalizeTagName(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\s+/g, '_');
+}
+
 type LibraryType = (typeof LIBRARY_TYPES)[number];
 type MediaType = (typeof MEDIA_TYPES)[number];
 type MediaSource = 'folder' | 'upload';

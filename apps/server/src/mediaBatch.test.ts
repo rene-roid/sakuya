@@ -285,3 +285,22 @@ test('a tag typed with spaces can be filtered on and removed the way it was adde
   expect(tagsOf(a.id)).toEqual([]);
   expect(tagsOf(b.id)).toEqual([]);
 });
+
+test('a rename that only changes case goes through, unless another file holds that name', async () => {
+  const dir = path.join(MEDIA_DIR, 'case');
+  const lone = addMedia('Lone.PNG', { dir });
+  const single = await fetch(`${BASE}/api/media/${lone.id}/rename`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: 'lone.png' }),
+  });
+  expect(single.status).toBe(200);
+  expect(fs.readdirSync(dir)).toEqual(['lone.png']);
+
+  // Two distinct files that differ only in case, as a case-sensitive filesystem allows.
+  const upper = addMedia('Pair.PNG', { dir });
+  fs.writeFileSync(path.join(dir, 'pair.png'), 'someone else');
+  const batch = await json(post('/api/media/rename-batch', { items: [{ id: upper.id, filename: 'pair.png' }] }));
+  expect(batch.failed).toEqual([{ id: upper.id, error: 'A file with that name already exists' }]);
+  expect(fs.readFileSync(path.join(dir, 'pair.png'), 'utf8')).toBe('someone else');
+});

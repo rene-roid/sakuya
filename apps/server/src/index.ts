@@ -50,7 +50,9 @@ app.use(downloaderRouter);
 app.use(savedSearchesRouter);
 app.use(boardsRouter);
 
-app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+type RouteError = { status?: number; name?: string; message?: string; issues?: unknown } | null | undefined;
+
+app.use((err: RouteError, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const status = err?.status ?? (err?.name === 'ZodError' ? 400 : 500);
   if (status >= 500) console.error(err);
   res.status(status).json({ error: err?.message ?? 'Internal error', issues: err?.issues });

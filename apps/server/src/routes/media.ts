@@ -8,7 +8,7 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, normalizeTagName } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
@@ -20,6 +20,7 @@ import { phashBands } from '../lib/phashBands';
 import {
   MEDIA_TYPES,
   TAG_CATEGORIES,
+  normalizeTagName,
   type BulkFailure,
   type BulkResult,
   type DuplicatesResponse,
@@ -56,6 +57,18 @@ function safeFilename(filename: string): string | null {
   return name && name !== '.' && name !== '..' ? name : null;
 }
 
+/**
+ * Whether renaming `from` to `to` would land on a different file. On a case-insensitive filesystem
+ * (Windows, macOS) renaming photo.JPG to photo.jpg finds the source itself at the new path.
+ */
+function nameTaken(from: string, to: string): boolean {
+  const target = fs.statSync(to, { throwIfNoEntry: false });
+  if (!target) return false;
+  if (from.toLowerCase() !== to.toLowerCase()) return true;
+  const source = fs.statSync(from, { throwIfNoEntry: false });
+  return !source || source.dev !== target.dev || source.ino !== target.ino;
+}
+
 /** Whether a media row owns `filePath`, including one whose file is gone from disk. */
 function pathIndexed(filePath: string): boolean {
   return sqlite.query('SELECT 1 FROM media WHERE path = ?').get(filePath) !== null;
@@ -83,10 +96,9 @@ function ftsMatchExpr(terms: string[]): string {
  * `/api/media/ids`, so "select all matching" can never drift from what the grid shows.
  */
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
-  const tagNames = (query.tags ?? '')
-    .split(',')
-    .map(normalizeTagName)
-    .filter(Boolean);
+  // Deduped because the HAVING below counts distinct tags against this length: "a,a" or
+  // "Blue Hair,blue_hair" would otherwise require two different tags and match nothing.
+  const tagNames = [...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))];
 
   const conds: string[] = [];
   const params: SQLQueryBindings[] = [];
@@ -432,7 +444,7 @@ mediaRouter.post(
         continue;
       }
       // A swap (a→b while b→a) also lands here: refusing is safer than a rename dance.
-      if (fs.existsSync(newPath)) {
+      if (nameTaken(row.path, newPath)) {
         failed.push({ id: item.id, error: 'A file with that name already exists' });
         continue;
       }
@@ -552,7 +564,7 @@ mediaRouter.patch(
     if (!safeName) return res.status(400).json({ error: 'Invalid filename' });
     if (safeName === row.filename) return res.json(getDetail(id));
     const newPath = path.join(path.dirname(row.path), safeName);
-    if (fs.existsSync(newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
+    if (nameTaken(row.path, newPath)) return res.status(409).json({ error: 'A file with that name already exists' });
     if (pathIndexed(newPath)) return res.status(409).json({ error: 'Another item already has that name' });
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source file missing' });
     fs.renameSync(row.path, newPath);
@@ -625,7 +637,7 @@ const tagsPatchSchema = z.object({
   remove: z.array(z.string().min(1)).default([]),
   category: z.enum(TAG_CATEGORIES).default('user'),
   // Change an existing tag's global category: { name -> category }.
-  setCategory: z.record(z.enum(TAG_CATEGORIES)).optional(),
+  setCategory: z.record(z.string(), z.enum(TAG_CATEGORIES)).optional(),
 });
 
 mediaRouter.patch(

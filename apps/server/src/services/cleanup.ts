@@ -15,6 +15,13 @@ import { enqueueJob, type JobHandle } from './jobQueue';
 const RETENTION_DAYS = 14;
 const RETENTION_MS = RETENTION_DAYS * 86_400_000;
 
+/**
+ * Thumbnails and transcodes are written to `<id>.<ext>[.<pid>].part` and renamed into place. An
+ * encoder writes its .part the whole time it runs, so one untouched for a day belongs to a process
+ * that was killed or crashed, and nothing will ever rename or remove it.
+ */
+const STALE_PART_MS = 86_400_000;
+
 export interface CleanupResult {
   removedThumbs: number;
   removedTranscodes: number;
@@ -39,9 +46,16 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
     if (!fs.existsSync(dir)) return 0;
     let removed = 0;
     for (const entry of fs.readdirSync(dir)) {
-      const match = /^(\d+)(\.\w+)$/.exec(entry);
-      if (!match || match[2] !== ext || liveIds.has(Number(match[1]))) continue;
-      fs.rmSync(path.join(dir, entry), { force: true });
+      const file = path.join(dir, entry);
+      if (/^\d+\..*\.part$/.test(entry)) {
+        // A writer may rename its .part away between the listing and this stat.
+        const mtime = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
+        if (mtime === undefined || mtime >= now - STALE_PART_MS) continue;
+      } else {
+        const match = /^(\d+)(\.\w+)$/.exec(entry);
+        if (!match || match[2] !== ext || liveIds.has(Number(match[1]))) continue;
+      }
+      fs.rmSync(file, { force: true });
       removed++;
     }
     return removed;

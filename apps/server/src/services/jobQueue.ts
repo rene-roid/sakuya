@@ -51,8 +51,9 @@ function pump() {
         patchJob(next.id, patch);
       },
     };
-    next
-      .fn(handle)
+    // Async so a body that throws before returning its promise still lands in .catch and frees
+    // its slot and key, instead of escaping pump and blocking every later job with that key.
+    (async () => next.fn(handle))()
       .then((finalLog) => {
         const row = db.select().from(schema.jobs).where(eq(schema.jobs.id, next.id)).get();
         patchJob(next.id, {

@@ -4,14 +4,14 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { z } from 'zod';
-import { eq, and, asc } from 'drizzle-orm';
+import { eq, and, asc, ne } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, readFormData } from '../lib/http';
 import { enqueueScanJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { isUnder } from '../lib/paths';
-import { UPLOADS_DIR } from '../lib/config';
+import { IMAGE_EXTS, UPLOADS_DIR } from '../lib/config';
 import { LIBRARY_TYPES, type LibraryWithStats } from '@sakuya/shared';
 
 export const librariesRouter = Router();
@@ -60,10 +60,16 @@ librariesRouter.get(
   }),
 );
 
+// No zod default for type: the column defaults to 'mixed', and zod 4 would fill a default into the
+// partial PATCH schema too, so a rename would reset the library's type.
 const libraryBodySchema = z.object({
   name: z.string().min(1).max(120),
-  type: z.enum(LIBRARY_TYPES).default('mixed'),
+  type: z.enum(LIBRARY_TYPES).optional(),
 });
+
+const libraryPatchSchema = libraryBodySchema
+  .partial()
+  .extend({ thumbnailMediaId: z.number().int().nullable().optional() });
 
 /** New libraries land at the bottom of the list. */
 function nextSortOrder(): number {
@@ -106,10 +112,7 @@ librariesRouter.patch(
   '/api/libraries/:id',
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
-    const body = libraryBodySchema
-      .partial()
-      .extend({ thumbnailMediaId: z.number().int().nullable().optional() })
-      .parse(req.body);
+    const body = libraryPatchSchema.parse(req.body);
     if (!Object.keys(body).length) return res.status(400).json({ error: 'Nothing to update' });
     const row = db.update(schema.libraries).set(body).where(eq(schema.libraries.id, id)).returning().get();
     if (!row) return res.status(404).json({ error: 'Not found' });
@@ -182,13 +185,23 @@ librariesRouter.delete(
     const id = intParam(req.params.id);
     const folder = db.select().from(schema.folders).where(eq(schema.folders.id, id)).get();
     if (!folder) return res.status(404).json({ error: 'Not found' });
-    // Remove indexed media that lives under this folder root.
+    // Remove indexed media that lives under this folder root, except what another folder of the
+    // library still covers: one nested inside this one, or one this folder is nested inside.
+    const others = db
+      .select({ path: schema.folders.path })
+      .from(schema.folders)
+      .where(and(eq(schema.folders.libraryId, folder.libraryId), ne(schema.folders.id, id)))
+      .all();
     const rows = db
       .select({ id: schema.media.id, path: schema.media.path })
       .from(schema.media)
       .where(and(eq(schema.media.libraryId, folder.libraryId), eq(schema.media.source, 'folder')))
       .all();
-    removeMediaRows(rows.filter((m) => isUnder(m.path, folder.path)).map((m) => m.id));
+    removeMediaRows(
+      rows
+        .filter((m) => isUnder(m.path, folder.path) && !others.some((other) => isUnder(m.path, other.path)))
+        .map((m) => m.id),
+    );
     db.delete(schema.folders).where(eq(schema.folders.id, id)).run();
     res.json({ ok: true });
   }),
@@ -210,7 +223,13 @@ librariesRouter.get(
     if (!row || !row.customImagePath || !fs.existsSync(row.customImagePath)) {
       return res.status(404).json({ error: 'No custom cover' });
     }
-    res.sendFile(row.customImagePath, { cacheControl: true, maxAge: '1h' });
+    // Sandboxed and unsniffed, so a cover uploaded before only images were accepted (an .html or
+    // .svg) can't run script on the app's origin if opened directly. <img> tags are unaffected.
+    res.sendFile(row.customImagePath, {
+      cacheControl: true,
+      maxAge: '1h',
+      headers: { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' },
+    });
   }),
 );
 
@@ -225,7 +244,10 @@ librariesRouter.post(
     const file = (await readFormData(req)).get('file');
     if (!file || typeof file === 'string') return res.status(400).json({ error: 'No file provided' });
 
+    // Only extensions the library itself indexes as images: the file is served back with a type
+    // picked from its extension, and an .html or .svg would run script on the app's origin.
     const ext = (path.extname(file.name || '') || '.jpg').toLowerCase();
+    if (!IMAGE_EXTS.has(ext)) return res.status(400).json({ error: 'The cover must be an image' });
     const dest = path.join(UPLOADS_DIR, `cover-${id}-${crypto.randomBytes(4).toString('hex')}${ext}`);
     await fsp.writeFile(dest, Buffer.from(await file.arrayBuffer()));
 

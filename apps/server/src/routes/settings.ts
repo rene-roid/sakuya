@@ -32,7 +32,7 @@ settingsRouter.get(
 settingsRouter.patch(
   '/api/settings',
   wrap(async (req, res) => {
-    const body = z.record(z.string()).parse(req.body);
+    const body = z.record(z.string(), z.string()).parse(req.body);
     // Checked up front so a rejected request changes nothing, rather than applying every key
     // ahead of the bad one and then reporting failure.
     const invalid = Object.keys(body).find((key) => !EDITABLE_KEYS.has(key));
