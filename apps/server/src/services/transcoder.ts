@@ -84,13 +84,17 @@ function hasCurrentTranscode(mediaId: number, sourcePath: string): boolean {
 async function processOne(mediaId: number): Promise<'transcoded' | 'skipped'> {
   const row = db.select().from(schema.media).where(eq(schema.media.id, mediaId)).get();
   let outcome: 'transcoded' | 'skipped' = 'skipped';
-  if (row && row.type === 'video' && fs.existsSync(row.path) && (await needsTranscode(row.path))) {
-    // Checked after the probe, with no await before transcodeOnce, so an encode that finishes
-    // during the probe is seen here rather than started again.
-    if (inFlight.has(row.id) || !hasCurrentTranscode(row.id, row.path)) {
-      await transcodeOnce(row.path, row.id);
-      outcome = 'transcoded';
-    }
+  if (
+    row &&
+    row.type === 'video' &&
+    fs.existsSync(row.path) &&
+    // Before the probe, so an already transcoded library costs a stat per video, not an ffprobe.
+    !hasCurrentTranscode(row.id, row.path) &&
+    (await needsTranscode(row.path))
+  ) {
+    // A video another job is encoding right now joins that encode.
+    await transcodeOnce(row.path, row.id);
+    outcome = 'transcoded';
   }
   db.update(schema.media).set({ transcodedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
   return outcome;
