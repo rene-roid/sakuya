@@ -98,6 +98,22 @@ describe('free-text search', () => {
   });
 });
 
+describe('tag filter', () => {
+  test('several tags are ANDed', async () => {
+    expect(idsOf(await json('/api/media?tags=silver_hair'))).toEqual([sakuya.id, remilia.id].sort((a, b) => a - b));
+    expect(idsOf(await json('/api/media?tags=silver_hair,maid'))).toEqual([sakuya.id]);
+    expect(idsOf(await json('/api/media?tags=maid,vampire'))).toEqual([]);
+  });
+
+  test('a tag named twice, in any spelling, counts once', async () => {
+    expect(idsOf(await json('/api/media?tags=maid,maid'))).toEqual([sakuya.id]);
+    expect(idsOf(await json(`/api/media?tags=${encodeURIComponent('Silver Hair,silver_hair,vampire')}`))).toEqual([
+      remilia.id,
+    ]);
+    expect((await json('/api/media/ids?tags=maid,maid')).ids).toEqual([sakuya.id]);
+  });
+});
+
 describe('search index stays in sync', () => {
   test('a rename moves the row to its new name', async () => {
     const item = addMedia('before_rename_zebrafish.png');

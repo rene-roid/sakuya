@@ -83,10 +83,9 @@ function ftsMatchExpr(terms: string[]): string {
  * `/api/media/ids`, so "select all matching" can never drift from what the grid shows.
  */
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
-  const tagNames = (query.tags ?? '')
-    .split(',')
-    .map(normalizeTagName)
-    .filter(Boolean);
+  // Deduped because the HAVING below counts distinct tags against this length: "a,a" or
+  // "Blue Hair,blue_hair" would otherwise require two different tags and match nothing.
+  const tagNames = [...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))];
 
   const conds: string[] = [];
   const params: SQLQueryBindings[] = [];
