@@ -10,33 +10,65 @@ const { db, schema } = await import('./db');
 const { enqueueTranscodeJob, transcodePathFor } = await import('./services/transcoder');
 const { run, FFMPEG_PATH } = await import('./lib/run');
 
-test('a video in a container browsers cannot play is transcoded to mp4', async () => {
-  const source = path.join(dataDir, 'clip.mkv');
+/** An indexed one-second mkv, which browsers can't play, so it always needs a transcode. */
+async function mkvMedia(name: string) {
+  const source = path.join(dataDir, `${name}.mkv`);
   await run(FFMPEG_PATH, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=64x64:rate=10', source]);
-  const media = db
+  return db
     .insert(schema.media)
     .values({
       libraryId: 1,
       source: 'folder',
       path: source,
-      filename: 'clip.mkv',
+      filename: `${name}.mkv`,
       type: 'video',
       sizeBytes: fs.statSync(source).size,
       createdAt: Date.now(),
     })
     .returning()
     .get();
+}
 
-  const job = enqueueTranscodeJob([media.id], 'transcode');
+async function finished(jobId: number) {
   let row;
   do {
     await Bun.sleep(20);
-    row = db.select().from(schema.jobs).where(eq(schema.jobs.id, job.id)).get()!;
+    row = db.select().from(schema.jobs).where(eq(schema.jobs.id, jobId)).get()!;
   } while (row.status !== 'done' && row.status !== 'error');
+  return row;
+}
+
+test('a video in a container browsers cannot play is transcoded to mp4', async () => {
+  const media = await mkvMedia('clip');
+  const row = await finished(enqueueTranscodeJob([media.id], 'transcode').id);
 
   expect(row.log).toContain('1 transcoded');
   expect(fs.existsSync(transcodePathFor(media.id))).toBe(true);
   expect(fs.readdirSync(path.dirname(transcodePathFor(media.id))).filter((f) => f.endsWith('.part'))).toEqual([]);
+});
+
+test('two jobs transcoding the same video at once share one encode', async () => {
+  // The bulk "check all videos" job has no queue key, so it can run beside a library's
+  // after-scan transcode. Both used to encode into the same <id>.mp4.part.
+  const media = await mkvMedia('shared');
+  const [a, b] = [enqueueTranscodeJob([media.id], 'first'), enqueueTranscodeJob([media.id], 'second')];
+  const rows = [await finished(a.id), await finished(b.id)];
+
+  for (const row of rows) {
+    expect(row.status).toBe('done');
+    expect(row.log).not.toContain('error');
+  }
+  expect(fs.existsSync(transcodePathFor(media.id))).toBe(true);
+});
+
+test('a video whose transcode is newer than its source is not encoded again', async () => {
+  const media = await mkvMedia('kept');
+  await finished(enqueueTranscodeJob([media.id], 'first').id);
+  const before = fs.statSync(transcodePathFor(media.id)).mtimeMs;
+
+  const again = await finished(enqueueTranscodeJob([media.id], 'again').id);
+  expect(again.log).toContain('0 transcoded, 1 already playable');
+  expect(fs.statSync(transcodePathFor(media.id)).mtimeMs).toBe(before);
 });
 
 const { dispatchAfterScan } = await import('./services/jobScheduler');

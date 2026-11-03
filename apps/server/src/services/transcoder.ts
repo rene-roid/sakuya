@@ -57,12 +57,40 @@ async function transcodeVideo(sourcePath: string, mediaId: number): Promise<stri
   return dest;
 }
 
+const inFlight = new Map<number, Promise<string>>();
+
+/**
+ * Concurrent transcodes of one media id share a single ffmpeg run. The bulk "check all videos" job
+ * has no queue key, so it can overlap a library's after-scan transcode, and two encoders writing
+ * one .part file renamed a mix of both into place.
+ */
+function transcodeOnce(sourcePath: string, mediaId: number): Promise<string> {
+  const pending = inFlight.get(mediaId);
+  if (pending) return pending;
+  const work = transcodeVideo(sourcePath, mediaId).finally(() => inFlight.delete(mediaId));
+  inFlight.set(mediaId, work);
+  return work;
+}
+
+/** A transcode written after the source last changed. A scan that sees new content deletes it. */
+function hasCurrentTranscode(mediaId: number, sourcePath: string): boolean {
+  try {
+    return fs.statSync(transcodePathFor(mediaId)).mtimeMs >= fs.statSync(sourcePath).mtimeMs;
+  } catch {
+    return false;
+  }
+}
+
 async function processOne(mediaId: number): Promise<'transcoded' | 'skipped'> {
   const row = db.select().from(schema.media).where(eq(schema.media.id, mediaId)).get();
   let outcome: 'transcoded' | 'skipped' = 'skipped';
   if (row && row.type === 'video' && fs.existsSync(row.path) && (await needsTranscode(row.path))) {
-    await transcodeVideo(row.path, row.id);
-    outcome = 'transcoded';
+    // Checked after the probe, with no await before transcodeOnce, so an encode that finishes
+    // during the probe is seen here rather than started again.
+    if (inFlight.has(row.id) || !hasCurrentTranscode(row.id, row.path)) {
+      await transcodeOnce(row.path, row.id);
+      outcome = 'transcoded';
+    }
   }
   db.update(schema.media).set({ transcodedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
   return outcome;
