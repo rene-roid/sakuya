@@ -15,7 +15,7 @@ import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
 
-interface LabelEntry {
+export interface LabelEntry {
   name: string;
   category: TagCategory;
 }
@@ -122,18 +122,22 @@ export function selectModel(modelId: string): void {
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
 }
 
-function loadLabels(): LabelEntry[] {
-  labels ??= fs
-    .readFileSync(MODEL_TAGS_PATH, 'utf8')
+/** The model's selected_tags.csv: a header, then `tag_id,name,category,count` per output. */
+export function parseLabels(csv: string): LabelEntry[] {
+  return csv
     .trim()
     .split('\n')
     .slice(1)
     .map((line) => {
-      // tag_id,name,category,count — names never contain commas in this dataset
+      // names never contain commas in this dataset
       const [, name, rawCategory] = line.split(',');
       const category = Number(rawCategory);
       return { name, category: category === 9 ? 'rating' : category === 4 ? 'character' : 'general' };
     });
+}
+
+function loadLabels(): LabelEntry[] {
+  labels ??= parseLabels(fs.readFileSync(MODEL_TAGS_PATH, 'utf8'));
   return labels;
 }
 
@@ -203,12 +207,17 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
     inFlight--;
     scheduleSessionRelease();
   }
-  const allLabels = loadLabels();
+  return selectTags(probs, loadLabels(), confidenceThreshold());
+}
 
+/**
+ * The tags a model output picks: every general and character tag scoring at least `threshold`,
+ * plus the single best rating whatever its score, highest confidence first.
+ */
+export function selectTags(scores: Float32Array, allLabels: LabelEntry[], threshold: number): PredictedTag[] {
   // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
-  if (probs.some((v) => v < -0.0001 || v > 1.0001)) probs = probs.map((v) => 1 / (1 + Math.exp(-v))) as Float32Array;
+  const probs = scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
 
-  const threshold = confidenceThreshold();
   const out: PredictedTag[] = [];
   let bestRating: PredictedTag | null = null;
   for (let i = 0; i < allLabels.length && i < probs.length; i++) {
