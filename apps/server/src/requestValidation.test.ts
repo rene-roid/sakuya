@@ -116,6 +116,13 @@ test('a library patch with nothing to change, or a fractional cover id, is a 400
   expect(((await renamed.json()) as { name: string }).name).toBe('patched');
 });
 
+test('a new library is mixed unless it says otherwise', async () => {
+  expect(await (await send('POST', '/api/libraries', { name: 'plain' })).json()).toMatchObject({ type: 'mixed' });
+  expect(await (await send('POST', '/api/libraries', { name: 'vids', type: 'video' })).json()).toMatchObject({
+    type: 'video',
+  });
+});
+
 test('renaming a library leaves its type alone', async () => {
   const lib = db
     .insert(schema.libraries)
@@ -152,4 +159,5 @@ test('a library cover must be an image, so nothing active is served from the app
   expect((await upload(new File([png], 'cover.png'))).status).toBe(200);
   const served = await fetch(`${BASE}/api/libraries/${lib.id}/cover`);
   expect(served.headers.get('content-type')).toBe('image/png');
+  expect(served.headers.get('content-security-policy')).toBe('sandbox');
 });

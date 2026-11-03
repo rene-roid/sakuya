@@ -60,16 +60,14 @@ librariesRouter.get(
   }),
 );
 
-const libraryFields = z.object({
+// No zod default for type: the column defaults to 'mixed', and zod 4 would fill a default into the
+// partial PATCH schema too, so a rename would reset the library's type.
+const libraryBodySchema = z.object({
   name: z.string().min(1).max(120),
-  type: z.enum(LIBRARY_TYPES),
+  type: z.enum(LIBRARY_TYPES).optional(),
 });
 
-const libraryBodySchema = libraryFields.extend({ type: libraryFields.shape.type.default('mixed') });
-
-// No defaults here: zod 4 still fills a default into a partial object, and a rename would then
-// reset the library's type to 'mixed'.
-const libraryPatchSchema = libraryFields
+const libraryPatchSchema = libraryBodySchema
   .partial()
   .extend({ thumbnailMediaId: z.number().int().nullable().optional() });
 
@@ -225,7 +223,13 @@ librariesRouter.get(
     if (!row || !row.customImagePath || !fs.existsSync(row.customImagePath)) {
       return res.status(404).json({ error: 'No custom cover' });
     }
-    res.sendFile(row.customImagePath, { cacheControl: true, maxAge: '1h' });
+    // Sandboxed and unsniffed, so a cover uploaded before only images were accepted (an .html or
+    // .svg) can't run script on the app's origin if opened directly. <img> tags are unaffected.
+    res.sendFile(row.customImagePath, {
+      cacheControl: true,
+      maxAge: '1h',
+      headers: { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': 'sandbox' },
+    });
   }),
 );
 
