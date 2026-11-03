@@ -11,7 +11,7 @@ import { enqueueScanJob } from '../services/scanner';
 import { scheduleAll } from '../services/jobScheduler';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { isUnder } from '../lib/paths';
-import { UPLOADS_DIR } from '../lib/config';
+import { IMAGE_EXTS, UPLOADS_DIR } from '../lib/config';
 import { LIBRARY_TYPES, type LibraryWithStats } from '@sakuya/shared';
 
 export const librariesRouter = Router();
@@ -235,7 +235,10 @@ librariesRouter.post(
     const file = (await readFormData(req)).get('file');
     if (!file || typeof file === 'string') return res.status(400).json({ error: 'No file provided' });
 
+    // Only extensions the library itself indexes as images: the file is served back with a type
+    // picked from its extension, and an .html or .svg would run script on the app's origin.
     const ext = (path.extname(file.name || '') || '.jpg').toLowerCase();
+    if (!IMAGE_EXTS.has(ext)) return res.status(400).json({ error: 'The cover must be an image' });
     const dest = path.join(UPLOADS_DIR, `cover-${id}-${crypto.randomBytes(4).toString('hex')}${ext}`);
     await fsp.writeFile(dest, Buffer.from(await file.arrayBuffer()));
 

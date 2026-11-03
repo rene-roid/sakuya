@@ -124,3 +124,22 @@ test('a cursor that is not a list of plain values is a 400', async () => {
   expect((await list(cursor([0, 0]))).status).toBe(200);
   expect((await fetch(`${BASE}/api/discover?cursor=${cursor(['a', 1, 1])}`)).status).toBe(400);
 });
+
+test('a library cover must be an image, so nothing active is served from the app origin', async () => {
+  const lib = db.insert(schema.libraries).values({ name: 'cover', createdAt: Date.now() }).returning().get();
+  const upload = (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch(`${BASE}/api/libraries/${lib.id}/cover`, { method: 'POST', body: form });
+  };
+
+  for (const name of ['cover.html', 'cover.svg']) {
+    expect((await upload(new File(['<script>alert(1)</script>'], name))).status).toBe(400);
+  }
+  expect((await fetch(`${BASE}/api/libraries/${lib.id}/cover`)).status).toBe(404);
+
+  const png = await sharp({ create: { width: 4, height: 4, channels: 3, background: '#000' } }).png().toBuffer();
+  expect((await upload(new File([png], 'cover.png'))).status).toBe(200);
+  const served = await fetch(`${BASE}/api/libraries/${lib.id}/cover`);
+  expect(served.headers.get('content-type')).toBe('image/png');
+});
