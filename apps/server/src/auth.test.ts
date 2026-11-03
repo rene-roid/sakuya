@@ -101,3 +101,22 @@ describe('login flow', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// Last on purpose: it uses up this process's login attempts for the rest of the window.
+test('logins are rate limited, and the right password is refused too once the limit is hit', async () => {
+  const login = (secret: string) =>
+    fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ secret }),
+    });
+  let res = await login('guess');
+  for (let attempt = 0; attempt < 10 && res.status !== 429; attempt++) res = await login('guess');
+  expect(res.status).toBe(429);
+  expect(await res.json()).toEqual({ error: 'Too many attempts, please try again later' });
+  expect(res.headers.get('ratelimit-limit') ?? res.headers.get('ratelimit-policy')).toBeTruthy();
+
+  const right = await login(SECRET);
+  expect(right.status).toBe(429);
+  expect(right.headers.get('set-cookie')).toBeNull();
+});
