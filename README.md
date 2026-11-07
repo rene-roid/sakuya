@@ -93,6 +93,13 @@ it, and Settings > System can move an existing library there).
 Prefer scripts? `./setup.sh` installs Bun for you if it's missing, `./run.sh` starts dev, and
 `./update.sh` pulls + reinstalls. `.bat` equivalents exist for Windows.
 
+### Desktop app
+
+Each `v*` tag attaches a Linux AppImage and a Windows installer (`.exe`) to its GitHub release. Both
+bundle Bun and keep their config and data in `~/.sakuya/`. Closing the window leaves Sakuya running in
+the tray. **Start at Login** in the tray menu (or the window's Sakuya menu) turns autostart on or off.
+To build one locally: `cd desktop && npm ci && npm run stage && npm run dist`.
+
 ### Docker
 
 ```bash

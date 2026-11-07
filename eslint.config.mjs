@@ -5,7 +5,7 @@ import globals from 'globals';
 
 export default tseslint.config(
   {
-    ignores: ['**/node_modules/**', '**/dist/**', 'apps/server/data/**', 'bun.lock'],
+    ignores: ['**/node_modules/**', '**/dist/**', 'apps/server/data/**', 'desktop/stage/**', 'bun.lock'],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

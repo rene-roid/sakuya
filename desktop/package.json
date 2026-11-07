@@ -1,0 +1,51 @@
+{
+  "name": "sakuya-desktop",
+  "productName": "Sakuya",
+  "version": "0.0.0",
+  "description": "Sakuya media library",
+  "author": "rene-roid",
+  "homepage": "https://github.com/rene-roid/sakuya",
+  "private": true,
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "stage": "bash stage.sh",
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0"
+  },
+  "build": {
+    "appId": "io.github.rene-roid.sakuya",
+    "files": [
+      "main.js"
+    ],
+    "extraResources": [
+      {
+        "from": "stage",
+        "to": ".",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "icon": "../apps/web/public/icon.png",
+    "artifactName": "Sakuya-${version}-${os}-${arch}.${ext}",
+    "linux": {
+      "target": "AppImage",
+      "category": "Graphics"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "allowScripts": {
+    "electron@45.2.3": true
+  }
+}

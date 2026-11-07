@@ -3,3 +3,4 @@ dist
 bun.lock
 apps/server/data
 docs/screenshots
+desktop/stage

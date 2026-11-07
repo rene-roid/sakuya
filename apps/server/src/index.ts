@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import express from 'express';
 import sharp from 'sharp';
 import { CONFIG, DATA_DIR, CONFIG_FILE, LIMITS, LIMITS_REPORT } from './lib/config';
@@ -34,6 +36,15 @@ const app = express();
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
+// The desktop app ships the built web UI next to the server, with no Vite or nginx in front, so the
+// server serves it itself — public, like nginx does, since the login screen is part of it.
+const webDist = path.resolve(import.meta.dir, '../../web/dist');
+if (fs.existsSync(webDist)) {
+  app.use(express.static(webDist));
+  app.get(/^(?!\/api\/)/, (_req, res) => res.sendFile(path.join(webDist, 'index.html')));
+}
+
 app.use(authRouter);
 app.use(requireAuth);
 
