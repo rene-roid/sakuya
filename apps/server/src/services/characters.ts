@@ -38,10 +38,20 @@ const CLUSTER_EVERY = 25;
 const SUGGEST_MIN_MEDIA = 2;
 const SUGGEST_MIN_SHARE = 0.5;
 
+/**
+ * Measured on the Pepper&Carrot fixtures (shots/ML02 in the roadmap tools): the published DBSCAN eps
+ * 0.129 chained Carrot into other cats, houses and birds and lumped the mentors with Shichimi;
+ * eps 0.10 with a 0.13 mean check kept Pepper, Saffron and Coriander clean, leaving 14% of
+ * detections unassigned. Over-splitting costs one merge to fix, a mixed cluster a reject per face.
+ */
+const EPS = 0.1;
+const MERGE_LIMIT = 0.13;
+
 export function clusterParams(p: CcipParams): ClusterParams {
   return {
-    eps: p.eps,
-    assignThreshold: p.eps,
+    eps: EPS,
+    assignThreshold: EPS,
+    mergeLimit: MERGE_LIMIT,
     minSamples: p.minSamples,
     diff: (cosine) => Math.min(1, Math.max(0, p.diffA - p.diffB * cosine)),
   };

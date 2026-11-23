@@ -10,7 +10,7 @@ const BASE = 'http://localhost:38957';
 
 const { db, sqlite, schema } = await import('./db');
 await import('./index');
-const { packFloat16, unpackFloat16, normalize } = await import('./lib/vectors');
+const { dot, packFloat16, unpackFloat16, normalize } = await import('./lib/vectors');
 const { clusterIncrementally } = await import('./lib/characterClusters');
 const { DEFAULT_CCIP_PARAMS } = await import('./services/characterModels');
 const { clusterDetections, clusterParams, saveDetections, enqueueCharacterJob, characterCropDirFor } =
@@ -143,6 +143,25 @@ describe('clusterIncrementally', () => {
     const out = clusterIncrementally(nodes, new Set([3, 4]), params);
     expect(out.assigned.size).toBe(0);
     expect(out.created.map((g) => g.sort())).toEqual([[2, 3]]);
+  });
+
+  test('a chain of close links does not drift into one cluster', () => {
+    // Six points along an arc, each 0.09 from the next (inside eps 0.1) but the ends 0.98 apart.
+    const o = normalize(b.map((x, i) => x - dot(a, b) * a[i]));
+    const step = Math.acos(1 - 2 * 0.09);
+    const nodes = [0, 1, 2, 3, 4, 5].map((k) => ({
+      id: k + 1,
+      vec: a.map((x, i) => Math.cos(k * step) * x + Math.sin(k * step) * o[i]),
+      characterId: null,
+    }));
+    const all = new Set(nodes.map((n) => n.id));
+    expect(clusterIncrementally(nodes, all, { ...params, mergeLimit: 1 }).created.map((g) => g.length)).toEqual([6]);
+    const checked = clusterIncrementally(nodes, all, params).created;
+    expect(checked.map((g) => g.sort())).toEqual([
+      [1, 2],
+      [3, 4],
+      [5, 6],
+    ]);
   });
 
   test('a detection close to two characters never merges them', () => {

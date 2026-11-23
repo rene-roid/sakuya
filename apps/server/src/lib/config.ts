@@ -105,7 +105,6 @@ export const CHARACTER_MODEL_FILES = [
   { file: 'detector_threshold.json', url: `${PERSON_DETECT}/threshold.json`, approxBytes: 48 },
   { file: 'ccip_feat.onnx', url: `${CCIP}/model_feat.onnx`, approxBytes: 150_248_245 },
   { file: 'ccip_metrics.onnx', url: `${CCIP}/model_metrics.onnx`, approxBytes: 1_649 },
-  { file: 'ccip_metrics.json', url: `${CCIP}/metrics.json`, approxBytes: 147 },
   { file: 'ccip_cluster.json', url: `${CCIP}/cluster.json`, approxBytes: 370 },
 ] as const;
 

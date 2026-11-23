@@ -57,10 +57,7 @@ export function releaseCharacterModels(): void {
 export interface CcipParams {
   /** The detector's published confidence threshold (threshold.json). */
   detectThreshold: number;
-  /** CCIP difference at or under which two crops show the same character (metrics.json). */
-  sameThreshold: number;
-  /** DBSCAN neighbourhood for new clusters (cluster.json, dbscan_2). */
-  eps: number;
+  /** DBSCAN min_samples (cluster.json, dbscan_2). */
   minSamples: number;
   /**
    * The CCIP difference is computed by model_metrics.onnx. Its graph scales each feature to unit
@@ -75,8 +72,6 @@ export interface CcipParams {
 /** Published defaults, which calibration reproduces exactly for ccip-caformer-24-randaug-pruned. */
 export const DEFAULT_CCIP_PARAMS: CcipParams = {
   detectThreshold: 0.324,
-  sameThreshold: 0.17847511429108218,
-  eps: 0.12921094122454668,
   minSamples: 2,
   diffA: 0.5,
   diffB: 0.5,
@@ -112,12 +107,10 @@ async function calibrateMetric(): Promise<{ a: number; b: number }> {
 }
 
 export async function loadCcipParams(): Promise<CcipParams> {
-  const cluster = readJson('ccip_cluster.json').dbscan_2 as { eps: number; min_samples: number };
+  const cluster = readJson('ccip_cluster.json').dbscan_2 as { min_samples: number };
   const { a, b } = await calibrateMetric();
   return {
     detectThreshold: readJson('detector_threshold.json').threshold,
-    sameThreshold: readJson('ccip_metrics.json').threshold,
-    eps: cluster.eps,
     minSamples: cluster.min_samples,
     diffA: a,
     diffB: b,

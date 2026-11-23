@@ -12,6 +12,12 @@ export interface ClusterParams {
   eps: number;
   /** CCIP difference under which a detection joins a character through one of its members. */
   assignThreshold: number;
+  /**
+   * CCIP difference allowed between the mean embeddings of two groups for them to join. Single
+   * linkage alone chains: on Pepper&Carrot pages one link at a time walked from Carrot to other
+   * cats, then to houses and birds. Checking the means stops a group drifting away from itself.
+   */
+  mergeLimit: number;
   /** Smallest group of linked unassigned detections that becomes a new character. */
   minSamples: number;
   /** CCIP difference from the cosine of two unit vectors. */
@@ -30,6 +36,8 @@ export interface ClusterResult {
  * belong together, and so does everything linked to them. Only edges touching a new detection
  * are computed, since every older pair was already found too far apart on an earlier run.
  *
+ * A link only joins two groups whose mean embeddings are within `mergeLimit` too.
+ *
  * Existing characters never merge here: an edge that would join two different characters is
  * skipped, and because edges are taken closest first, a detection between two characters lands
  * in the nearer one. Merging characters is a person's call (mergeCharacters).
@@ -38,6 +46,10 @@ export function clusterIncrementally(nodes: ClusterNode[], newIds: Set<number>, 
   const parent = nodes.map((_, i) => i);
   const label: (number | null)[] = nodes.map((n) => n.characterId);
   const size = nodes.map(() => 1);
+  // Per root, the sum of its members' unit vectors; a singleton's is its own vector until it grows.
+  const sum: Float32Array[] = nodes.map((n) => n.vec);
+  const owned = nodes.map(() => false);
+  const norm = (v: Float32Array) => Math.sqrt(dot(v, v));
   const find = (i: number): number => {
     while (parent[i] !== i) {
       parent[i] = parent[parent[i]];
@@ -50,12 +62,19 @@ export function clusterIncrementally(nodes: ClusterNode[], newIds: Set<number>, 
     let rb = find(b);
     if (ra === rb) return;
     if (label[ra] !== null && label[rb] !== null && label[ra] !== label[rb]) return;
+    if (checkMeans && params.diff(dot(sum[ra], sum[rb]) / (norm(sum[ra]) * norm(sum[rb]))) > params.mergeLimit) return;
     if (size[ra] < size[rb]) [ra, rb] = [rb, ra];
+    if (!owned[ra]) {
+      sum[ra] = Float32Array.from(sum[ra]);
+      owned[ra] = true;
+    }
+    for (let k = 0; k < sum[ra].length; k++) sum[ra][k] += sum[rb][k];
     parent[rb] = ra;
     size[ra] += size[rb];
     label[ra] ??= label[rb];
   };
 
+  let checkMeans = false;
   const firstOfCharacter = new Map<number, number>();
   nodes.forEach((n, i) => {
     if (n.characterId === null) return;
@@ -79,6 +98,7 @@ export function clusterIncrementally(nodes: ClusterNode[], newIds: Set<number>, 
     }
   }
   edges.sort((x, y) => x.d - y.d);
+  checkMeans = params.mergeLimit < 1;
   for (const e of edges) union(e.a, e.b);
 
   const assigned = new Map<number, number>();
