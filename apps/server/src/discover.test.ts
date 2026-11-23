@@ -6,20 +6,27 @@ import { useTestConfig } from './testConfig';
 useTestConfig('discover', { port: 38772 });
 const BASE = 'http://localhost:38772';
 
-const { db, schema } = await import('./db');
+const { db, schema, sqlite } = await import('./db');
+const { bumpTasteVersion } = await import('./lib/tasteVersion');
+const { phashColumns } = await import('./lib/phashBands');
 await import('./index'); // starts listening on PORT
 
 const json = async (res: Response | Promise<Response>): Promise<any> => (await (await res).json()) as any;
 
 const lib = db.insert(schema.libraries).values({ name: 'test', createdAt: Date.now() }).returning().get();
 
-function addMedia(filename: string, tagNames: string[], engagement: Partial<typeof schema.media.$inferInsert> = {}) {
+function addMedia(
+  filename: string,
+  tagNames: string[],
+  engagement: Partial<typeof schema.media.$inferInsert> = {},
+  folder = '/tmp',
+) {
   const item = db
     .insert(schema.media)
     .values({
       libraryId: lib.id,
       source: 'upload',
-      path: `/tmp/${filename}`,
+      path: `${folder}/${filename}`,
       filename,
       type: filename.endsWith('.mp4') ? 'video' : 'image',
       createdAt: Date.now(),
@@ -167,4 +174,132 @@ test('a scroll keeps its ordering when the profile changes between pages', async
   // A fresh feed does pick up the view: the item sinks from the top.
   const fresh = await json(fetch(`${BASE}/api/discover?limit=2&surprise=0`));
   expect(fresh.items[0].id).not.toBe(first.items[0].id);
+});
+
+// From here on each test seeds its own library, so it can assert the whole order literally.
+const DAY = 86_400_000;
+const NOW = Date.now();
+
+function resetLibrary() {
+  sqlite.exec(`DELETE FROM media_tags; DELETE FROM media; DELETE FROM tags;`);
+  // Direct writes skip the API, so tell the profile cache itself.
+  bumpTasteVersion();
+}
+
+/** One item per folder unless told otherwise, so the folder rule stays out of scoring tests. */
+const add = (name: string, tags: string[], extra: Partial<typeof schema.media.$inferInsert> = {}, folder = `/lib/${name}`) =>
+  addMedia(`${name}.png`, tags, extra, folder).id;
+const likedOn = (at: number) => ({ liked: 1, likedAt: at, viewCount: 1, lastViewedAt: at });
+const feedIds = async (q = 'surprise=0') =>
+  (await json(fetch(`${BASE}/api/discover?limit=200&${q}`))).items.map((m: { id: number }) => m.id) as number[];
+
+test('five strong tags beat forty weak ones', async () => {
+  resetLibrary();
+  const strong = ['s1', 's2', 's3', 's4', 's5'];
+  const weak = Array.from({ length: 40 }, (_, i) => `w${i}`);
+  // Every strong tag is on three liked items; every weak one on a single liked item and on ten
+  // others nobody engaged with, so each weak tag is worth a fifth of a strong one.
+  const liked = [1, 2, 3].map((i) => add(`liked${i}`, strong, likedOn(NOW - 1000)));
+  const weakLiked = add('weak-liked', weak, likedOn(NOW - 1000));
+  const filler = Array.from({ length: 10 }, (_, i) => add(`filler${i}`, weak));
+  const fiveStrong = add('five-strong', strong);
+  const fortyWeak = add('forty-weak', weak);
+
+  // Summing every match scored fortyWeak 40 x 0.28 = 11.2 against fiveStrong's 5 x 1.4 = 7.
+  // Counting the five best, fortyWeak is down to 1.4. Liked items sink as already seen.
+  expect(await feedIds()).toEqual([fiveStrong, ...liked.reverse(), fortyWeak, ...filler.reverse(), weakLiked]);
+});
+
+test('a fresh like outweighs an old one', async () => {
+  resetLibrary();
+  const rainLiked = [1, 2].map((i) => add(`rain-liked${i}`, ['rain'], likedOn(NOW - 1000)));
+  const snowLiked = [1, 2].map((i) => add(`snow-liked${i}`, ['snow'], likedOn(NOW - 365 * DAY)));
+  const rain = add('rain', ['rain']);
+  // Inserted last, so with the two likes weighed alike it would win the tie on id.
+  const snow = add('snow', ['snow']);
+
+  expect(await feedIds()).toEqual([rain, ...rainLiked.reverse(), snow, ...snowLiked.reverse()]);
+});
+
+test('a 1 s open does not count as a view, a 2 s one does', async () => {
+  resetLibrary();
+  const id = add('opened', ['harbour']);
+  const progress = (body: object) =>
+    fetch(`${BASE}/api/media/${id}/progress`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const row = () => db.select().from(schema.media).where(eq(schema.media.id, id)).get()!;
+
+  expect((await progress({ view: true, openSeconds: 1 })).status).toBe(200);
+  expect(row().viewCount).toBe(0);
+  expect(row().lastViewedAt).toBeNull();
+  // Skipped past, so "harbour" carries no taste and the item isn't sunk as seen.
+  const feed = await json(fetch(`${BASE}/api/discover?surprise=0`));
+  expect(feed.items[0].reasonTag).toBeUndefined();
+
+  await progress({ view: true, openSeconds: 2 });
+  expect(row().viewCount).toBe(1);
+  expect(row().lastViewedAt).toBeGreaterThan(NOW - 1);
+});
+
+test('one folder never fills a window of twenty', async () => {
+  resetLibrary();
+  const others = Array.from({ length: 60 }, (_, i) => add(`other${i}`, []));
+  const batch = Array.from({ length: 30 }, (_, i) => add(`shot${i}`, ['cat'], {}, '/lib/batch'));
+  const liked = add('liked-cat', ['cat'], likedOn(NOW - 1000), '/lib/liked');
+  const ids = await feedIds();
+  const newest = [...batch].reverse();
+
+  // Ranked alone, all thirty shots would come first. Four of them, then the liked item (a fifth
+  // "cat" card is still within the reason cap), then items from other folders.
+  expect(ids.slice(0, 20)).toEqual([...newest.slice(0, 4), liked, ...[...others].reverse().slice(0, 15)]);
+  for (let i = 0; i + 20 <= 60; i++) {
+    expect(ids.slice(i, i + 20).filter((id) => batch.includes(id)).length).toBeLessThanOrEqual(4);
+  }
+  // Nothing is dropped: the rest of the batch comes later.
+  expect(new Set(ids).size).toBe(91);
+});
+
+test('near-duplicates collapse to one per page, wherever they were saved', async () => {
+  resetLibrary();
+  const others = Array.from({ length: 70 }, (_, i) => add(`other${i}`, []));
+  const dupes = Array.from({ length: 10 }, (_, i) =>
+    add(`copy${i}`, ['cat'], phashColumns(`ffff0000ffff00${(i * 3).toString(16).padStart(2, '0')}`)),
+  );
+  add('liked-cat', ['cat'], likedOn(NOW - 1000));
+  const page = (await json(fetch(`${BASE}/api/discover?surprise=0&limit=60`))).items.map((m: { id: number }) => m.id);
+
+  expect(page[0]).toBe(dupes[9]);
+  expect(page.filter((id: number) => dupes.includes(id))).toEqual([dupes[9]]);
+  expect(page).toContain(others[69]);
+});
+
+test('pagination never repeats or skips an item, whatever the page size', async () => {
+  resetLibrary();
+  // Three folders of batches, a reason tag shared by most, near-duplicate hashes: every rule
+  // defers something, which is what a keyset cursor couldn't follow.
+  for (let i = 0; i < 90; i++) {
+    add(`item${i}`, i % 3 ? ['cat'] : ['dog'], phashColumns(i % 4 ? null : `00000000000000${(i % 16).toString(16)}0`), `/lib/f${i % 3}`);
+  }
+  add('liked-cat', ['cat'], likedOn(NOW - 1000));
+  add('liked-dog', ['dog'], likedOn(NOW - 2000));
+  const whole = await feedIds('surprise=0.3&seed=5');
+
+  const walked: number[] = [];
+  let cursor: string | null = null;
+  do {
+    const page: { items: { id: number }[]; nextCursor: string | null } = await json(
+      fetch(`${BASE}/api/discover?surprise=0.3&seed=5&limit=7${cursor ? `&cursor=${cursor}` : ''}`),
+    );
+    walked.push(...page.items.map((m) => m.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  expect(walked).toEqual(whole);
+  expect(new Set(walked).size).toBe(92);
+  // A keyset cursor from before the feed was re-ranked is refused rather than misread as an offset.
+  const legacy = Buffer.from(JSON.stringify([0.43, 12, 1])).toString('base64url');
+  expect((await fetch(`${BASE}/api/discover?cursor=${legacy}`)).status).toBe(400);
 });
