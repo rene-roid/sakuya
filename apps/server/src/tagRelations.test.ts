@@ -244,3 +244,30 @@ describe('tag implications', () => {
     expect(sqlite.query(`SELECT usage_count AS c FROM tags WHERE name = 'many_people'`).get()).toEqual({ c: 5001 });
   }, 30_000);
 });
+
+describe('merging tags whose links collide', () => {
+  test('the stronger link survives the merge, so a retag keeps the tag', async () => {
+    const item = addItem();
+    applyPredictedTags(item, [{ name: 'cat', category: 'general', confidence: 0.8 }]);
+    await addTags(item, ['neko']);
+    expect(await tagsOf(item)).toEqual(['cat:ai', 'neko:user']);
+
+    expect((await call('POST', '/api/tag-relations/siblings', { from: 'neko', to: 'cat' })).status).toBe(200);
+    expect(await tagsOf(item)).toEqual(['cat:user']);
+    applyPredictedTags(item, []);
+    expect(await tagsOf(item)).toEqual(['cat:user']);
+  });
+
+  test('an AI link of the alias does not bring back a target the user removed', async () => {
+    const item = addItem();
+    applyPredictedTags(item, [
+      { name: 'dog', category: 'general', confidence: 0.8 },
+      { name: 'inu', category: 'general', confidence: 0.7 },
+    ]);
+    await removeTags(item, ['dog']);
+    expect(await tagsOf(item)).toEqual(['inu:ai']);
+
+    expect((await call('POST', '/api/tag-relations/siblings', { from: 'inu', to: 'dog' })).status).toBe(200);
+    expect(await tagsOf(item)).toEqual([]);
+  });
+});
