@@ -70,6 +70,7 @@ export function Settings() {
   const tab = searchParams.get('tab');
   const section = resolveSection(tab);
   const mainRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -99,6 +100,14 @@ export function Settings() {
     return () => clearTimeout(timer);
   }, [section.id, hash, location.key, searching]);
 
+  // On phones the sections are one scrolling strip; keep the open one in view.
+  useEffect(() => {
+    const strip = stripRef.current;
+    const active = strip?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!strip || !active || strip.scrollWidth <= strip.clientWidth) return;
+    strip.scrollLeft = active.offsetLeft - strip.offsetLeft - 16;
+  }, [section.id]);
+
   // Following any link, a result's included, ends the search.
   useEffect(() => setQuery(''), [location.key]);
 
@@ -118,7 +127,7 @@ export function Settings() {
           onEnter={() => results[0] && openSetting(results[0])}
           inputRef={searchRef}
         />
-        <div className="scrollbar-hide -mx-4 flex gap-1 overflow-x-auto px-4 sm:mx-0 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:px-0">
+        <div ref={stripRef} className="scrollbar-hide -mx-4 flex gap-1 overflow-x-auto px-4 sm:mx-0 sm:flex-col sm:gap-0.5 sm:overflow-visible sm:px-0">
           {SECTIONS.map((s, i) => (
             <Fragment key={s.id}>
               {s.group !== SECTIONS[i - 1]?.group && (

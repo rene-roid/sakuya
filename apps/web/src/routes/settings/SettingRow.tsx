@@ -56,7 +56,7 @@ export function SettingRow({
   const block = entry.kind === 'custom' && entry.block;
   const Meta = entry.Meta;
   const text = (
-    <div className="min-w-0">
+    <div className="min-w-[180px] flex-1">
       <div className="text-[13px] font-semibold text-zinc-100">
         <Highlight text={entry.label} terms={terms} />
       </div>
