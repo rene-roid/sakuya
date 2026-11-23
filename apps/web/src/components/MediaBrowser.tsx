@@ -43,7 +43,7 @@ export function MediaBrowser({
           <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">{title}</h1>
           <span className="text-[13px] text-zinc-500">
             {media.total} item{media.total === 1 ? '' : 's'}
-            {semantic?.status === 'ready' && ', best match first'}
+            {semantic?.status === 'ready' && <span className="hidden sm:inline">, best match first</span>}
           </span>
           {headerExtra}
         </div>
@@ -63,6 +63,8 @@ export function MediaBrowser({
           isLoading={media.isLoading}
           onOpen={(index) => setViewerId(media.items[index].id)}
           selection={selection}
+          // The notice above already says why a description found nothing.
+          empty={semantic && semantic.status !== 'ready' ? <div /> : undefined}
         />
       </div>
     </>

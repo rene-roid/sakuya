@@ -167,7 +167,7 @@ export function TagSearchInput({
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 120)}
-          placeholder={describing ? 'Describe a picture, press Enter…' : showChips && tags.length > 0 ? '' : placeholder}
+          placeholder={describing ? 'Describe a picture…' : showChips && tags.length > 0 ? '' : placeholder}
           aria-label={describing ? 'Search by description' : undefined}
           className="min-w-[80px] flex-1 bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
         />

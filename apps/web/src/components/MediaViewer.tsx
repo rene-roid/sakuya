@@ -514,7 +514,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
           <div className="mr-auto text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
           <button
             className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-zinc-400 hover:text-zinc-100"
-            title="Items that share this one's tags, rarest tags first"
+            title="Items that look like this one or share its tags"
             onClick={() => {
               handleClose();
               navigate(`/discover?like=${item.id}`);
