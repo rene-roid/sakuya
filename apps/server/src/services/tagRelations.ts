@@ -23,7 +23,12 @@ export function ensureTag(name: string, category: TagCategory): number {
  * implication so the tag survives the implication going away. A user add leaves an AI link alone,
  * as it always has.
  */
-const OVERRIDES: Record<TagSource, TagSource[]> = { user: ['implied'], ai: ['implied'], meta: ['ai', 'implied'], implied: [] };
+const OVERRIDES: Record<TagSource, TagSource[]> = {
+  user: ['implied'],
+  ai: ['implied'],
+  meta: ['ai', 'implied'],
+  implied: [],
+};
 const linkStmts = Object.fromEntries(
   Object.entries(OVERRIDES).map(([source, over]) => [
     source,
@@ -303,7 +308,9 @@ export function addImplication(name: string, impliesName: string, category: TagC
         throw httpError(400, `"${tagName(to)}" already implies "${tagName(from)}", so this would loop`);
       }
       const inserted = sqlite
-        .query('INSERT INTO tag_implications (tag_id, implies_tag_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING')
+        .query(
+          'INSERT INTO tag_implications (tag_id, implies_tag_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
+        )
         .run(from, to, Date.now());
       if (!inserted.changes) throw httpError(409, `"${tagName(from)}" already implies "${tagName(to)}"`);
       implicationsExist = true;
@@ -360,9 +367,11 @@ export function listRelations(): TagRelations {
          JOIN tags a ON a.id = i.tag_id JOIN tags b ON b.id = i.implies_tag_id ORDER BY a.name, b.name`,
       )
       .all() as Row[]
-  ).map(
-    (row): TagImplication => ({ tag: toInfo(row, 'a'), implies: toInfo(row, 'b'), createdAt: row.createdAt as number }),
-  );
+  ).map((row): TagImplication => ({
+    tag: toInfo(row, 'a'),
+    implies: toInfo(row, 'b'),
+    createdAt: row.createdAt as number,
+  }));
   return { siblings, implications };
 }
 

@@ -64,7 +64,9 @@ describe('tag siblings', () => {
     expect(await tagsOf(byUser)).toEqual(['uraraka_ochako:user']);
     expect(await tagsOf(byAi)).toEqual(['uraraka_ochako:ai']);
     expect(await tagsOf(both)).toEqual(['uraraka_ochako:user']);
-    const counts = sqlite.query(`SELECT name, usage_count AS c FROM tags WHERE name LIKE 'uraraka%' ORDER BY name`).all();
+    const counts = sqlite
+      .query(`SELECT name, usage_count AS c FROM tags WHERE name LIKE 'uraraka%' ORDER BY name`)
+      .all();
     expect(counts).toEqual([
       { name: 'uraraka', c: 0 },
       { name: 'uraraka_ochako', c: 3 },
@@ -78,7 +80,11 @@ describe('tag siblings', () => {
   });
 
   test('applying an alias applies its target, by hand and by the AI', async () => {
-    const res = await call('POST', '/api/tag-relations/siblings', { from: 'deku', to: 'midoriya_izuku', category: 'character' });
+    const res = await call('POST', '/api/tag-relations/siblings', {
+      from: 'deku',
+      to: 'midoriya_izuku',
+      category: 'character',
+    });
     expect(res.status).toBe(200);
     const item = addItem();
     await addTags(item, ['Deku']);
@@ -115,21 +121,31 @@ describe('tag implications', () => {
       'uraraka_ochako->boku_no_hero_academia:copyright',
     ]);
     for (const id of [byUser, byAi, both]) {
-      expect(await tagsOf(id)).toEqual(['boku_no_hero_academia:implied', `uraraka_ochako:${id === byAi ? 'ai' : 'user'}`]);
+      expect(await tagsOf(id)).toEqual([
+        'boku_no_hero_academia:implied',
+        `uraraka_ochako:${id === byAi ? 'ai' : 'user'}`,
+      ]);
     }
     expect(await idsFor('tags=boku_no_hero_academia')).toEqual([byUser, byAi, both]);
   });
 
   test('implications chain, and an alias on either side resolves to its target', async () => {
     await call('POST', '/api/tag-relations/implications', { tag: 'boku_no_hero_academia', implies: 'shonen_jump' });
-    const res = await call('POST', '/api/tag-relations/implications', { tag: 'deku', implies: 'boku_no_hero_academia' });
+    const res = await call('POST', '/api/tag-relations/implications', {
+      tag: 'deku',
+      implies: 'boku_no_hero_academia',
+    });
     expect(res.status).toBe(200);
     expect(res.body.implications.map((i: any) => `${i.tag.name}->${i.implies.name}`)).toEqual([
       'boku_no_hero_academia->shonen_jump',
       'midoriya_izuku->boku_no_hero_academia',
       'uraraka_ochako->boku_no_hero_academia',
     ]);
-    expect(await tagsOf(byUser)).toEqual(['boku_no_hero_academia:implied', 'shonen_jump:implied', 'uraraka_ochako:user']);
+    expect(await tagsOf(byUser)).toEqual([
+      'boku_no_hero_academia:implied',
+      'shonen_jump:implied',
+      'uraraka_ochako:user',
+    ]);
   });
 
   test('applying the character by hand brings its implied tags along', async () => {
@@ -140,7 +156,10 @@ describe('tag implications', () => {
 
   test('a cycle is rejected and nothing changes', async () => {
     const before = await get('/api/tag-relations');
-    const loop = await call('POST', '/api/tag-relations/implications', { tag: 'shonen_jump', implies: 'uraraka_ochako' });
+    const loop = await call('POST', '/api/tag-relations/implications', {
+      tag: 'shonen_jump',
+      implies: 'uraraka_ochako',
+    });
     expect(loop.status).toBe(400);
     expect(loop.body.error).toBe('"uraraka_ochako" already implies "shonen_jump", so this would loop');
     const self = await call('POST', '/api/tag-relations/implications', { tag: 'uraraka', implies: 'uraraka_ochako' });
@@ -151,7 +170,11 @@ describe('tag implications', () => {
     expect(merge.status).toBe(400);
     expect(merge.body.error).toBe('Merging "shonen_jump" into "uraraka_ochako" would make their implications loop');
     expect(await get('/api/tag-relations')).toEqual(before);
-    expect(await tagsOf(byUser)).toEqual(['boku_no_hero_academia:implied', 'shonen_jump:implied', 'uraraka_ochako:user']);
+    expect(await tagsOf(byUser)).toEqual([
+      'boku_no_hero_academia:implied',
+      'shonen_jump:implied',
+      'uraraka_ochako:user',
+    ]);
   });
 
   test('removing the source tag takes its implied tags with it', async () => {

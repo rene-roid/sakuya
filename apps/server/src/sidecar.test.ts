@@ -54,8 +54,7 @@ async function itemByName(filename: string) {
 }
 
 type Tag = { name: string; category: string; source: string };
-const tagsOf = (detail: { tags: Tag[] }) =>
-  detail.tags.map((t) => `${t.category}:${t.name}:${t.source}`).sort();
+const tagsOf = (detail: { tags: Tag[] }) => detail.tags.map((t) => `${t.category}:${t.name}:${t.source}`).sort();
 
 await writeImage('danbooru.png');
 writeJson('danbooru.png.json', {

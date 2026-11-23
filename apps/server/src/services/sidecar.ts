@@ -27,7 +27,9 @@ const isObject = (v: unknown): v is Json => typeof v === 'object' && v !== null 
 function tagList(value: unknown): string[] {
   if (typeof value === 'string') return value.split(/\s+/);
   if (!Array.isArray(value)) return [];
-  return value.flatMap((v) => (typeof v === 'string' ? [v] : isObject(v) && typeof v.name === 'string' ? [v.name] : []));
+  return value.flatMap((v) =>
+    typeof v === 'string' ? [v] : isObject(v) && typeof v.name === 'string' ? [v.name] : [],
+  );
 }
 
 function str(value: unknown): string | null {
