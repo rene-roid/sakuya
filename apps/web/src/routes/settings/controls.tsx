@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import type { Job, Settings } from '@sakuya/shared';
 import { api, type ScheduleJobType } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
@@ -502,5 +503,30 @@ export function ScheduleControl({ jobType }: { jobType: ScheduleJobType }) {
         Run now
       </button>
     </>
+  );
+}
+
+export function UploadsLink() {
+  const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
+  const first = libraries?.[0];
+  if (!first) {
+    return (
+      <button type="button" disabled title="Create a library first" className={buttonClass()}>
+        {libraries ? 'Create a library first' : 'Open library'}
+      </button>
+    );
+  }
+  return (
+    <Link to={`/library/${first.id}`} className={buttonClass()}>
+      Open {first.name}
+    </Link>
+  );
+}
+
+export function DuplicatesLink() {
+  return (
+    <Link to="/duplicates" className={buttonClass()}>
+      Find duplicates
+    </Link>
   );
 }

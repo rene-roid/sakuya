@@ -16,13 +16,13 @@ import {
   TaggerModelMeta,
   ThumbnailSizeMeta,
   HomeFolderMeta,
+  DuplicatesLink,
+  UploadsLink,
 } from './controls';
 import { LibraryManager } from './LibraryManager';
 import { PerLibrarySchedules } from './JobSchedules';
 import { JobHistory } from './JobHistory';
 import { ReleaseNotes } from './ReleaseNotes';
-import { UploadsTab } from './UploadsTab';
-import { DuplicatesTab } from './DuplicatesTab';
 
 export type SettingsKey = keyof Settings;
 
@@ -273,11 +273,10 @@ export const SETTINGS: readonly SettingEntry[] = [
     section: 'libraries',
     group: 'Uploads',
     label: 'Upload files',
-    description: 'Web uploads are stored separately from library folders.',
-    keywords: 'upload drag drop import add files',
+    description: 'Uploads moved to each library: use Upload on a library page, or drop files onto its grid.',
+    keywords: 'upload drag drop import add files moved',
     kind: 'custom',
-    block: true,
-    Control: UploadsTab,
+    Control: UploadsLink,
   },
 
   // AI Tagging
@@ -424,11 +423,10 @@ export const SETTINGS: readonly SettingEntry[] = [
     section: 'processing',
     group: 'Similarity',
     label: 'Duplicates',
-    description: 'Find exact duplicate files and clean them up.',
-    keywords: 'duplicate copies identical wasted space',
+    description: 'Find files with identical content across your libraries and delete the extra copies.',
+    keywords: 'duplicate copies identical wasted space clean',
     kind: 'custom',
-    block: true,
-    Control: DuplicatesTab,
+    Control: DuplicatesLink,
   },
 
   // Jobs
@@ -627,8 +625,6 @@ const LEGACY_TABS: Record<string, SectionId> = {
   behavior: 'general',
   system: 'storage',
   releases: 'about',
-  uploads: 'libraries',
-  duplicates: 'processing',
 };
 
 export function resolveSection(tab: string | null): SettingsSection {

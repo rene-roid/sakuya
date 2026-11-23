@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../../lib/api';
 import { SECTIONS, SETTINGS, resolveSection, settingHref, type SettingEntry, type SettingsSection } from './registry';
 import { GroupHeading, SettingRow, SettingsPanel } from './SettingRow';
 import { SettingsSearchBox, SettingsSearchResults } from './SettingsSearch';
@@ -64,6 +66,21 @@ function SectionButton({
 }
 
 export function Settings() {
+  const [searchParams] = useSearchParams();
+  // Uploads and Duplicates used to be tabs here; their bookmarks follow them to where they live now.
+  const tab = searchParams.get('tab');
+  if (tab === 'duplicates') return <Navigate to="/duplicates" replace />;
+  if (tab === 'uploads') return <UploadsRedirect />;
+  return <SettingsPage />;
+}
+
+function UploadsRedirect() {
+  const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
+  if (!libraries) return null;
+  return <Navigate to={libraries[0] ? `/library/${libraries[0].id}` : settingHref('uploads')} replace />;
+}
+
+function SettingsPage() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();

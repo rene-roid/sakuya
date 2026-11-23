@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { PanelLeft } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useFilters } from '../hooks/useFilters';
 import { useSettings } from '../hooks/useSettings';
 import { TagSidebar } from '../components/TagSidebar';
 import { MediaBrowser } from '../components/MediaBrowser';
+import { UploadButton, UploadDropZone } from '../components/UploadButton';
+import { api } from '../lib/api';
 
 const EXPLORE_FILTERS_KEY = 'sakuya:exploreFilters';
 
@@ -40,29 +43,38 @@ export function Explore() {
     else localStorage.removeItem(EXPLORE_FILTERS_KEY);
   }, [location.search, rememberFilters]);
 
+  // Filtered down to one library, the page takes uploads into it like the library page does.
+  const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, enabled: !!filters.libraryId });
+  const library = filters.libraryId ? libraries?.find((l) => l.id === filters.libraryId) : undefined;
+
   return (
-    <MediaBrowser
-      title="Explore"
-      filters={filters}
-      actions={actions}
-      sidebar={
-        <TagSidebar
-          filters={filters}
-          actions={actions}
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed((c) => !c)}
-        />
-      }
-      headerExtra={
-        // Phones get this instead of the collapsed sidebar strip, which ate a column of the grid.
-        <button
-          onClick={() => setSidebarCollapsed(false)}
-          className="ml-auto flex cursor-pointer items-center gap-1.5 self-center rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 sm:hidden glass:bg-white/[0.04] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
-        >
-          <PanelLeft size={14} />
-          Libraries &amp; tags
-        </button>
-      }
-    />
+    <UploadDropZone library={library}>
+      <MediaBrowser
+        title="Explore"
+        filters={filters}
+        actions={actions}
+        sidebar={
+          <TagSidebar
+            filters={filters}
+            actions={actions}
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed((c) => !c)}
+          />
+        }
+        headerExtra={
+          <div className="ml-auto flex items-center gap-2 self-center">
+            {library && <UploadButton library={library} />}
+            {/* Phones get this instead of the collapsed sidebar strip, which ate a column of the grid. */}
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="flex cursor-pointer items-center gap-1.5 rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:text-zinc-100 sm:hidden glass:bg-white/[0.04] glass:shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+            >
+              <PanelLeft size={14} />
+              Libraries &amp; tags
+            </button>
+          </div>
+        }
+      />
+    </UploadDropZone>
   );
 }
