@@ -33,8 +33,17 @@ function writeDesktopSettings(file, settings) {
  * @param {(line: string) => void} opts.log
  * @param {() => Promise<void>} opts.beforeInstall backs up and stops the server; may throw
  * @param {(state: object) => void} opts.onChange
+ * @param {() => void} [opts.afterFailedInstall] undoes beforeInstall when the install did not quit the app
  */
-export function createUpdater({ autoUpdater, currentVersion, settingsFile, log, beforeInstall, onChange }) {
+export function createUpdater({
+  autoUpdater,
+  currentVersion,
+  settingsFile,
+  log,
+  beforeInstall,
+  onChange,
+  afterFailedInstall = () => {},
+}) {
   let settings = readDesktopSettings(settingsFile);
   let timer = null;
   let firstCheck = null;
@@ -78,9 +87,17 @@ export function createUpdater({ autoUpdater, currentVersion, settingsFile, log, 
     writeDesktopSettings(settingsFile, settings);
     set({ status: 'ready', version: info.version, percent: 100, checkedAt: Date.now() });
   });
+  // electron-updater reports a failed quitAndInstall (an AppImage run without APPIMAGE, an
+  // unwritable install folder) as an error event and leaves the app running, server stopped.
+  const installFailed = (message) => {
+    set({ status: 'error', error: message.split('\n')[0], checkedAt: Date.now() });
+    afterFailedInstall();
+  };
+
   autoUpdater.on('error', (err) => {
     const message = err?.message ?? String(err);
     log(`[updates] ${message}`);
+    if (state.status === 'installing') return installFailed(message);
     // Back to where a retry makes sense; the next periodic check tries again.
     if (state.status !== 'ready') set({ status: 'error', error: message.split('\n')[0], checkedAt: Date.now() });
   });
@@ -113,7 +130,13 @@ export function createUpdater({ autoUpdater, currentVersion, settingsFile, log, 
     } catch (err) {
       log(`[updates] pre-update step failed, installing anyway: ${err?.message ?? err}`);
     }
-    autoUpdater.quitAndInstall(true, true);
+    try {
+      autoUpdater.quitAndInstall(true, true);
+    } catch (err) {
+      const message = err?.message ?? String(err);
+      log(`[updates] install failed: ${message}`);
+      if (state.status === 'installing') installFailed(message);
+    }
   }
 
   function setAutoUpdate(on) {

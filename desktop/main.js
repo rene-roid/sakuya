@@ -174,7 +174,8 @@ function startServer() {
     if (!match) return;
     url = match[1];
     refreshMenus();
-    if (wantWindow) show();
+    if (win) win.loadURL(url);
+    else if (wantWindow) show();
   });
   server.on('exit', (code) => {
     if (quitting) return;
@@ -230,6 +231,17 @@ async function beforeInstall() {
   await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
 }
 
+/** The update did not quit the app after all: start the server beforeInstall stopped. */
+async function afterFailedInstall() {
+  if (server && server.exitCode === null && server.signalCode === null) {
+    await new Promise((resolve) => server.once('exit', resolve));
+  }
+  quitting = false;
+  url = null;
+  refreshMenus();
+  startServer();
+}
+
 function broadcastUpdate(state) {
   refreshMenus();
   win?.webContents.send('update:changed', state);
@@ -250,6 +262,7 @@ function startUpdater() {
     settingsFile: path.join(dataDir, 'desktop.json'),
     log: logLine,
     beforeInstall,
+    afterFailedInstall,
     onChange: broadcastUpdate,
   });
   // The page only gets these calls if it was served by our own server.

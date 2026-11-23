@@ -396,7 +396,10 @@ export const api = {
   skipDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/skip`, { method: 'POST' }),
   redoDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/redo`, { method: 'POST' }),
   removeDownloadItem: (id: number, deleteFiles: boolean) =>
-    request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
+    request<{ ok: true; deleted: number; failed: BulkFailure[] }>(`/api/downloader/items/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ deleteFiles }),
+    }),
   startConsole: (command: string) =>
     request<ConsoleSessionStatus>('/api/downloader/console/start', { method: 'POST', body: JSON.stringify({ command }) }),
   sendConsoleInput: (text: string) =>

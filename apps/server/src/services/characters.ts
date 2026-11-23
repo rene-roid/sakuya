@@ -1,4 +1,4 @@
-import { recomputeImplied } from './tagRelations';
+import { linkTag, recomputeImplied, releaseLinks, resolveSibling } from './tagRelations';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -195,9 +195,10 @@ function pruneEmptyCharacters(): void {
 }
 
 /**
- * Make a named character's tag sit on exactly the media its accepted detections are on. Links it
- * writes carry source 'character', which retagging leaves alone; an AI link for the same tag is
- * taken over, so a retag that stops predicting it can't remove it.
+ * Make a named character's tag sit on exactly the media its accepted detections are on, except
+ * where the user took it off by hand. Links it writes carry source 'character', which retagging
+ * leaves alone; an AI link for the same tag is taken over, so a retag that stops predicting it
+ * can't remove it, and handed back when the character lets go of that item.
  */
 function syncCharacterLinks(characterIds: number[]): void {
   const tags: number[] = [];
@@ -209,27 +210,14 @@ function syncCharacterLinks(characterIds: number[]): void {
       } | null;
       if (!row?.tag_id) continue;
       tags.push(row.tag_id);
-      for (const r of sqlite
-        .query(
-          `SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'
-           UNION SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected'`,
-        )
-        .all(row.tag_id, id) as { media_id: number }[])
+      const members = `SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected'`;
+      for (const { media_id } of sqlite.query(members).all(id) as { media_id: number }[]) {
+        touchedMedia.add(media_id);
+        linkTag(media_id, row.tag_id, 'character');
+      }
+      for (const r of releaseLinks('character', `tag_id = ? AND media_id NOT IN (${members})`, row.tag_id, id)) {
         touchedMedia.add(r.media_id);
-      sqlite
-        .query(
-          `INSERT INTO media_tags (media_id, tag_id, confidence, source)
-           SELECT DISTINCT media_id, ?, NULL, 'character' FROM character_detections
-           WHERE character_id = ? AND assignment != 'rejected'
-           ON CONFLICT (media_id, tag_id) DO UPDATE SET source = 'character' WHERE media_tags.source IN ('ai', 'implied')`,
-        )
-        .run(row.tag_id, id);
-      sqlite
-        .query(
-          `DELETE FROM media_tags WHERE tag_id = ? AND source = 'character' AND media_id NOT IN
-             (SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected')`,
-        )
-        .run(row.tag_id, id);
+      }
     }
   })();
   refreshUsageCounts([...tags, ...recomputeImplied(touchedMedia)]);
@@ -237,11 +225,8 @@ function syncCharacterLinks(characterIds: number[]): void {
 
 /** Drop the links a character wrote for a tag it no longer carries. */
 function unlinkCharacterTag(tagId: number): void {
-  const media = sqlite
-    .query(`SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'`)
-    .all(tagId) as { media_id: number }[];
-  sqlite.query(`DELETE FROM media_tags WHERE tag_id = ? AND source = 'character'`).run(tagId);
-  refreshUsageCounts([tagId, ...recomputeImplied(media.map((r) => r.media_id))]);
+  const released = sqlite.transaction(() => releaseLinks('character', 'tag_id = ?', tagId))();
+  refreshUsageCounts([tagId, ...recomputeImplied(released.map((r) => r.media_id))]);
 }
 
 // --- The job --------------------------------------------------------------------------------
@@ -523,10 +508,13 @@ export function nameCharacter(id: number, rawName: string): CharacterSummary {
   const name = normalizeTagName(rawName);
   if (!name) throw httpError(400, 'Name is required');
   const character = characterRow(id);
-  const existing = sqlite.query('SELECT id, category FROM tags WHERE name = ?').get(name) as {
-    id: number;
-    category: string;
-  } | null;
+  const found = sqlite.query('SELECT id FROM tags WHERE name = ?').get(name) as { id: number } | null;
+  const existing = found
+    ? (sqlite.query('SELECT id, category FROM tags WHERE id = ?').get(resolveSibling(found.id)) as {
+        id: number;
+        category: string;
+      })
+    : null;
   if (existing && existing.category !== 'character' && existing.category !== 'user') {
     throw httpError(
       409,

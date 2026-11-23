@@ -6,6 +6,7 @@ import { sqlite } from '../db';
 import { DATA_DIR } from '../lib/config';
 import { chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { removeMediaRows } from './mediaRemoval';
+import { sidecarOnDisk } from './sidecar';
 import { refreshUsageCounts } from './tagger';
 import { thumbPathFor } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
@@ -23,6 +24,7 @@ const DERIVED = '.derived';
 const THUMB = 'thumb.webp';
 const SPRITE = 'sprite.webp';
 const TRANSCODE = 'transcode.mp4';
+const SIDECAR = 'sidecar.json';
 
 export class TrashError extends Error {
   constructor(
@@ -74,6 +76,8 @@ interface Snapshot {
   tags: { name: string; category: string; source: string; confidence: number | null }[];
   vetoes: { name: string; category: string; createdAt: number }[];
   boards: { boardId: number; addedAt: number }[];
+  /** File name of the gallery-dl sidecar that went to the trash with the file. */
+  sidecar?: string;
 }
 
 function snapshot(id: number): Snapshot {
@@ -103,16 +107,32 @@ function snapshot(id: number): Snapshot {
   };
 }
 
-function freshTrashDir(mediaId: number, now: number): string {
+// Entry folders a delete is still filling or a restore is still emptying. A delete writes its rows
+// only once every file has moved, so emptying the trash must not take these for leftovers.
+const busy = new Set<string>();
+
+function freshTrashDir(mediaId: number, now: number, claimed: string[]): string {
   for (let n = 0; ; n++) {
     const name = `${now.toString(36)}-${mediaId}${n ? `-${n}` : ''}`;
     try {
       fs.mkdirSync(path.join(TRASH_DIR, name), { recursive: false });
+      busy.add(name);
+      claimed.push(name);
       return name;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
     }
   }
+}
+
+/** Each file derived from media `id` and where it waits in the trash entry `dir`. */
+function derivedFiles(id: number, dir: string): [live: string, trashed: string][] {
+  const abs = path.join(TRASH_DIR, dir, DERIVED);
+  return [
+    [thumbPathFor(id), path.join(abs, THUMB)],
+    [spritePathFor(id), path.join(abs, SPRITE)],
+    [transcodePathFor(id), path.join(abs, TRANSCODE)],
+  ];
 }
 
 const insertTrash = () =>
@@ -134,6 +154,15 @@ export interface TrashOutcome {
  * library while it stays on disk.
  */
 export async function trashMedia(rows: MediaRow[], now: number = Date.now()): Promise<TrashOutcome> {
+  const claimed: string[] = [];
+  try {
+    return await moveToTrash(rows, now, claimed);
+  } finally {
+    for (const dir of claimed) busy.delete(dir);
+  }
+}
+
+async function moveToTrash(rows: MediaRow[], now: number, claimed: string[]): Promise<TrashOutcome> {
   if (!rows.length) return { removed: [], failed: [] };
   fs.mkdirSync(TRASH_DIR, { recursive: true });
   const snapshots = new Map(rows.map((row) => [row.id, snapshot(row.id)]));
@@ -146,7 +175,7 @@ export async function trashMedia(rows: MediaRow[], now: number = Date.now()): Pr
       gone.push(row.id);
       return;
     }
-    const dir = freshTrashDir(row.id, now);
+    const dir = freshTrashDir(row.id, now, claimed);
     const abs = path.join(TRASH_DIR, dir);
     try {
       await moveFile(row.path, path.join(abs, path.basename(row.path)));
@@ -155,9 +184,11 @@ export async function trashMedia(rows: MediaRow[], now: number = Date.now()): Pr
       failed.push({ id: row.id, error: `Could not move to trash: ${(err as Error).message}` });
       return;
     }
-    await moveIfPresent(thumbPathFor(row.id), path.join(abs, DERIVED, THUMB));
-    await moveIfPresent(spritePathFor(row.id), path.join(abs, DERIVED, SPRITE));
-    await moveIfPresent(transcodePathFor(row.id), path.join(abs, DERIVED, TRANSCODE));
+    for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(live, trashed);
+    const sidecar = sidecarOnDisk(row.path);
+    if (sidecar && (await moveIfPresent(sidecar, path.join(abs, DERIVED, SIDECAR)))) {
+      snapshots.get(row.id)!.sidecar = path.basename(sidecar);
+    }
     moved.push({ row, dir });
   };
   // A few at a time: one by one, a 500-item delete spent most of its time waiting on each rename.
@@ -189,6 +220,9 @@ export async function trashMedia(rows: MediaRow[], now: number = Date.now()): Pr
   } catch (err) {
     for (const { row, dir } of moved) {
       await moveFile(path.join(TRASH_DIR, dir, path.basename(row.path)), row.path).catch(() => {});
+      for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(trashed, live);
+      const sidecar = snapshots.get(row.id)!.sidecar;
+      if (sidecar) await moveIfPresent(path.join(TRASH_DIR, dir, DERIVED, SIDECAR), path.join(path.dirname(row.path), sidecar));
       fs.rmSync(path.join(TRASH_DIR, dir), { recursive: true, force: true });
     }
     throw err;
@@ -270,6 +304,18 @@ function freePath(original: string): string {
   }
 }
 
+/** `photo.png.json` → `photo (restored).png.json` when `photo.png` came back as `photo (restored).png`. */
+function renamedSidecar(name: string, original: string, target: string): string {
+  const stem = (p: string) => path.basename(p, path.extname(p));
+  for (const [from, to] of [
+    [path.basename(original), path.basename(target)],
+    [stem(original), stem(target)],
+  ]) {
+    if (name.startsWith(from)) return to + name.slice(from.length);
+  }
+  return name;
+}
+
 function tagId(name: string, category: string): number {
   const existing = sqlite.query('SELECT id FROM tags WHERE name = ?').get(name) as { id: number } | null;
   if (existing) return existing.id;
@@ -288,6 +334,16 @@ function tagId(name: string, category: string): number {
  */
 export async function restoreFromTrash(id: number): Promise<TrashRestoreResult> {
   const row = trashRow(id);
+  if (busy.has(row.trashed_path)) throw new TrashError(409, 'This item is already being restored');
+  busy.add(row.trashed_path);
+  try {
+    return await restoreEntry(id, row);
+  } finally {
+    busy.delete(row.trashed_path);
+  }
+}
+
+async function restoreEntry(id: number, row: TrashRow): Promise<TrashRestoreResult> {
   const snap = JSON.parse(
     (sqlite.query('SELECT media_json AS j FROM trash WHERE id = ?').get(id) as { j: string }).j,
   ) as Snapshot;
@@ -353,6 +409,10 @@ export async function restoreFromTrash(id: number): Promise<TrashRestoreResult> 
   const thumbBack = idFree && (await moveIfPresent(path.join(derived, THUMB), thumbPathFor(mediaId)));
   const transcodeBack = idFree && (await moveIfPresent(path.join(derived, TRANSCODE), transcodePathFor(mediaId)));
   const spriteBack = idFree && (await moveIfPresent(path.join(derived, SPRITE), spritePathFor(mediaId)));
+  if (snap.sidecar) {
+    const sidecar = path.join(path.dirname(target), renamedSidecar(snap.sidecar, row.original_path, target));
+    if (!fs.existsSync(sidecar)) await moveIfPresent(path.join(derived, SIDECAR), sidecar);
+  }
   sqlite
     .query(
       `UPDATE media SET thumbnail_path = ?, transcoded_at = CASE WHEN ? THEN transcoded_at ELSE NULL END,
@@ -366,7 +426,8 @@ export async function restoreFromTrash(id: number): Promise<TrashRestoreResult> 
   return { ok: true, mediaId, path: target, renamed: target !== row.original_path };
 }
 
-function removeEntries(rows: Pick<TrashRow, 'id' | 'trashed_path' | 'size_bytes'>[]): TrashRemoveResult {
+function removeEntries(all: Pick<TrashRow, 'id' | 'trashed_path' | 'size_bytes'>[]): TrashRemoveResult {
+  const rows = all.filter((r) => !busy.has(r.trashed_path));
   for (const part of chunkIds(rows.map((r) => r.id))) {
     sqlite.query(`DELETE FROM trash WHERE id IN (${part.map(() => '?').join(',')})`).run(...part);
   }
@@ -382,8 +443,9 @@ export function deleteFromTrash(id: number): TrashRemoveResult {
 export function emptyTrash(): TrashRemoveResult {
   const result = removeEntries(sqlite.query('SELECT id, trashed_path, size_bytes FROM trash').all() as TrashRow[]);
   if (fs.existsSync(TRASH_DIR)) {
-    for (const entry of fs.readdirSync(TRASH_DIR))
-      fs.rmSync(path.join(TRASH_DIR, entry), { recursive: true, force: true });
+    for (const entry of fs.readdirSync(TRASH_DIR)) {
+      if (!busy.has(entry)) fs.rmSync(path.join(TRASH_DIR, entry), { recursive: true, force: true });
+    }
   }
   return result;
 }

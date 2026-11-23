@@ -1,9 +1,10 @@
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { sqlite } from '../db';
 import { normalizeTagName, type TagCategory } from '@sakuya/shared';
 import { upsertTag } from './tagger';
-import { linkTag, recomputeImplied } from './tagRelations';
+import { linkTag, recomputeImplied, releaseLinks } from './tagRelations';
 
 export interface SidecarTag {
   name: string;
@@ -137,9 +138,17 @@ export function parseSidecar(data: unknown): SidecarMetadata | null {
  * `.zip` name, and `--write-metadata` with a custom extension format may drop the media extension.
  */
 export function sidecarFor(file: string, jsonFiles: ReadonlySet<string>): string | null {
+  return sidecarNames(file).find((c) => jsonFiles.has(c)) ?? null;
+}
+
+/** sidecarFor, looking on disk instead of in a directory listing. */
+export function sidecarOnDisk(file: string): string | null {
+  return sidecarNames(file).find((c) => existsSync(c)) ?? null;
+}
+
+function sidecarNames(file: string): string[] {
   const stem = file.slice(0, file.length - path.extname(file).length);
-  const candidates = [`${file}.json`, `${stem}.zip.json`, `${stem}.json`];
-  return candidates.find((c) => jsonFiles.has(c)) ?? null;
+  return [`${file}.json`, `${stem}.zip.json`, `${stem}.json`];
 }
 
 const vetoedStmt = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
@@ -173,10 +182,7 @@ export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: numb
   const vetoed = new Set((vetoedStmt.all(mediaId) as { tag_id: number }[]).map((r) => r.tag_id));
   sqlite.transaction(() => {
     dropFtsStmt.run(mediaId);
-    const old = sqlite
-      .query(`DELETE FROM media_tags WHERE media_id = ? AND source = 'meta' RETURNING tag_id`)
-      .all(mediaId) as { tag_id: number }[];
-    for (const r of old) touched.add(r.tag_id);
+    for (const r of releaseLinks('meta', 'media_id = ?', mediaId)) touched.add(r.tag_id);
     for (const tag of meta.tags) {
       const tagId = upsertTag(tag.name, tag.category);
       if (tag.category !== 'general') promoteStmt.run(tag.category, tagId);

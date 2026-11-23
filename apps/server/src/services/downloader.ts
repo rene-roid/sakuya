@@ -9,11 +9,12 @@ import { downloaderConcurrency, getSetting } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
 import { trashMedia } from './trash';
+import { sidecarOnDisk } from './sidecar';
 import { chunkIds } from '../lib/mediaByIds';
 import { parseShellArgs } from '../lib/shellArgs';
 import { isUnder } from '../lib/paths';
 import { FFMPEG_PATH } from '../lib/run';
-import type { DownloadBatchWithItems, DownloadLogLine } from '@sakuya/shared';
+import type { BulkFailure, DownloadBatchWithItems, DownloadLogLine } from '@sakuya/shared';
 
 // Directory holding the bundled ffmpeg binary, prepended to the gallery-dl subprocess's
 // PATH so its "--ugoira gif" postprocessor (which shells out to "ffmpeg") can find it
@@ -334,8 +335,15 @@ export function skipItem(id: number): void {
   maybeCompleteBatch(item.batchId);
 }
 
-export async function removeItem(id: number, opts: { deleteFiles: boolean }): Promise<void> {
+/** Files moved to the trash, and indexed files that could not be and stay where they are. */
+export interface RemoveItemResult {
+  deleted: number;
+  failed: BulkFailure[];
+}
+
+export async function removeItem(id: number, opts: { deleteFiles: boolean }): Promise<RemoveItemResult> {
   const item = getItemOrThrow(id);
+  const result: RemoveItemResult = { deleted: 0, failed: [] };
 
   const entry = runningProcs.get(id);
   if (entry) {
@@ -356,23 +364,34 @@ export async function removeItem(id: number, opts: { deleteFiles: boolean }): Pr
     for (const part of chunkIds(files.map((f) => f.path))) {
       indexed.push(...db.select().from(schema.media).where(inArray(schema.media.path, part)).all());
     }
-    await trashMedia(indexed);
-    const trashed = new Set(indexed.map((m) => m.path));
+    const { removed, failed } = await trashMedia(indexed);
+    result.deleted = removed.length;
+    result.failed = failed;
+    const kept = new Set(failed.map((f) => f.id));
+    const byPath = new Map(indexed.map((m) => [m.path, m.id]));
+    // A folder a file went to the trash from stays, even empty, so restoring it has somewhere to go.
+    const trashedFrom = new Set<string>();
     const parentDirs = new Set<string>();
     for (const f of files) {
-      if (!trashed.has(f.path)) {
-        fs.rmSync(f.path, { force: true });
-        fs.rmSync(`${f.path}.json`, { force: true });
-      }
+      const mediaId = byPath.get(f.path);
+      if (mediaId !== undefined && kept.has(mediaId)) continue;
+      if (mediaId === undefined) fs.rmSync(f.path, { force: true });
+      else trashedFrom.add(path.dirname(f.path));
+      // trashMedia took the sidecars of the files it moved; what is left belongs to the others.
+      const sidecar = sidecarOnDisk(f.path);
+      if (sidecar) fs.rmSync(sidecar, { force: true });
       parentDirs.add(path.dirname(f.path));
     }
-    if (batch) for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
+    if (batch) {
+      for (const dir of parentDirs) if (!trashedFrom.has(dir)) removeEmptyDirsUpTo(dir, batch.folderPath);
+    }
   }
 
   db.delete(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).run();
   db.delete(schema.downloadLogs).where(eq(schema.downloadLogs.itemId, id)).run();
   db.delete(schema.downloadItems).where(eq(schema.downloadItems.id, id)).run();
   downloaderEvents.emit('removed', { id, batchId: item.batchId });
+  return result;
 }
 
 /** Walks all registered folders to find the library that owns (or is an ancestor of) `inputPath`. */

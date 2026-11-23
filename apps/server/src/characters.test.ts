@@ -25,7 +25,7 @@ const { DEFAULT_CCIP_PARAMS } = await import('./services/characterModels');
 const { clusterDetections, clusterParams, saveDetections, enqueueCharacterJob, characterCropDirFor } =
   await import('./services/characters');
 const { removeMediaRows } = await import('./services/mediaRemoval');
-const { upsertTag, refreshUsageCounts } = await import('./services/tagger');
+const { upsertTag, refreshUsageCounts, applyPredictedTags } = await import('./services/tagger');
 
 const DIMS = 768;
 const params = clusterParams(DEFAULT_CCIP_PARAMS);
@@ -567,5 +567,101 @@ describe('characters tab API', () => {
     expect(res.status).toBe(409);
     expect((sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c).toBe(before);
     expect((await nameOf(dets.mira[0], ids.mira0))?.characterId).toBe(ids.miraChar);
+  });
+});
+
+describe('character links and the other tag writers', () => {
+  async function namedCluster(name: string, seed: number, media: number[]): Promise<{ id: number; dets: number[] }> {
+    const base = randomUnit(seed);
+    const dets = media.flatMap((m, i) => detect(m, [near(base, randomUnit(seed + 10 + i), 0.93)]));
+    clusterDetections(dets, params);
+    const { character_id: id } = sqlite
+      .query('SELECT character_id FROM character_detections WHERE id = ?')
+      .get(dets[0]) as { character_id: number };
+    expect((await post(`/api/characters/${id}/name`, { name })).status).toBe(200);
+    return { id, dets };
+  }
+  const newFace = async (seed: number, nearSeed: number) => {
+    const media = await addMedia();
+    const [det] = detect(media, [near(randomUnit(seed), randomUnit(nearSeed), 0.93)]);
+    clusterDetections([det], params);
+    return { media, det };
+  };
+  const linksWithScore = (tagName: string) =>
+    sqlite
+      .query(
+        `SELECT mt.media_id, mt.source, mt.confidence FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+         WHERE t.name = ? ORDER BY mt.media_id`,
+      )
+      .all(tagName);
+
+  test('a character tag removed from one item by hand stays off when the character grows', async () => {
+    const media = [await addMedia(), await addMedia()];
+    await namedCluster('lila', 1100, media);
+    expect(linksOf('lila')).toEqual(media.map((id) => ({ media_id: id, source: 'character' })));
+
+    const removed = await fetch(`${BASE}/api/media/${media[0]}/tags`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remove: ['lila'] }),
+    });
+    expect(removed.status).toBe(200);
+    const later = await newFace(1100, 1130);
+    expect(linksOf('lila').map((l) => l.media_id)).toEqual([media[1], later.media]);
+  });
+
+  test('merging a named character’s tag into another tag moves the character onto it', async () => {
+    const media = [await addMedia(), await addMedia()];
+    const { id } = await namedCluster('carrot_cat', 1200, media);
+    const merged = await post('/api/tag-relations/siblings', { from: 'carrot_cat', to: 'carrot', category: 'character' });
+    expect(merged.status).toBe(200);
+    expect((await json(fetch(`${BASE}/api/characters/${id}`))).name).toBe('carrot');
+
+    const later = await newFace(1200, 1230);
+    expect(linksOf('carrot_cat')).toEqual([]);
+    expect(linksOf('carrot')).toEqual([...media, later.media].map((m) => ({ media_id: m, source: 'character' })));
+  });
+
+  test('merging the tags of two named characters merges the characters', async () => {
+    const annMedia = [await addMedia(), await addMedia()];
+    const anneMedia = [await addMedia(), await addMedia()];
+    const ann = await namedCluster('ann', 1300, annMedia);
+    const anne = await namedCluster('anne', 1400, anneMedia);
+    expect((await post('/api/tag-relations/siblings', { from: 'anne', to: 'ann' })).status).toBe(200);
+
+    expect((await fetch(`${BASE}/api/characters/${anne.id}`)).status).toBe(404);
+    expect(await json(fetch(`${BASE}/api/characters/${ann.id}`))).toMatchObject({ name: 'ann', mediaCount: 4 });
+    expect(linksOf('ann').map((l) => l.media_id)).toEqual([...annMedia, ...anneMedia]);
+    expect(linksOf('anne')).toEqual([]);
+  });
+
+  test('a tag the AI predicted on its own goes back to the AI when the character lets go of it', async () => {
+    const media = [await addMedia(), await addMedia()];
+    tagMedia(media[0], 'hatsune_miku', 'character', 'ai');
+    const { id, dets } = await namedCluster('hatsune_miku', 1500, media);
+    expect(linksWithScore('hatsune_miku')).toEqual([
+      { media_id: media[0], source: 'character', confidence: 0.9 },
+      { media_id: media[1], source: 'character', confidence: null },
+    ]);
+
+    expect((await post(`/api/character-detections/${dets[0]}/reject`)).status).toBe(200);
+    expect(linksWithScore('hatsune_miku')).toEqual([
+      { media_id: media[0], source: 'ai', confidence: 0.9 },
+      { media_id: media[1], source: 'character', confidence: null },
+    ]);
+
+    await post(`/api/characters/${id}/name`, { name: 'miku_hatsune' });
+    expect(linksWithScore('hatsune_miku')).toEqual([{ media_id: media[0], source: 'ai', confidence: 0.9 }]);
+  });
+
+  test('a tag the AI stopped predicting goes away with the character instead of back to the AI', async () => {
+    const media = [await addMedia(), await addMedia()];
+    applyPredictedTags(media[0], [{ name: 'kasane_teto', category: 'character', confidence: 0.8 }]);
+    const { dets } = await namedCluster('kasane_teto', 1600, media);
+    expect(linksWithScore('kasane_teto')[0]).toEqual({ media_id: media[0], source: 'character', confidence: 0.8 });
+
+    applyPredictedTags(media[0], []);
+    expect((await post(`/api/character-detections/${dets[0]}/reject`)).status).toBe(200);
+    expect(linksOf('kasane_teto')).toEqual([{ media_id: media[1], source: 'character' }]);
   });
 });

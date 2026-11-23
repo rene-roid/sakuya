@@ -18,36 +18,77 @@ export function ensureTag(name: string, category: TagCategory): number {
 }
 
 /**
- * The sources a new link of each source takes over when the item already has the tag. A sidecar
- * outranks the AI so a retag can't drop what the site itself said, and anything outranks an
- * implication so the tag survives the implication going away. A user add leaves an AI link alone,
- * as it always has.
+ * How firmly each source holds a (media, tag) link; where two meet on one pair the higher one stays.
+ * A sidecar or a named character outranks the AI so a retag can't drop what the site or the user's
+ * naming said, and anything outranks an implication so the tag survives the implication going away.
  */
-const OVERRIDES: Record<TagSource, TagSource[]> = {
-  user: ['implied'],
-  ai: ['implied'],
-  meta: ['ai', 'implied'],
-  character: ['ai', 'implied'],
-  implied: [],
-};
+const RANK: Record<TagSource, number> = { user: 3, meta: 2, character: 2, ai: 1, implied: 0 };
+const SOURCES = Object.keys(RANK) as TagSource[];
+const rankOf = (column: string) => `CASE ${column} ${SOURCES.map((s) => `WHEN '${s}' THEN ${RANK[s]}`).join(' ')} END`;
+
+const notVetoed = (media: string, tag: string) =>
+  `NOT EXISTS (SELECT 1 FROM media_tag_vetoes v WHERE v.media_id = ${media} AND v.tag_id = ${tag})`;
+
+/**
+ * The upsert every link writer ends with. `wins` says whether the new link takes the pair over. A
+ * sidecar or character link holding the pair keeps the AI's score, refreshed by each retag, so a
+ * tag the AI found on its own goes back to the AI, not away, when that link is released.
+ */
+function upsert(wins: string): string {
+  const scored = `media_tags.source IN ('meta', 'character') AND excluded.source = 'ai'`;
+  return `ON CONFLICT (media_id, tag_id) DO UPDATE SET
+    source = CASE WHEN ${wins} THEN excluded.source ELSE media_tags.source END,
+    confidence = CASE
+      WHEN NOT (${wins}) THEN excluded.confidence
+      WHEN excluded.source IN ('meta', 'character') THEN COALESCE(excluded.confidence, media_tags.confidence)
+      ELSE excluded.confidence END
+    WHERE (${wins}) OR (${scored})`;
+}
+
+// A user add takes over only an implication: an AI, sidecar or character link stays what it is, so
+// removing the tag later still vetoes the writer that put it there.
 const linkStmts = Object.fromEntries(
-  Object.entries(OVERRIDES).map(([source, over]) => [
-    source,
-    sqlite.prepare(
-      `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, ?, '${source}')
-       ON CONFLICT (media_id, tag_id) DO ${
-         over.length
-           ? `UPDATE SET source = excluded.source, confidence = excluded.confidence
-              WHERE media_tags.source IN (${over.map((o) => `'${o}'`).join(',')})`
-           : 'NOTHING'
-       }`,
-    ),
-  ]),
+  SOURCES.map((source) => {
+    const over = SOURCES.filter((o) => RANK[o] < RANK[source] && (source !== 'user' || o === 'implied'));
+    const wins = over.length ? `media_tags.source IN (${over.map((o) => `'${o}'`).join(',')})` : 'false';
+    return [
+      source,
+      sqlite.prepare(
+        `INSERT INTO media_tags (media_id, tag_id, confidence, source)
+         SELECT ?1, ?2, ?3, '${source}' WHERE ${source === 'user' ? 'true' : notVetoed('?1', '?2')}
+         ${upsert(wins)}`,
+      ),
+    ];
+  }),
 ) as Record<TagSource, ReturnType<typeof sqlite.prepare>>;
 
-/** Put a tag on an item, or take over an existing link of a lower-ranked source. */
+/**
+ * Put a tag on an item, or take over an existing link of a lower-ranked source. Only the user
+ * writes past a veto; callers adding by hand clear it.
+ */
 export function linkTag(mediaId: number, tagId: number, source: TagSource, confidence: number | null = null): void {
   linkStmts[source].run(mediaId, tagId, confidence);
+}
+
+/**
+ * Take the `source` links matching `where` off. One that still carries the AI's score goes back
+ * to the AI rather than away. Returns the pairs that changed.
+ */
+export function releaseLinks(
+  source: 'meta' | 'character',
+  where: string,
+  ...params: number[]
+): { media_id: number; tag_id: number }[] {
+  const handedBack = sqlite
+    .query(
+      `UPDATE media_tags SET source = 'ai' WHERE source = '${source}' AND confidence IS NOT NULL AND (${where})
+       RETURNING media_id, tag_id`,
+    )
+    .all(...params) as { media_id: number; tag_id: number }[];
+  const dropped = sqlite
+    .query(`DELETE FROM media_tags WHERE source = '${source}' AND (${where}) RETURNING media_id, tag_id`)
+    .all(...params) as { media_id: number; tag_id: number }[];
+  return [...handedBack, ...dropped];
 }
 
 // Both tables are tiny and only change through this module, so whether either has any rows is
@@ -238,17 +279,33 @@ export function addSibling(fromName: string, toName: string, category: TagCatego
       const moved = sqlite.query('SELECT media_id AS id FROM media_tags WHERE tag_id = ?').all(from) as {
         id: number;
       }[];
-      // A direct link outranks an implied one already on the target, or the merged tag would
-      // disappear again the moment its implication went away.
+      // Where both tags are on an item the stronger link stays, and a link the target was vetoed
+      // for does not sneak back in under the alias's name.
       sqlite
         .query(
           `INSERT INTO media_tags (media_id, tag_id, confidence, source)
-           SELECT media_id, ?, confidence, source FROM media_tags WHERE tag_id = ? AND true
-           ON CONFLICT (media_id, tag_id) DO UPDATE SET source = excluded.source, confidence = excluded.confidence
-           WHERE media_tags.source = 'implied' AND excluded.source != 'implied'`,
+           SELECT media_id, ?1, confidence, source FROM media_tags f
+           WHERE f.tag_id = ?2 AND (f.source = 'user' OR ${notVetoed('f.media_id', '?1')})
+           ${upsert(`${rankOf('excluded.source')} > ${rankOf('media_tags.source')}`)}`,
         )
         .run(to, from);
       sqlite.query('DELETE FROM media_tags WHERE tag_id = ?').run(from);
+      // A character named after the alias moves to the target, or into the target's character.
+      // Their links already moved above, so neither needs relinking.
+      type Owner = { id: number; cover: number | null };
+      const owners = sqlite.query('SELECT id, cover_detection_id AS cover FROM characters WHERE tag_id = ?');
+      const into = owners.get(to) as Owner | null;
+      if (!into) {
+        sqlite.query('UPDATE characters SET tag_id = ? WHERE tag_id = ?').run(to, from);
+      } else {
+        for (const merged of owners.all(from) as Owner[]) {
+          sqlite.query('UPDATE character_detections SET character_id = ? WHERE character_id = ?').run(into.id, merged.id);
+          sqlite
+            .query('UPDATE characters SET cover_detection_id = COALESCE(cover_detection_id, ?) WHERE id = ?')
+            .run(merged.cover, into.id);
+          sqlite.query('DELETE FROM characters WHERE id = ?').run(merged.id);
+        }
+      }
       sqlite
         .query(
           `INSERT INTO media_tag_vetoes (media_id, tag_id, created_at)

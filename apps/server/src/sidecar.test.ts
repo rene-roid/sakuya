@@ -257,4 +257,15 @@ describe('gallery-dl sidecars', () => {
     expect(tagsOf(after)).toEqual(['general:blue_sky:meta', 'general:sunset:meta', 'user:favourite:user']);
     expect(after.sourceUrl).toBe('https://example.org/page/10');
   });
+
+  test('a tag the AI also found stays, as an AI tag, when a changed sidecar drops it', async () => {
+    const detail = await itemByName('pixiv.png');
+    applyPredictedTags(detail.id, [{ name: 'witch', category: 'general', confidence: 0.85 }]);
+    expect(tagsOf(await request('GET', `/api/media/${detail.id}`))).toContain('general:witch:meta');
+
+    writeJson('pixiv.png.json', { category: 'pixiv', id: 123456, user: { id: 1, name: 'David Revoy' }, tags: [] });
+    await scan();
+    const after = await request('GET', `/api/media/${detail.id}`);
+    expect(after.tags.find((t: Tag) => t.name === 'witch')).toMatchObject({ source: 'ai', confidence: 0.85 });
+  });
 });
