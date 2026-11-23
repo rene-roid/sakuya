@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { MediaDetail, MediaListResponse, TagCount, TagRelationResult } from '@sakuya/shared';
 import { useTestConfig, waitForJob } from './testConfig';
 
 useTestConfig('tagrelations', { port: 38962 }); // M02
@@ -8,15 +9,21 @@ const { db, sqlite, schema } = await import('./db');
 const { applyPredictedTags } = await import('./services/tagger');
 await import('./index');
 
-async function call(method: string, url: string, body?: unknown): Promise<{ status: number; body: any }> {
+type RelationReply = TagRelationResult & { error?: string };
+
+async function call<T = RelationReply>(
+  method: string,
+  url: string,
+  body?: unknown,
+): Promise<{ status: number; body: T }> {
   const res = await fetch(BASE + url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: (await res.json()) as T };
 }
-const get = async (url: string) => (await call('GET', url)).body;
+const get = async <T>(url: string) => (await call<T>('GET', url)).body;
 
 const library = db.insert(schema.libraries).values({ name: 'relations', createdAt: Date.now() }).returning().get();
 let n = 0;
@@ -41,11 +48,9 @@ const addTags = (id: number, add: string[], category = 'user') =>
   call('PATCH', `/api/media/${id}/tags`, { add, category });
 const removeTags = (id: number, remove: string[]) => call('PATCH', `/api/media/${id}/tags`, { remove });
 const tagsOf = async (id: number): Promise<string[]> =>
-  ((await get(`/api/media/${id}`)).tags as { name: string; source: string }[])
-    .map((t) => `${t.name}:${t.source}`)
-    .sort();
+  (await get<MediaDetail>(`/api/media/${id}`)).tags.map((t) => `${t.name}:${t.source}`).sort();
 const idsFor = async (query: string): Promise<number[]> =>
-  ((await get(`/api/media?${query}&limit=100`)).items as { id: number }[]).map((m) => m.id).sort((a, b) => a - b);
+  (await get<MediaListResponse>(`/api/media?${query}&limit=100`)).items.map((m) => m.id).sort((a, b) => a - b);
 
 const byUser = addItem();
 const byAi = addItem();
@@ -59,7 +64,7 @@ describe('tag siblings', () => {
     const res = await call('POST', '/api/tag-relations/siblings', { from: 'uraraka', to: 'uraraka_ochako' });
     expect(res.status).toBe(200);
     expect(res.body.job).toBeNull();
-    expect(res.body.siblings.map((s: any) => `${s.from.name}->${s.to.name}`)).toEqual(['uraraka->uraraka_ochako']);
+    expect(res.body.siblings.map((s) => `${s.from.name}->${s.to.name}`)).toEqual(['uraraka->uraraka_ochako']);
 
     expect(await tagsOf(byUser)).toEqual(['uraraka_ochako:user']);
     expect(await tagsOf(byAi)).toEqual(['uraraka_ochako:ai']);
@@ -75,7 +80,7 @@ describe('tag siblings', () => {
 
   test('search for the old name finds the target', async () => {
     expect(await idsFor('tags=uraraka')).toEqual([byUser, byAi, both]);
-    const suggestions = await get('/api/tags?q=urara');
+    const suggestions = await get<TagCount[]>('/api/tags?q=urara');
     expect(suggestions.map((t: { name: string; count: number }) => [t.name, t.count])).toEqual([['uraraka_ochako', 3]]);
   });
 
@@ -117,7 +122,7 @@ describe('tag implications', () => {
       category: 'copyright',
     });
     expect(res.status).toBe(200);
-    expect(res.body.implications.map((i: any) => `${i.tag.name}->${i.implies.name}:${i.implies.category}`)).toEqual([
+    expect(res.body.implications.map((i) => `${i.tag.name}->${i.implies.name}:${i.implies.category}`)).toEqual([
       'uraraka_ochako->boku_no_hero_academia:copyright',
     ]);
     for (const id of [byUser, byAi, both]) {
@@ -136,7 +141,7 @@ describe('tag implications', () => {
       implies: 'boku_no_hero_academia',
     });
     expect(res.status).toBe(200);
-    expect(res.body.implications.map((i: any) => `${i.tag.name}->${i.implies.name}`)).toEqual([
+    expect(res.body.implications.map((i) => `${i.tag.name}->${i.implies.name}`)).toEqual([
       'boku_no_hero_academia->shonen_jump',
       'midoriya_izuku->boku_no_hero_academia',
       'uraraka_ochako->boku_no_hero_academia',
@@ -210,7 +215,7 @@ describe('tag implications', () => {
   test('removing a sibling stops the alias resolving, and merged links stay put', async () => {
     const res = await call('DELETE', '/api/tag-relations/siblings/uraraka');
     expect(res.status).toBe(200);
-    expect(res.body.siblings.map((s: any) => s.from.name)).toEqual(['deku']);
+    expect(res.body.siblings.map((s) => s.from.name)).toEqual(['deku']);
     expect(await tagsOf(both)).toEqual(['boku_no_hero_academia:user', 'shonen_jump:implied', 'uraraka_ochako:user']);
     const item = addItem();
     await addTags(item, ['uraraka']);
@@ -232,8 +237,8 @@ describe('tag implications', () => {
     })();
     const res = await call('POST', '/api/tag-relations/implications', { tag: 'crowd', implies: 'many_people' });
     expect(res.status).toBe(200);
-    expect(res.body.job.type).toBe('tag-relations');
-    expect((await waitForJob(res.body.job.id)).log).toBe('Completed. 5001 items updated.');
+    expect(res.body.job?.type).toBe('tag-relations');
+    expect((await waitForJob(res.body.job!.id)).log).toBe('Completed. 5001 items updated.');
     const implied = sqlite
       .query(
         `SELECT COUNT(*) AS c FROM media_tags mt JOIN tags t ON t.id = mt.tag_id

@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import type { Media } from '@sakuya/shared';
+import type {
+  DiscoverLikeResponse,
+  Job,
+  Media,
+  MediaIdsResponse,
+  MediaListResponse,
+  SemanticStatus,
+} from '@sakuya/shared';
 import { useTestConfig, waitForJob } from './testConfig';
 
 // ML04: synthetic vectors and a fake encoder only, so CI never downloads the real model.
@@ -43,7 +50,7 @@ setClipEncoder({
   },
 });
 
-const json = async (res: Response | Promise<Response>): Promise<any> => (await (await res).json()) as any;
+const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 const post = (url: string, body?: unknown) =>
   fetch(BASE + url, {
     method: 'POST',
@@ -90,7 +97,7 @@ async function addMedia(
 }
 
 const names = async (url: string): Promise<string[]> =>
-  (await json(fetch(BASE + url))).items.map((m: Media) => m.filename);
+  (await json<MediaListResponse>(fetch(BASE + url))).items.map((m: Media) => m.filename);
 
 function installFakeModelFiles() {
   for (const f of CLIP_MODEL_FILES) fs.writeFileSync(path.join(CLIP_MODELS_DIR, f.file), 'fake');
@@ -209,14 +216,14 @@ describe('search by description', () => {
     redVideo = await addMedia('red-video', [200, 10, 10], { type: 'video' });
     await addMedia('red-b', [210, 30, 30], { libraryId: libB.id });
 
-    const search = () => json(fetch(`${BASE}/api/media?describe=red%20umbrella%20in%20the%20rain`));
+    const search = () => json<MediaListResponse>(fetch(`${BASE}/api/media?describe=red%20umbrella%20in%20the%20rain`));
     let body = await search();
     expect(body.semantic).toEqual({ status: 'disabled', embeddedCount: 0, pendingCount: 6 });
     expect(body.items).toEqual([]);
 
     await patchSettings({ semantic_search_enabled: '1' });
-    expect((await search()).semantic.status).toBe('no-model');
-    expect((await json(fetch(`${BASE}/api/semantic/status`))).status).toBe('absent');
+    expect((await search()).semantic?.status).toBe('no-model');
+    expect((await json<SemanticStatus>(fetch(`${BASE}/api/semantic/status`))).status).toBe('absent');
     expect((await post('/api/semantic/run')).status).toBe(409);
 
     installFakeModelFiles();
@@ -233,11 +240,11 @@ describe('search by description', () => {
       .webp()
       .toFile(thumbPathFor(redVideo));
 
-    const { job } = await json(post('/api/semantic/run'));
+    const { job } = await json<{ job: Job }>(post('/api/semantic/run'));
     const done = await waitForJob(job.id);
     expect(done.status).toBe('done');
     expect(done.log).toContain('Completed. 6 files indexed.');
-    const status = await json(fetch(`${BASE}/api/semantic/status`));
+    const status = await json<SemanticStatus>(fetch(`${BASE}/api/semantic/status`));
     expect(status).toMatchObject({ status: 'ready', enabled: true, embeddedCount: 6, pendingCount: 0 });
 
     // Nothing left to do: a second run is refused and the count stays.
@@ -246,7 +253,7 @@ describe('search by description', () => {
   });
 
   test('ranks the grid by fit to the description', async () => {
-    const body = await json(fetch(`${BASE}/api/media?describe=red%20umbrella%20in%20the%20rain`));
+    const body = await json<MediaListResponse>(fetch(`${BASE}/api/media?describe=red%20umbrella%20in%20the%20rain`));
     expect(body.semantic).toEqual({ status: 'ready', embeddedCount: 6, pendingCount: 0 });
     expect(body.total).toBe(6);
     expect(body.items.map((m: Media) => m.filename)).toEqual([
@@ -264,7 +271,7 @@ describe('search by description', () => {
     const seen: string[] = [];
     let cursor = '';
     for (let i = 0; i < 4; i++) {
-      const page = await json(
+      const page = await json<MediaListResponse>(
         fetch(`${BASE}/api/media?describe=a%20green%20forest&limit=2${cursor ? `&cursor=${cursor}` : ''}`),
       );
       seen.push(...page.items.map((m: Media) => m.filename));
@@ -284,13 +291,15 @@ describe('search by description', () => {
     expect(await names(`${q}&libraryId=${libB.id}`)).toEqual(['red-b.png']);
     expect(await names(`${q}&tags=umbrella`)).toEqual(['red.png', 'green.png']);
     expect(await names(`${q}&q=crimson`)).toEqual(['crimson.png']);
-    const ids = await json(fetch(`${BASE}/api/media/ids?describe=red%20umbrella%20in%20the%20rain&tags=umbrella`));
+    const ids = await json<MediaIdsResponse>(
+      fetch(`${BASE}/api/media/ids?describe=red%20umbrella%20in%20the%20rain&tags=umbrella`),
+    );
     expect(ids).toEqual({ ids: [red, green], total: 2 });
   });
 
   test('takes any language, and an empty description is the normal grid', async () => {
-    const body = await json(fetch(`${BASE}/api/media?describe=${encodeURIComponent('赤い傘')}`));
-    expect(body.semantic.status).toBe('ready');
+    const body = await json<MediaListResponse>(fetch(`${BASE}/api/media?describe=${encodeURIComponent('赤い傘')}`));
+    expect(body.semantic?.status).toBe('ready');
     expect(body.items.map((m: Media) => m.filename)).toEqual([
       'red-video.png',
       'red.png',
@@ -299,7 +308,7 @@ describe('search by description', () => {
       'green.png',
       'blue.png',
     ]);
-    const plain = await json(fetch(`${BASE}/api/media?describe=%20&sort=name`));
+    const plain = await json<MediaListResponse>(fetch(`${BASE}/api/media?describe=%20&sort=name`));
     expect(plain.semantic).toBeUndefined();
     expect(plain.items.map((m: Media) => m.filename)).toEqual([
       'blue.png',
@@ -351,9 +360,9 @@ describe('more like this', () => {
     const src = await addMedia('like-src', [250, 0, 0], { tags: ['rare_hat'] });
     const tagTwin = await addMedia('like-tag-twin', [0, 0, 250], { tags: ['rare_hat'] });
     const lookAlike = await addMedia('like-look-alike', [245, 5, 5]);
-    await waitForJob((await json(post('/api/semantic/run'))).job.id);
+    await waitForJob((await json<{ job: Job }>(post('/api/semantic/run'))).job.id);
 
-    const like = await json(fetch(`${BASE}/api/discover/like/${src}?limit=4`));
+    const like = await json<DiscoverLikeResponse>(fetch(`${BASE}/api/discover/like/${src}?limit=4`));
     expect(like.ranking).toBe('visual');
     const ids = like.items.map((m: Media) => m.id);
     // Each leads one list, so they tie on 1 / (k + 1) and the newer id goes first.
@@ -363,13 +372,15 @@ describe('more like this', () => {
 
     // A hidden item stays out of the image neighbours too.
     await post('/api/discover/feedback', { mediaId: lookAlike, hidden: true });
-    expect((await json(fetch(`${BASE}/api/discover/like/${src}?limit=4`))).items.map((m: Media) => m.id)).not.toContain(
-      lookAlike,
-    );
+    expect(
+      (await json<DiscoverLikeResponse>(fetch(`${BASE}/api/discover/like/${src}?limit=4`))).items.map(
+        (m: Media) => m.id,
+      ),
+    ).not.toContain(lookAlike);
     await post('/api/discover/feedback', { mediaId: lookAlike, hidden: false });
 
     await patchSettings({ semantic_search_enabled: '0' });
-    const tagsOnly = await json(fetch(`${BASE}/api/discover/like/${src}`));
+    const tagsOnly = await json<DiscoverLikeResponse>(fetch(`${BASE}/api/discover/like/${src}`));
     expect(tagsOnly.ranking).toBe('tags');
     expect(tagsOnly.items.map((m: Media) => m.id)).toEqual([tagTwin]);
   });

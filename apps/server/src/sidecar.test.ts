@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import type { Job, Library, MediaDetail, MediaListResponse, TagCount } from '@sakuya/shared';
 import { useTestConfig, waitForJob } from './testConfig';
 
 const dataDir = useTestConfig('sidecar', { port: 38961 }); // M01
@@ -10,13 +11,13 @@ const BASE = 'http://localhost:38961';
 const { applyPredictedTags } = await import('./services/tagger');
 await import('./index');
 
-const request = async (method: string, url: string, body?: unknown): Promise<any> => {
+const request = async <T>(method: string, url: string, body?: unknown): Promise<T> => {
   const res = await fetch(BASE + url, {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  return res.json();
+  return (await res.json()) as T;
 };
 
 const root = path.join(dataDir, 'downloads');
@@ -39,18 +40,18 @@ function writeJson(name: string, content: unknown) {
   fs.utimesSync(file, sidecarClock, sidecarClock);
 }
 
-const library = await request('POST', '/api/libraries', { name: 'downloads' });
+const library = await request<Library>('POST', '/api/libraries', { name: 'downloads' });
 await request('POST', `/api/libraries/${library.id}/folders`, { path: root });
 
 async function scan() {
-  const { job } = await request('POST', `/api/libraries/${library.id}/scan`);
+  const { job } = await request<{ job: Job }>('POST', `/api/libraries/${library.id}/scan`);
   return waitForJob(job.id);
 }
 
 async function itemByName(filename: string) {
-  const list = await request('GET', `/api/media?libraryId=${library.id}&limit=100`);
+  const list = await request<MediaListResponse>('GET', `/api/media?libraryId=${library.id}&limit=100`);
   const item = list.items.find((m: { filename: string }) => m.filename === filename);
-  return request('GET', `/api/media/${item.id}`);
+  return request<MediaDetail>('GET', `/api/media/${item!.id}`);
 }
 
 type Tag = { name: string; category: string; source: string };
@@ -192,19 +193,19 @@ describe('gallery-dl sidecars', () => {
   });
 
   test('sidecars are not indexed as media', async () => {
-    const list = await request('GET', `/api/media?libraryId=${library.id}&limit=100`);
+    const list = await request<MediaListResponse>('GET', `/api/media?libraryId=${library.id}&limit=100`);
     expect(list.total).toBe(9);
     expect(list.items.some((m: { filename: string }) => m.filename.endsWith('.json'))).toBe(false);
   });
 
   test('filtering by an artist finds only their items, and artists are listed by category', async () => {
-    const list = await request('GET', `/api/media?tags=david_revoy&limit=100`);
+    const list = await request<MediaListResponse>('GET', `/api/media?tags=david_revoy&limit=100`);
     expect(list.items.map((m: { filename: string }) => m.filename).sort()).toEqual([
       'danbooru.png',
       'gelbooru.jpg.png',
       'pixiv.png',
     ]);
-    const artists = await request('GET', `/api/tags?libraryId=${library.id}&category=artist`);
+    const artists = await request<TagCount[]>('GET', `/api/tags?libraryId=${library.id}&category=artist`);
     expect(artists.map((t: { name: string; count: number }) => [t.name, t.count])).toEqual([
       ['david_revoy', 3],
       ['davidrevoy', 1],
@@ -215,7 +216,7 @@ describe('gallery-dl sidecars', () => {
 
   test('free-text search finds an item by its sidecar tags and still by its filename', async () => {
     const names = async (q: string) =>
-      (await request('GET', `/api/media?q=${encodeURIComponent(q)}&limit=100`)).items
+      (await request<MediaListResponse>('GET', `/api/media?q=${encodeURIComponent(q)}&limit=100`)).items
         .map((m: { filename: string }) => m.filename)
         .sort();
     expect(await names('witch_hat')).toEqual(['danbooru.png']);
@@ -229,11 +230,11 @@ describe('gallery-dl sidecars', () => {
       { name: 'cat', category: 'general', confidence: 0.9 },
       { name: 'smile', category: 'general', confidence: 0.8 },
     ]);
-    const tagged = await request('GET', `/api/media/${before.id}`);
+    const tagged = await request<MediaDetail>('GET', `/api/media/${before.id}`);
     expect(tagsOf(tagged)).toEqual([...tagsOf(before), 'general:smile:ai'].sort());
 
     applyPredictedTags(before.id, []);
-    expect(tagsOf(await request('GET', `/api/media/${before.id}`))).toEqual(tagsOf(before));
+    expect(tagsOf(await request<MediaDetail>('GET', `/api/media/${before.id}`))).toEqual(tagsOf(before));
   });
 
   test('a sidecar written next to an already indexed file is read on the next scan', async () => {
@@ -252,7 +253,7 @@ describe('gallery-dl sidecars', () => {
     await request('PATCH', `/api/media/${detail.id}/tags`, { add: ['favourite'], remove: ['clouds'] });
     writeJson('generic.json', { tags: ['Blue Sky', 'clouds', 'sunset'], page_url: 'https://example.org/page/10' });
     await scan();
-    const after = await request('GET', `/api/media/${detail.id}`);
+    const after = await request<MediaDetail>('GET', `/api/media/${detail.id}`);
     expect(tagsOf(after)).toEqual(['general:blue_sky:meta', 'general:sunset:meta', 'user:favourite:user']);
     expect(after.sourceUrl).toBe('https://example.org/page/10');
   });
