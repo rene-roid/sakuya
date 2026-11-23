@@ -1,22 +1,25 @@
 import { memo, useCallback, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
+import { Trash2, X } from 'lucide-react';
 import type { DuplicateGroup } from '@sakuya/shared';
-import { api, thumbUrl } from '../../lib/api';
-import { formatBytes } from '../../lib/format';
-import { toast } from '../../components/Toast';
-import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { TabHeader } from './index';
+import { api, thumbUrl } from '../lib/api';
+import { formatBytes } from '../lib/format';
+import { toast } from '../components/Toast';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
-export function DuplicatesTab() {
+export function Duplicates() {
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const libraryId = Number(searchParams.get('library')) || null;
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const { data, isFetching, refetch } = useQuery({
-    queryKey: ['duplicates'],
-    queryFn: api.duplicates,
-    enabled: false,
+  const { data, isFetching, refetch } = useQuery({ queryKey: ['duplicates'], queryFn: api.duplicates });
+  const { data: library } = useQuery({
+    queryKey: ['libraries', libraryId],
+    queryFn: () => api.library(libraryId!),
+    enabled: libraryId !== null,
   });
 
   const deleteMutation = useMutation({
@@ -31,9 +34,11 @@ export function DuplicatesTab() {
     },
   });
 
-  const groups = data?.groups ?? [];
-  // Nothing runs until the first scan; after that the cached result is what's shown.
+  // From a library's menu, only the groups with a copy in that library.
+  const groups = (data?.groups ?? []).filter((g) => !libraryId || g.items.some((m) => m.libraryId === libraryId));
   const scanned = data !== undefined;
+  const wasted = groups.reduce((sum, g) => sum + g.wastedBytes, 0);
+  const files = groups.reduce((sum, g) => sum + g.items.length, 0);
 
   const toggle = useCallback((id: number) => {
     setSelected((prev) => {
@@ -54,35 +59,42 @@ export function DuplicatesTab() {
     .reduce((sum, m) => sum + m.sizeBytes, 0);
 
   return (
-    <div>
-      <TabHeader title="Duplicates" subtitle="Find exact duplicate files and clean them up." />
-
-      <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <div className="text-[13.5px] font-bold">Detect duplicates</div>
-            <div className="mt-0.5 text-xs text-zinc-500">
-              {!scanned
-                ? 'Scans your library for files with identical content.'
-                : groups.length > 0
-                  ? `${data?.groupCount} group${data?.groupCount === 1 ? '' : 's'} · ${data?.fileCount} files · ${formatBytes(data?.wastedBytes ?? 0)} wasted`
-                  : 'No duplicate files found.'}
-            </div>
-          </div>
-          <button
-            disabled={isFetching}
-            onClick={() => refetch()}
-            className="shrink-0 cursor-pointer rounded-btn bg-accent px-4 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
-          >
-            {isFetching ? 'Scanning…' : scanned ? 'Rescan' : 'Scan for duplicates'}
-          </button>
-        </div>
+    <div className="fade-in mx-auto max-w-[1400px] px-4 pb-16 pt-6 sm:px-8">
+      <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">Duplicates</h1>
+        {libraryId && (
+          <span className="flex items-center gap-1.5 rounded-full border border-line-strong bg-zinc-800 py-0.5 pl-2.5 pr-1.5 text-xs font-semibold text-zinc-300">
+            In {library?.name ?? '…'}
+            <button
+              type="button"
+              aria-label="Show every library"
+              onClick={() => setSearchParams({}, { replace: true })}
+              className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-zinc-700"
+            >
+              <X size={11} />
+            </button>
+          </span>
+        )}
+        <button
+          disabled={isFetching}
+          onClick={() => refetch()}
+          className="ml-auto cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100 disabled:opacity-40"
+        >
+          {isFetching ? 'Scanning…' : 'Rescan'}
+        </button>
+      </div>
+      <div className="mb-5 text-[13px] text-zinc-500">
+        {!scanned
+          ? 'Looking for files with identical content…'
+          : groups.length > 0
+            ? `${groups.length} group${groups.length === 1 ? '' : 's'} · ${files} files · ${formatBytes(wasted)} wasted`
+            : 'No duplicate files found.'}
       </div>
 
       {scanned && groups.length > 0 && (
         <>
-          <div className="mb-3.5 flex items-center justify-between gap-3 rounded-xl border border-line bg-surface p-[14px]">
-            <div className="flex items-center gap-2">
+          <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3 rounded-panel border border-line bg-surface p-3 glass:bg-white/[0.03]">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={autoSelect}
                 className="cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100"
@@ -143,7 +155,7 @@ function DuplicateGroupCard({
   onToggle: (id: number) => void;
 }) {
   return (
-    <div className="rounded-xl border border-line bg-surface p-[14px]">
+    <div className="rounded-panel border border-line bg-surface p-3.5 glass:bg-white/[0.03]">
       <div className="mb-2.5 text-[12px] font-semibold text-zinc-400">
         {group.items.length} copies · {formatBytes(group.wastedBytes)} wasted
       </div>
@@ -173,7 +185,7 @@ const DuplicateTile = memo(function DuplicateTile({
         selected ? 'border-rose-700 bg-rose-950/20' : 'border-line hover:border-line-strong'
       }`}
     >
-      <div className="relative aspect-square overflow-hidden rounded-md bg-zinc-900">
+      <div className="relative aspect-square overflow-hidden rounded-media bg-zinc-900">
         <img src={thumbUrl(m.id)} alt={m.filename} loading="lazy" decoding="async" className="h-full w-full object-cover" />
         {oldest && (
           <span className="absolute left-1 top-1 rounded bg-zinc-950/80 px-1.5 py-0.5 text-[9px] font-bold text-zinc-300">
