@@ -1,11 +1,13 @@
 name: Desktop
 
 # A v* tag builds both installers and attaches them to that tag's GitHub release; running it by hand
-# (or a PR touching the desktop app) just builds them as workflow artifacts.
+# (or marking a PR that touches the desktop app ready for review) just builds them as workflow
+# artifacts. Pushes to an open PR do not rebuild, so commits on a PR don't each cost two builds.
 on:
   push:
     tags: ['v*']
   pull_request:
+    types: [ready_for_review]
     paths: ['desktop/**', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
