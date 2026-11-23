@@ -176,6 +176,30 @@ test('a failing backup step does not block the update', async () => {
   assert.ok(lines.some((l) => l.includes('server unreachable')));
 });
 
+test('an install that fails without quitting brings the server back and reports the error', async () => {
+  let restarts = 0;
+  const { updater, autoUpdater } = make({ version: '1.8.0' }, { afterFailedInstall: () => restarts++ });
+  await updater.check();
+  // What electron-updater does for an AppImage started without APPIMAGE: an error event, no quit.
+  autoUpdater.quitAndInstall = () => autoUpdater.emit('error', new Error('APPIMAGE env is not defined'));
+  await updater.install();
+  assert.equal(restarts, 1);
+  assert.equal(updater.getState().status, 'error');
+  assert.equal(updater.getState().error, 'APPIMAGE env is not defined');
+});
+
+test('an install that throws brings the server back too', async () => {
+  let restarts = 0;
+  const { updater, autoUpdater } = make({ version: '1.8.0' }, { afterFailedInstall: () => restarts++ });
+  await updater.check();
+  autoUpdater.quitAndInstall = () => {
+    throw new Error('EROFS: read-only file system');
+  };
+  await updater.install();
+  assert.equal(restarts, 1);
+  assert.equal(updater.getState().status, 'error');
+});
+
 test('the next start on the downloaded version reports it was updated, once', () => {
   fs.writeFileSync(settingsFile, JSON.stringify({ autoUpdate: true, pendingVersion: '1.7.0' }));
   const { updater } = make({});
