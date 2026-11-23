@@ -12,6 +12,7 @@ import { MediaViewer } from '../components/MediaViewer';
 import { toast } from '../components/Toast';
 import { Segmented, TYPE_OPTIONS } from '../components/Segmented';
 import { useSettings } from '../hooks/useSettings';
+import { settingHref } from './settings/registry';
 
 const randomSeed = () => Math.floor(Math.random() * 2 ** 30) + 1;
 
@@ -92,7 +93,7 @@ export function Discover() {
           Sakuya keeps tracking that either way, so the feed is ready the moment you enable it.
         </div>
         <Link
-          to="/settings?tab=behavior"
+          to={settingHref('discover-enabled')}
           className="mt-4 cursor-pointer rounded-lg bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-white hover:opacity-90"
         >
           Open Settings

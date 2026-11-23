@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Upload, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { toast } from '../../components/Toast';
-import { TabHeader } from './index';
 
 interface UploadRow {
   id: string;
@@ -74,7 +73,6 @@ export function UploadsTab() {
 
   return (
     <div>
-      <TabHeader title="Uploads" subtitle="Web uploads are stored separately from library folders." />
       <div className="mb-4 flex items-center gap-2.5">
         <span className="text-[12.5px] text-zinc-500">Upload into</span>
         <select

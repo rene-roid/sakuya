@@ -6,7 +6,6 @@ import { api, thumbUrl } from '../../lib/api';
 import { formatBytes } from '../../lib/format';
 import { toast } from '../../components/Toast';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { TabHeader } from './index';
 
 export function DuplicatesTab() {
   const queryClient = useQueryClient();
@@ -55,7 +54,6 @@ export function DuplicatesTab() {
 
   return (
     <div>
-      <TabHeader title="Duplicates" subtitle="Find exact duplicate files and clean them up." />
 
       <div className="mb-3.5 rounded-xl border border-line bg-surface p-[18px]">
         <div className="flex items-center justify-between gap-4">

@@ -25,15 +25,17 @@ export function Segmented<K extends string>({
       className={`flex rounded-lg border border-line bg-zinc-900 p-0.5 glass:rounded-full glass:bg-white/[0.04] ${className}`}
     >
       {options.map((option) => (
-        <div
+        <button
+          type="button"
           key={option.key}
+          aria-pressed={value === option.key}
           onClick={() => onChange(option.key)}
-          className={`cursor-pointer rounded-md px-[13px] py-1.5 text-[12.5px] font-semibold glass:rounded-full ${
+          className={`cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-accent px-[13px] py-1.5 text-[12.5px] font-semibold glass:rounded-full ${
             value === option.key ? 'bg-accent text-white' : 'text-zinc-400 hover:text-zinc-200'
           }`}
         >
           {option.label}
-        </div>
+        </button>
       ))}
       {children}
     </div>

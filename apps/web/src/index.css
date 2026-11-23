@@ -125,6 +125,19 @@ body {
 .fade-in {
   animation: fadeIn 0.2s ease;
 }
+/* A settings row reached by a deep link or a search jump. */
+@keyframes settingFlash {
+  0%,
+  35% {
+    background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.setting-flash {
+  animation: settingFlash 1.6s ease-out;
+}
 .floaty {
   animation: floaty 6s ease-in-out infinite;
 }
