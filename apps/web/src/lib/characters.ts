@@ -23,7 +23,7 @@ export type NameOption =
 /**
  * Autocomplete for naming a character: named characters and character tags no character carries
  * yet, matched on their on-screen label or canonical name, prefix matches first. A "new" option
- * comes last unless the text already names one of them exactly.
+ * is offered unless the text already names one of them exactly.
  */
 export function nameOptions(
   query: string,
@@ -55,15 +55,18 @@ export function nameOptions(
     if (label.includes(q) || c.name.includes(canonical)) return 1;
     return -1;
   };
-  const matches = candidates
+  const ranked = candidates
     .map((c) => ({ ...c, rank: rank(c) }))
     .filter((c) => c.rank >= 0)
     .sort((a, b) => a.rank - b.rank || b.count - a.count || a.option.label.localeCompare(b.option.label))
-    .slice(0, limit)
-    .map((c) => c.option);
+    .slice(0, limit);
+  const matches: NameOption[] = ranked.map((c) => c.option);
   const exact = candidates.some((c) => c.name === canonical || c.option.label.toLowerCase() === q);
-  if (typed && !exact) matches.push({ kind: 'new', label: typed, name: typed });
-  return matches;
+  if (!typed || exact) return matches;
+  // Enter takes the first option: an existing name only when it starts with what was typed, so
+  // "Pepper" creates Pepper rather than picking "Carrot (pepper&carrot)".
+  const option = { kind: 'new' as const, label: typed, name: typed };
+  return ranked[0]?.rank === 0 ? [...matches, option] : [option, ...matches];
 }
 
 /**

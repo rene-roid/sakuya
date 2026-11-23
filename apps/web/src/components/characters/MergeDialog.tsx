@@ -53,9 +53,10 @@ export function MergeDialog({
       onClose={merge.isPending ? undefined : onClose}
       className="flex max-h-[min(640px,90dvh)] w-full max-w-[440px] flex-col rounded-panel border border-line bg-surface p-4 shadow-2xl glass:bg-surface/95 glass:backdrop-blur-xl"
     >
-      <div className="text-[15px] font-bold">Merge {label} into…</div>
+      <div className="text-[15px] font-bold">{character.name ? `Merge ${label} into…` : 'Merge into…'}</div>
       <div className="mt-0.5 text-[12.5px] text-zinc-500">
-        Its {plural(character.detectionCount, 'face')} move to the character you pick, and {label} goes away.
+        {character.name ? `${label}’s` : 'This character’s'} {plural(character.detectionCount, 'face')} move to
+        the one you pick{character.name ? `, and ${label} goes away` : ''}.
       </div>
       <div className="relative mt-3">
         <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />

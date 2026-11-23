@@ -444,18 +444,16 @@ describe('characters tab API', () => {
     expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
       [ids.zedChar, { tag: 'zed_(game)', displayName: null, mediaCount: 2, soloCount: 3 }],
     ]);
-    expect(list.tagOnly.map((t: any) => t.name)).toEqual(['wd_only_(series)']);
+    expect(list.tagOnly.map((t: any) => [t.name, t.count])).toEqual([
+      ['zed_(game)', 2],
+      ['wd_only_(series)', 1],
+    ]);
 
     const dismissed = await json(post(`/api/characters/${ids.zedChar}/dismiss-suggestion`));
     expect(dismissed).toMatchObject({ id: ids.zedChar, name: null, suggestion: null });
     list = await json(fetch(`${BASE}/api/characters`));
     expect(list.suggested).toEqual([]);
     expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.zedChar]);
-    // No longer on offer as the question, so it is listed with the other unclaimed character tags.
-    expect(list.tagOnly.map((t: any) => [t.name, t.count])).toEqual([
-      ['zed_(game)', 2],
-      ['wd_only_(series)', 1],
-    ]);
     expect((await post(`/api/characters/${ids.zedChar}/accept-suggestion`)).status).toBe(409);
     expect((await post(`/api/characters/${ids.zedChar}/dismiss-suggestion`)).status).toBe(409);
   });

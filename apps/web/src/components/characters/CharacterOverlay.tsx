@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ScanFace, UserX } from 'lucide-react';
-import type { CharacterDetection } from '@sakuya/shared';
+import { tagLabel, type CharacterDetection } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { characterLabelText, clampLeft, containRect, type Rect } from '../../lib/characters';
 import { Crop, NamePicker } from './NamePicker';
@@ -129,7 +129,7 @@ export function CharacterBoxes({ mediaId, imgRef }: { mediaId: number; imgRef: R
               }`}
             >
               {named
-                ? characterLabelText({ name: d.characterName, displayName: d.characterDisplayName })
+                ? tagLabel({ name: d.characterName!, category: 'character', displayName: d.characterDisplayName }).label
                 : known
                   ? 'Unnamed'
                   : 'Unknown'}

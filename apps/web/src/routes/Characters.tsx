@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Download, EyeOff, ScanFace, X } from 'lucide-react';
-import type { CharacterModelStatus, CharacterSummary, Job, TagCount } from '@sakuya/shared';
+import { Check, Download, EyeOff, ScanFace, UserRound, X } from 'lucide-react';
+import { tagLabel, tagLabelText, type CharacterModelStatus, type CharacterSummary, type Job, type TagCount } from '@sakuya/shared';
 import { api } from '../lib/api';
 import { characterLabelText, characterTag } from '../lib/characters';
 import { useJobs } from '../hooks/useJobs';
@@ -53,12 +53,14 @@ export function Characters() {
   const named = visible(data?.named);
   const suggested = visible(data?.suggested);
   const unnamed = visible(data?.unnamed);
-  const tagOnly = data?.tagOnly ?? [];
+  // A tag a cluster is asking about is already on the page, as that cluster's question.
+  const asked = new Set(suggested.map((c) => c.suggestion!.tag));
+  const tagOnly = (data?.tagOnly ?? []).filter((t) => !asked.has(t.name));
   const hidden = [...(data?.named ?? []), ...(data?.suggested ?? []), ...(data?.unnamed ?? [])].filter((c) => c.hidden);
   const empty = data && !named.length && !suggested.length && !unnamed.length && !tagOnly.length;
 
   const summary = [
-    named.length + tagOnly.length && plural(named.length + tagOnly.length, 'named'),
+    named.length + tagOnly.length && `${named.length + tagOnly.length} named`,
     suggested.length && `${suggested.length} suggested`,
     unnamed.length && `${unnamed.length} unnamed`,
     data?.unassignedCount && `${plural(data.unassignedCount, 'face')} not grouped yet`,
@@ -91,20 +93,27 @@ export function Characters() {
 
       {(named.length > 0 || tagOnly.length > 0) && (
         <Section title="Named" count={named.length + tagOnly.length}>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(132px,1fr))]">
-            {named.map((c) => (
-              <NamedTile key={c.id} character={c} />
-            ))}
-            {tagOnly.map((t) => (
-              <TagOnlyTile key={t.name} tag={t} />
-            ))}
-          </div>
+          {named.length > 0 && (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(120px,1fr))]">
+              {named.map((c) => (
+                <NamedTile key={c.id} character={c} />
+              ))}
+            </div>
+          )}
+          {tagOnly.length > 0 && (
+            <div className={`flex flex-wrap items-center gap-1.5 ${named.length ? 'mt-3' : ''}`}>
+              <span className="mr-1 text-[12px] text-zinc-500">Tagged, no faces grouped yet:</span>
+              {tagOnly.map((t) => (
+                <TagOnlyChip key={t.name} tag={t} />
+              ))}
+            </div>
+          )}
         </Section>
       )}
 
       {suggested.length > 0 && (
         <Section title="Suggested" count={suggested.length}>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(112px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(132px,1fr))]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(120px,1fr))]">
             {suggested.map((c) => (
               <SuggestedTile key={c.id} character={c} />
             ))}
@@ -114,7 +123,7 @@ export function Characters() {
 
       {unnamed.length > 0 && (
         <Section title="Unnamed" count={unnamed.length} hint="Click a face to name it. Future matches join that character.">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(104px,1fr))]">
             {unnamed.map((c) => (
               <UnnamedTile key={c.id} character={c} />
             ))}
@@ -124,7 +133,7 @@ export function Characters() {
 
       {showHidden && hidden.length > 0 && (
         <Section title="Hidden" count={hidden.length} hint="Hidden characters keep their tags.">
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(112px,1fr))]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(92px,1fr))] gap-x-2.5 gap-y-3 sm:grid-cols-[repeat(auto-fill,minmax(104px,1fr))]">
             {hidden.map((c) => (
               <NamedTile key={c.id} character={c} muted />
             ))}
@@ -301,20 +310,17 @@ function NamedTile({ character, muted }: { character: CharacterSummary; muted?: 
   );
 }
 
-function TagOnlyTile({ tag }: { tag: TagCount }) {
+/** A character tag on images with no grouped face of it; opens those images in Explore. */
+function TagOnlyChip({ tag }: { tag: TagCount }) {
   return (
     <Link
       to={`/explore?tags=${encodeURIComponent(tag.name)}`}
-      title="Tagged by the AI tagger; no face of it has been grouped yet"
-      className="group min-w-0"
+      title={`${plural(tag.count, 'item')} tagged ${tag.name}`}
+      className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-line px-2.5 py-1 text-[12px] font-semibold text-zinc-300 hover:border-line-strong hover:text-zinc-100"
     >
-      <Crop url={null} alt="" className="aspect-[4/5] border border-dashed border-line" />
-      <TileText>
-        <div className="flex text-[12.5px] font-semibold text-zinc-200">
-          <TagName tag={tag} />
-        </div>
-        <Count n={tag.count} />
-      </TileText>
+      <UserRound size={12} className="flex-none text-zinc-500" />
+      <TagName tag={tag} />
+      <span className="flex-none font-medium text-zinc-500">{tag.count}</span>
     </Link>
   );
 }
@@ -323,6 +329,7 @@ function SuggestedTile({ character }: { character: CharacterSummary }) {
   const qc = useQueryClient();
   const suggestion = character.suggestion!;
   const tag = { name: suggestion.tag, category: 'character' as const, displayName: suggestion.displayName };
+  const { label } = tagLabel(tag);
   const accept = useMutation({
     mutationFn: () => api.acceptCharacterSuggestion(character.id),
     onSuccess: (named) => {
@@ -343,12 +350,11 @@ function SuggestedTile({ character }: { character: CharacterSummary }) {
         <Crop url={character.coverUrl} alt="" className="aspect-[4/5] transition-[filter] group-hover:brightness-110" />
       </Link>
       <TileText>
-        <div className="flex min-w-0 items-baseline gap-1 text-[12.5px] text-zinc-400">
-          <span className="flex-none">Is this</span>
-          <span className="flex min-w-0 font-semibold text-zinc-100">
-            <TagName tag={tag} />
-          </span>
-          <span className="flex-none">?</span>
+        <div
+          className="truncate text-[12.5px] text-zinc-400"
+          title={`${suggestion.mediaCount} of ${suggestion.soloCount} solo images are tagged ${tagLabelText(tag)}`}
+        >
+          Is this <span className="font-semibold text-zinc-100">{label}</span>?
         </div>
         <div className="mt-1 flex gap-1.5">
           <button

@@ -379,18 +379,14 @@ export function listCharacters(includeHidden = false): CharactersResponse {
   out.unassignedCount = (
     sqlite.query('SELECT COUNT(*) AS c FROM character_detections WHERE character_id IS NULL').get() as { c: number }
   ).c;
-  // A tag on offer as a suggestion is already on the page, as that cluster's question.
-  const suggestedTags = new Set([...suggestions.values()].map((s) => s.tag));
-  out.tagOnly = (
-    sqlite
-      .query(
-        `SELECT t.name, t.category, t.display_name AS displayName, t.usage_count AS count FROM tags t
-         WHERE t.category = 'character' AND t.usage_count > 0
-           AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.tag_id = t.id)
-         ORDER BY t.usage_count DESC, t.name`,
-      )
-      .all() as TagCount[]
-  ).filter((t) => !suggestedTags.has(t.name));
+  out.tagOnly = sqlite
+    .query(
+      `SELECT t.name, t.category, t.display_name AS displayName, t.usage_count AS count FROM tags t
+       WHERE t.category = 'character' AND t.usage_count > 0
+         AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.tag_id = t.id)
+       ORDER BY t.usage_count DESC, t.name`,
+    )
+    .all() as TagCount[];
   return out;
 }
 

@@ -27,7 +27,7 @@ test('characterLabelText uses the display name, the automatic label, or Unnamed'
   expect(characterLabelText(character(1, null, 3), 'Unknown')).toBe('Unknown');
 });
 
-test('nameOptions puts prefix matches first, then busier ones, and offers a new name last', () => {
+test('nameOptions puts prefix matches first, then busier ones, and a new name after them', () => {
   const chars = [character(1, 'pepper_(pepper&carrot)', 30), character(2, 'carrot_(cat)', 12), character(3, null, 50)];
   const tags = [tag('saffron_(pepper&carrot)', 4), tag('shichimi', 2)];
   expect(nameOptions('', chars, tags).map((o) => o.label)).toEqual([
@@ -43,6 +43,14 @@ test('nameOptions puts prefix matches first, then busier ones, and offers a new 
     ['new', 'carrot'],
   ]);
   expect(nameOptions('  Mira   Lune ', chars, tags)).toEqual([{ kind: 'new', label: 'Mira Lune', name: 'Mira Lune' }]);
+});
+
+test('nameOptions offers the new name first when nothing starts with the text', () => {
+  const chars = [character(2, 'carrot_(pepper&carrot)', 12)];
+  expect(nameOptions('Pepper', chars, []).map((o) => [o.kind, o.label])).toEqual([
+    ['new', 'Pepper'],
+    ['character', 'Carrot (pepper&carrot)'],
+  ]);
 });
 
 test('nameOptions drops the new option when the text is already a name', () => {
