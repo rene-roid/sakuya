@@ -6,6 +6,8 @@ import type { SQLQueryBindings } from 'bun:sqlite';
 import { rowToMedia, type MediaSqlRow } from '../lib/rowToMedia';
 import { bumpTasteVersion, tasteVersion } from '../lib/tasteVersion';
 import { Diversifier, diversify, folderOf } from '../lib/diversify';
+import { semanticSearchEnabled } from '../lib/settings';
+import { mediaEmbedding, rankByVector } from '../services/semantic';
 import { shelfById, shelfDefs, recordVisit, type ShelfDef } from '../lib/discoverShelves';
 import {
   DISCOVER_TAG_MODES,
@@ -96,6 +98,12 @@ export const discoverTuning = {
   likeDistinctive: 10,
   /** Distinctive-tag leaders re-ranked with every shared tag, per result kept. */
   likeRerank: 10,
+  /**
+   * More like this blends the image-embedding neighbours with the shared-tag ranking by weighted
+   * reciprocal rank, 1 / (likeFuseK + rank) per list. 0 = tags only.
+   */
+  likeVisualWeight: 1,
+  likeFuseK: 20,
 };
 
 const modeFactor = (mode: DiscoverTagMode | null) =>
@@ -803,6 +811,47 @@ export function rankSharedTags(sourceId: number, tags: { tagId: number; idf: num
   return walk(tags, limit).map((r) => r.id);
 }
 
+/**
+ * The media whose image embeddings sit closest to `sourceId`'s, best `limit` first, hidden and
+ * muted items left out; null when the source has no embedding or the feature is off.
+ */
+export function visualNeighbours(sourceId: number, limit: number): number[] | null {
+  if (!semanticSearchEnabled() || discoverTuning.likeVisualWeight <= 0) return null;
+  const vec = mediaEmbedding(sourceId);
+  if (!vec) return null;
+  const excluded = new Set(
+    (
+      sqlite
+        .query(
+          `SELECT media_id AS id FROM media_feedback WHERE kind = 'hidden'
+           UNION SELECT x.media_id FROM tag_preferences p JOIN tags t ON t.name = p.tag
+             JOIN media_tags x ON x.tag_id = t.id WHERE p.mode = 'mute'`,
+        )
+        .all() as { id: number }[]
+    ).map((r) => r.id),
+  );
+  excluded.add(sourceId);
+  const out: number[] = [];
+  for (const r of rankByVector(vec)) {
+    if (excluded.has(r.id)) continue;
+    out.push(r.id);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** Weighted reciprocal-rank fusion: no score scales to reconcile, only each list's order. */
+export function fuseRankings(lists: { ids: number[]; weight: number }[], limit: number, k = discoverTuning.likeFuseK): number[] {
+  const score = new Map<number, number>();
+  for (const { ids, weight } of lists) {
+    ids.forEach((id, rank) => score.set(id, (score.get(id) ?? 0) + weight / (k + rank + 1)));
+  }
+  return [...score]
+    .sort((a, b) => b[1] - a[1] || b[0] - a[0])
+    .slice(0, limit)
+    .map(([id]) => id);
+}
+
 export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeResponse {
   const [source] = mediaInOrder([id], new Map());
   if (!source) throw notFound('Media');
@@ -816,12 +865,22 @@ export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeR
     )
     .all(id) as { tagId: number; name: string; idf: number }[];
   const weighted = shared.filter((t) => t.idf > 0);
-  if (!weighted.length) return { source, items: [] };
+  const visual = visualNeighbours(id, limit);
+  if (!weighted.length && !visual?.length) return { source, items: [], ranking: 'tags' };
 
-  const ids = rankSharedTags(id, weighted, limit);
+  const byTags = weighted.length ? rankSharedTags(id, weighted, limit) : [];
+  const ids = visual?.length
+    ? fuseRankings(
+        [
+          { ids: byTags, weight: 1 },
+          { ids: visual, weight: discoverTuning.likeVisualWeight },
+        ],
+        limit,
+      )
+    : byTags;
   const rarest = [...weighted].sort((a, b) => b.idf - a.idf || a.tagId - b.tagId);
   const tagsOf = new Map<number, Set<number>>();
-  if (ids.length) {
+  if (ids.length && weighted.length) {
     const links = sqlite
       .query(
         `SELECT media_id AS mediaId, tag_id AS tagId FROM media_tags
@@ -833,7 +892,7 @@ export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeR
   const reasons = new Map(
     ids.map((mid) => [mid, { tag: rarest.find((t) => tagsOf.get(mid)?.has(t.tagId))?.name ?? null, related: null }]),
   );
-  return { source, items: mediaInOrder(ids, reasons) };
+  return { source, items: mediaInOrder(ids, reasons), ranking: visual?.length ? 'visual' : 'tags' };
 }
 
 discoverRouter.get(
