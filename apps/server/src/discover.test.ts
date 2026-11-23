@@ -6,20 +6,26 @@ import { useTestConfig } from './testConfig';
 useTestConfig('discover', { port: 38772 });
 const BASE = 'http://localhost:38772';
 
-const { db, schema } = await import('./db');
+const { db, schema, sqlite } = await import('./db');
+const { bumpTasteVersion } = await import('./lib/tasteVersion');
 await import('./index'); // starts listening on PORT
 
 const json = async (res: Response | Promise<Response>): Promise<any> => (await (await res).json()) as any;
 
 const lib = db.insert(schema.libraries).values({ name: 'test', createdAt: Date.now() }).returning().get();
 
-function addMedia(filename: string, tagNames: string[], engagement: Partial<typeof schema.media.$inferInsert> = {}) {
+function addMedia(
+  filename: string,
+  tagNames: string[],
+  engagement: Partial<typeof schema.media.$inferInsert> = {},
+  folder = '/tmp',
+) {
   const item = db
     .insert(schema.media)
     .values({
       libraryId: lib.id,
       source: 'upload',
-      path: `/tmp/${filename}`,
+      path: `${folder}/${filename}`,
       filename,
       type: filename.endsWith('.mp4') ? 'video' : 'image',
       createdAt: Date.now(),
@@ -167,4 +173,72 @@ test('a scroll keeps its ordering when the profile changes between pages', async
   // A fresh feed does pick up the view: the item sinks from the top.
   const fresh = await json(fetch(`${BASE}/api/discover?limit=2&surprise=0`));
   expect(fresh.items[0].id).not.toBe(first.items[0].id);
+});
+
+// From here on each test seeds its own library, so it can assert the whole order literally.
+const DAY = 86_400_000;
+const NOW = Date.now();
+
+function resetLibrary() {
+  sqlite.exec(`DELETE FROM media_tags; DELETE FROM media; DELETE FROM tags;`);
+  // Direct writes skip the API, so tell the profile cache itself.
+  bumpTasteVersion();
+}
+
+/** One item per folder unless told otherwise, so the folder rule stays out of scoring tests. */
+const add = (name: string, tags: string[], extra: Partial<typeof schema.media.$inferInsert> = {}, folder = `/lib/${name}`) =>
+  addMedia(`${name}.png`, tags, extra, folder).id;
+const likedOn = (at: number) => ({ liked: 1, likedAt: at, viewCount: 1, lastViewedAt: at });
+const feedIds = async (q = 'surprise=0') =>
+  (await json(fetch(`${BASE}/api/discover?limit=200&${q}`))).items.map((m: { id: number }) => m.id) as number[];
+
+test('five strong tags beat forty weak ones', async () => {
+  resetLibrary();
+  const strong = ['s1', 's2', 's3', 's4', 's5'];
+  const weak = Array.from({ length: 40 }, (_, i) => `w${i}`);
+  // Every strong tag is on three liked items; every weak one on a single liked item and on ten
+  // others nobody engaged with, so each weak tag is worth a fifth of a strong one.
+  const liked = [1, 2, 3].map((i) => add(`liked${i}`, strong, likedOn(NOW - 1000)));
+  const weakLiked = add('weak-liked', weak, likedOn(NOW - 1000));
+  const filler = Array.from({ length: 10 }, (_, i) => add(`filler${i}`, weak));
+  const fiveStrong = add('five-strong', strong);
+  const fortyWeak = add('forty-weak', weak);
+
+  // Summing every match scored fortyWeak 40 x 0.28 = 11.2 against fiveStrong's 5 x 1.4 = 7.
+  // Counting the five best, fortyWeak is down to 1.4. Liked items sink as already seen.
+  expect(await feedIds()).toEqual([fiveStrong, ...liked.reverse(), fortyWeak, ...filler.reverse(), weakLiked]);
+});
+
+test('a fresh like outweighs an old one', async () => {
+  resetLibrary();
+  const rainLiked = [1, 2].map((i) => add(`rain-liked${i}`, ['rain'], likedOn(NOW - 1000)));
+  const snowLiked = [1, 2].map((i) => add(`snow-liked${i}`, ['snow'], likedOn(NOW - 365 * DAY)));
+  const rain = add('rain', ['rain']);
+  // Inserted last, so with the two likes weighed alike it would win the tie on id.
+  const snow = add('snow', ['snow']);
+
+  expect(await feedIds()).toEqual([rain, ...rainLiked.reverse(), snow, ...snowLiked.reverse()]);
+});
+
+test('a 1 s open does not count as a view, a 2 s one does', async () => {
+  resetLibrary();
+  const id = add('opened', ['harbour']);
+  const progress = (body: object) =>
+    fetch(`${BASE}/api/media/${id}/progress`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const row = () => db.select().from(schema.media).where(eq(schema.media.id, id)).get()!;
+
+  expect((await progress({ view: true, openSeconds: 1 })).status).toBe(200);
+  expect(row().viewCount).toBe(0);
+  expect(row().lastViewedAt).toBeNull();
+  // Skipped past, so "harbour" carries no taste and the item isn't sunk as seen.
+  const feed = await json(fetch(`${BASE}/api/discover?surprise=0`));
+  expect(feed.items[0].reasonTag).toBeUndefined();
+
+  await progress({ view: true, openSeconds: 2 });
+  expect(row().viewCount).toBe(1);
+  expect(row().lastViewedAt).toBeGreaterThan(NOW - 1);
 });

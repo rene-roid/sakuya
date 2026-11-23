@@ -748,9 +748,18 @@ mediaRouter.post(
   }),
 );
 
+/**
+ * An open shorter than this is a skip, not a view: counting it put every item you flicked past
+ * into the taste profile and sank it as "seen".
+ */
+export const MIN_VIEW_SECONDS = 2;
+
 const progressSchema = z.object({
   progress: z.number().min(0).max(1).optional(),
   view: z.boolean().optional(),
+  // How long the item had been open when the view was reported. Clients that predate it send a
+  // bare view on open, which still counts.
+  openSeconds: z.number().min(0).optional(),
   watchedDelta: z.number().min(0).max(60).optional(),
   // Dwell is flushed on close/tab-hide, so a single delta can be much longer than a video tick.
   dwellDelta: z.number().min(0).max(3600).optional(),
@@ -761,9 +770,11 @@ mediaRouter.patch(
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
     const body = progressSchema.parse(req.body);
+    const view = body.view && (body.openSeconds === undefined || body.openSeconds >= MIN_VIEW_SECONDS);
+    if (!view && body.progress === undefined && !body.watchedDelta && !body.dwellDelta) return res.json({ ok: true });
     const updates: Record<string, unknown> = { lastViewedAt: Date.now() };
     if (body.progress !== undefined) updates.viewProgress = body.progress;
-    if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
+    if (view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
     if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;
     db.update(schema.media).set(updates).where(eq(schema.media.id, id)).run();
