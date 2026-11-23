@@ -312,7 +312,7 @@ mediaRouter.post(
     const placeholders = ids.map(() => '?').join(',');
     const rows = sqlite
       .query(
-        `SELECT t.name, t.category, COUNT(*) AS count
+        `SELECT t.name, t.category, t.display_name AS displayName, COUNT(*) AS count
          FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
          WHERE mt.media_id IN (${placeholders})
          GROUP BY t.id ORDER BY count DESC, t.name`,
@@ -519,7 +519,7 @@ function getDetail(id: number): MediaDetail | null {
   if (!row) return null;
   const tagRows = sqlite
     .query(
-      `SELECT t.name, t.category, mt.confidence, mt.source
+      `SELECT t.name, t.category, t.display_name AS displayName, mt.confidence, mt.source
        FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
        WHERE mt.media_id = ?
        ORDER BY CASE t.category WHEN 'rating' THEN 0 WHEN 'character' THEN 1 ELSE 2 END, mt.confidence DESC, t.name`,

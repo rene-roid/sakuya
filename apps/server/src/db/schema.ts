@@ -67,6 +67,7 @@ export const tags = sqliteTable('tags', {
   name: text('name').notNull(),
   category: text('category', { enum: TAG_CATEGORIES }).notNull().default('general'),
   usageCount: integer('usage_count').notNull().default(0),
+  displayName: text('display_name'),
 });
 
 export const mediaTags = sqliteTable('media_tags', {

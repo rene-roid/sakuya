@@ -87,7 +87,8 @@ CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'general',
-  usage_count INTEGER NOT NULL DEFAULT 0
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  display_name TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS tags_name_idx ON tags(name);
 CREATE TABLE IF NOT EXISTS media_tags (
@@ -253,6 +254,8 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 21, sql: 'DROP INDEX IF EXISTS media_tags_media_idx' },
   // Superseded by media_type_created_idx, which the CREATE block above adds.
   { version: 22, sql: 'DROP INDEX IF EXISTS media_type_idx' },
+  // A label shown instead of the canonical name, which URLs, filters and search keep using.
+  { version: 23, sql: 'ALTER TABLE tags ADD COLUMN display_name TEXT' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;
@@ -303,6 +306,8 @@ if (unbanded.length > 0) {
 // yet. Creating them after the backfill is also cheaper than maintaining them during it.
 // IF NOT EXISTS keeps this idempotent across both fresh and migrated databases.
 sqlite.exec(BANDS.map((i) => `CREATE INDEX IF NOT EXISTS media_phash_b${i}_idx ON media(phash_b${i});`).join('\n'));
+// After the migrations for the same reason: display_name is added by one.
+sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS tags_display_name_idx ON tags(display_name COLLATE NOCASE)');
 
 // Populate the search index for rows that predate it. Keyed on which rows are missing rather
 // than a migration version, so it also heals a database that lost the index or was written to by
