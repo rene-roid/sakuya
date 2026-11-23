@@ -95,10 +95,14 @@ Prefer scripts? `./setup.sh` installs Bun for you if it's missing, `./run.sh` st
 
 ### Desktop app
 
-Each `v*` tag attaches a Linux AppImage and a Windows installer (`.exe`) to its GitHub release. Both
+Each release attaches a Linux AppImage and a Windows installer (`.exe`) to its GitHub page. Both
 bundle Bun and keep their config and data in `~/.sakuya/`. Closing the window leaves Sakuya running in
 the tray. **Start at Login** in the tray menu (or the window's Sakuya menu) turns autostart on or off.
 To build one locally: `cd desktop && npm ci && npm run stage && npm run dist`.
+
+To release, commit the notes as `apps/web/src/releases/X.Y.Z.md`, then run the **Release** workflow
+from the Actions tab (or `gh workflow run release.yml -f version=X.Y.Z`). It bumps `package.json`,
+runs the checks, tags `vX.Y.Z`, builds both installers and publishes the GitHub release.
 
 ### Docker
 
