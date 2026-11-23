@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { useTestConfig } from './testConfig';
 
@@ -50,5 +51,17 @@ describe('app version', () => {
   test('every release file is named X.Y.Z.md', () => {
     const stray = fs.readdirSync(releasesDir).filter((name) => !/^\d+\.\d+\.\d+\.md$/.test(name));
     expect(stray).toEqual([]);
+  });
+});
+
+describe('install kind', () => {
+  test('installKind reads desktop when the desktop app launched it, docker when /.dockerenv exists, source otherwise', async () => {
+    const { installKind } = await import('./lib/installKind');
+    const dockerenv = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-dockerenv-')), '.dockerenv');
+    expect(installKind({}, dockerenv)).toBe('source');
+    fs.writeFileSync(dockerenv, '');
+    expect(installKind({}, dockerenv)).toBe('docker');
+    expect(installKind({ SAKUYA_DESKTOP: '1' }, dockerenv)).toBe('desktop');
+    expect(installKind({ SAKUYA_DESKTOP: '1' }, '/nonexistent/.dockerenv')).toBe('desktop');
   });
 });

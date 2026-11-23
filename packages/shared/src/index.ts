@@ -238,7 +238,11 @@ export interface SystemInfo {
   mediaBytes: number;
   dbBytes: number;
   thumbBytes: number;
+  /** How this copy was installed, which decides how it updates. */
+  installKind: InstallKind;
 }
+
+export type InstallKind = 'desktop' | 'docker' | 'source';
 
 export interface StorageInfo {
   /** Data dir this process actually booted with. */
