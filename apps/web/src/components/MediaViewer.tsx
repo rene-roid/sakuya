@@ -10,6 +10,7 @@ import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
 import { ConfirmDialog } from './ConfirmDialog';
+import { TagName, TagRenameInput } from './TagName';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
@@ -682,29 +683,47 @@ function TagPill({
   onSetCategory: (category: TagCategory) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  if (renaming) {
+    return (
+      <div className={`flex items-center rounded-full text-xs ${categoryClasses(tag.category)}`}>
+        <TagRenameInput tag={tag} onDone={() => setRenaming(false)} className="h-6 w-[150px] rounded-full px-2.5 py-0" />
+      </div>
+    );
+  }
   return (
     <div
-      title={tag.confidence != null ? `${tag.source} · ${(tag.confidence * 100).toFixed(0)}%` : tag.source}
-      className={`relative flex items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)}`}
+      title={`${tag.name} · ${tag.confidence != null ? `${tag.source} ${(tag.confidence * 100).toFixed(0)}%` : tag.source}`}
+      className={`relative flex min-w-0 max-w-full items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)}`}
     >
-      <span className="cursor-pointer hover:underline" onClick={onOpen}>
-        {tag.name}
+      <span className="flex min-w-0 cursor-pointer hover:underline" onClick={onOpen}>
+        <TagName tag={tag} />
       </span>
       <button
-        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+        className="flex h-[15px] w-[15px] flex-none cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={() => setMenuOpen((v) => !v)}
-        title="Change category"
+        title="Rename or change category"
       >
         <ChevronDown size={11} />
       </button>
       <button
-        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+        className="flex h-[15px] w-[15px] flex-none cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={onRemove}
       >
         <X size={11} />
       </button>
       {menuOpen && (
         <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-line-strong bg-zinc-900 shadow-xl">
+          <div
+            className="flex cursor-pointer items-center gap-1.5 border-b border-line px-3 py-1.5 text-[11.5px] text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setMenuOpen(false);
+              setRenaming(true);
+            }}
+          >
+            <Pencil size={11} />
+            Rename…
+          </div>
           {CATEGORIES.map((c) => (
             <div
               key={c}
