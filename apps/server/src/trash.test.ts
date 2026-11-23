@@ -10,7 +10,7 @@ const dataDir = useTestConfig('trash', { port: PORT });
 const BASE = `http://localhost:${PORT}`;
 
 const { sqlite } = await import('./db');
-const { moveFile, TRASH_DIR } = await import('./services/trash');
+const { emptyTrash, moveFile, TRASH_DIR } = await import('./services/trash');
 await import('./index');
 
 const root = path.join(dataDir, 'library');
@@ -233,4 +233,30 @@ test('moveFile leaves the source alone on any other rename error', async () => {
   await expect(moveFile(from, path.join(dataDir, 'perm-dst.bin'), eacces)).rejects.toThrow('permission denied');
   expect(fs.readFileSync(from, 'utf8')).toBe('payload');
   expect(fs.existsSync(path.join(dataDir, 'perm-dst.bin'))).toBe(false);
+});
+
+test('emptying the trash while a bulk delete is still moving files leaves that delete whole', async () => {
+  const bulk = path.join(root, 'bulk');
+  fs.mkdirSync(bulk);
+  const names = Array.from({ length: 120 }, (_, i) => `bulk/b${i}.png`);
+  for (const name of names) await writeImage(name, '#445566');
+  await scan();
+  const ids = names.map((n) => idOf(path.basename(n))!);
+
+  const deleting = send('POST', '/api/media/delete-batch', { ids }).then((r) => r.json());
+  const landed = () =>
+    fs.existsSync(TRASH_DIR) &&
+    fs.readdirSync(TRASH_DIR).some((d) => fs.readdirSync(path.join(TRASH_DIR, d)).some((f) => f.endsWith('.png')));
+  while (!landed()) await new Promise((resolve) => setImmediate(resolve));
+  expect(sqlite.query('SELECT COUNT(*) AS c FROM trash').get()).toEqual({ c: 0 });
+  emptyTrash();
+
+  expect(await deleting).toEqual({ ok: true, deleted: 120, failed: [] });
+  const rows = sqlite.query('SELECT trashed_path AS dir, filename FROM trash').all() as { dir: string; filename: string }[];
+  expect(rows).toHaveLength(120);
+  expect(rows.filter((r) => !fs.existsSync(path.join(TRASH_DIR, r.dir, r.filename)))).toEqual([]);
+  const [item] = (await getJson<TrashPayload>('/api/trash')).items;
+  expect((await send('POST', `/api/trash/${item.id}/restore`)).status).toBe(200);
+  expect(fs.existsSync(path.join(bulk, item.filename))).toBe(true);
+  await send('DELETE', '/api/trash');
 });
