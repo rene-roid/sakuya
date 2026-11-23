@@ -6,6 +6,7 @@ import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { patchCachedMedia } from '../lib/mediaCache';
+import { TRASH_DAYS } from '../lib/trash';
 import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
@@ -339,7 +340,8 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast('File deleted');
+      queryClient.invalidateQueries({ queryKey: ['trash'] });
+      toast('Moved to Trash');
       onClose();
     },
     onError: (err: Error) => {
@@ -464,7 +466,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
           <button
             className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-rose-500/20 hover:text-rose-400"
             onClick={() => setShowDeleteConfirm(true)}
-            title="Delete file"
+            title="Move to Trash"
           >
             <Trash2 size={12} />
           </button>
@@ -559,10 +561,10 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
       </div>
       {showDeleteConfirm && (
         <ConfirmDialog
-          title="Delete this file?"
+          title="Move this file to Trash?"
           danger
-          confirmLabel="Delete"
-          body={`"${displayName}" will be permanently removed from disk and the library. This cannot be undone.`}
+          confirmLabel="Move to Trash"
+          body={`"${displayName}" moves to the Trash with its tags, like and boards. You can restore it from Settings › Storage for ${TRASH_DAYS} days.`}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteMutation.mutate()}
         />

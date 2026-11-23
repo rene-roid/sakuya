@@ -5,6 +5,7 @@ import { Trash2, X } from 'lucide-react';
 import type { DuplicateGroup } from '@sakuya/shared';
 import { api, thumbUrl } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { TRASH_DAYS, movedToTrashMessage } from '../lib/trash';
 import { toast } from '../components/Toast';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -25,11 +26,12 @@ export function Duplicates() {
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => api.deleteMediaBatch(ids),
     onSuccess: async (res) => {
-      toast(`Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`);
+      toast(movedToTrashMessage(res.deleted, res.failed));
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['system'] });
+      queryClient.invalidateQueries({ queryKey: ['trash'] });
       await refetch();
     },
   });
@@ -130,10 +132,10 @@ export function Duplicates() {
 
       {showConfirm && (
         <ConfirmDialog
-          title={`Delete ${selected.size} file${selected.size === 1 ? '' : 's'}?`}
+          title={`Move ${selected.size} file${selected.size === 1 ? '' : 's'} to Trash?`}
           danger
-          confirmLabel="Delete"
-          body="This permanently removes the selected files from disk. This cannot be undone."
+          confirmLabel="Move to Trash"
+          body={`The selected files move to the Trash. You can restore them from Settings › Storage for ${TRASH_DAYS} days, then they are deleted for good.`}
           onCancel={() => setShowConfirm(false)}
           onConfirm={() => {
             setShowConfirm(false);

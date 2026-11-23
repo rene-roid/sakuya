@@ -2,6 +2,7 @@ import type {
   AuthStatus,
   BackupsPayload,
   BoardWithStats,
+  BulkFailure,
   BulkRenameItem,
   BulkResult,
   ConsoleSessionStatus,
@@ -29,6 +30,9 @@ import type {
   TagInfo,
   TaggerModel,
   TaggerStatus,
+  TrashPayload,
+  TrashRemoveResult,
+  TrashRestoreResult,
   JobSchedulesPayload,
 } from '@sakuya/shared';
 export type { ScheduleJobType } from '@sakuya/shared';
@@ -177,7 +181,10 @@ export const api = {
   deleteMedia: (id: number) => request<{ ok: true }>(`/api/media/${id}`, { method: 'DELETE' }),
   duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
   deleteMediaBatch: (ids: number[]) =>
-    request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
+    request<{ ok: true; deleted: number; failed: BulkFailure[] }>('/api/media/delete-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   mediaIds: (filters: MediaFilters) => request<MediaIdsResponse>(`/api/media/ids?${filterParams(filters)}`),
   mediaByIds: (ids: number[]) =>
     request<Media[]>('/api/media/by-ids', { method: 'POST', body: JSON.stringify({ ids }) }),
@@ -232,6 +239,10 @@ export const api = {
   system: () => request<SystemInfo>('/api/system'),
   backups: () => request<BackupsPayload>('/api/backups'),
   runBackup: () => request<Job>('/api/backups', { method: 'POST' }),
+  trash: () => request<TrashPayload>('/api/trash'),
+  restoreFromTrash: (id: number) => request<TrashRestoreResult>(`/api/trash/${id}/restore`, { method: 'POST' }),
+  deleteFromTrash: (id: number) => request<TrashRemoveResult>(`/api/trash/${id}`, { method: 'DELETE' }),
+  emptyTrash: () => request<TrashRemoveResult>('/api/trash', { method: 'DELETE' }),
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
   storage: () => request<StorageInfo>('/api/system/storage'),
   migrateStorage: (target: 'home' | 'local') =>
@@ -257,6 +268,7 @@ export const api = {
       resetTagCounts: number;
       prunedJobs: number;
       prunedDownloadLogs: number;
+      purgedTrash: number;
     }>('/api/system/cleanup', { method: 'POST' }),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
@@ -310,3 +322,5 @@ export const thumbUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/media/${id}/thumbnail?v=${cacheBust}` : `/api/media/${id}/thumbnail`;
 export const libraryCoverUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/libraries/${id}/cover?v=${cacheBust}` : `/api/libraries/${id}/cover`;
+
+export const trashThumbUrl = (id: number) => `/api/trash/${id}/thumb`;

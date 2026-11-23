@@ -16,6 +16,7 @@ import {
 import type { BulkResult, Media } from '@sakuya/shared';
 import { api, type MediaFilters } from '../lib/api';
 import { formatBytes } from '../lib/format';
+import { TRASH_DAYS, movedToTrashMessage } from '../lib/trash';
 import { toast, toastError } from './Toast';
 import { Modal } from './Modal';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
@@ -91,6 +92,7 @@ export function SelectionBar({
     qc.invalidateQueries({ queryKey: ['tags-summary'] });
     qc.invalidateQueries({ queryKey: ['boards'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
+    qc.invalidateQueries({ queryKey: ['trash'] });
     close();
     selection.exit();
   }
@@ -336,11 +338,11 @@ export function SelectionBar({
 
       {action === 'delete' && rows && (
         <BulkConfirmDialog
-          title={`Delete ${files}?`}
+          title={`Move ${files} to Trash?`}
           summary={
             <span>
-              <strong className="text-rose-400">This cannot be undone.</strong> {formatBytes(selectedBytes)} will be
-              permanently removed from disk, along with their tags and board memberships.
+              {formatBytes(selectedBytes)} moves to the Trash with their tags, likes and board memberships. You can
+              restore them from Settings › Storage for {TRASH_DAYS} days, then they are deleted for good.
             </span>
           }
           rows={selected.map((item) => ({
@@ -348,12 +350,12 @@ export function SelectionBar({
             label: item.filename,
             detail: `${item.libraryName ?? ''} · ${formatBytes(item.sizeBytes)}`,
           }))}
-          confirmLabel="Delete permanently"
+          confirmLabel="Move to Trash"
           danger
           busy={busy}
           onConfirm={() =>
             run.mutate(() =>
-              api.deleteMediaBatch(ids).then((res) => `Deleted ${res.deleted} file${res.deleted === 1 ? '' : 's'}`),
+              api.deleteMediaBatch(ids).then((res) => movedToTrashMessage(res.deleted, res.failed)),
             )
           }
           onCancel={close}
