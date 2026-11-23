@@ -50,9 +50,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sakuya-${{ runner.os }}
+          # latest*.yml and the blockmaps are what electron-updater reads to find and verify updates.
           path: |
             desktop/dist/Sakuya-*.AppImage
             desktop/dist/Sakuya-*.exe
+            desktop/dist/latest*.yml
+            desktop/dist/*.blockmap
           if-no-files-found: error
 
   release:
@@ -68,7 +71,7 @@ jobs:
 
       - run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" Sakuya-* --clobber
+          gh release upload "$GITHUB_REF_NAME" Sakuya-* latest*.yml *.blockmap --clobber
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

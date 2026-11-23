@@ -33,6 +33,13 @@
     ],
     "icon": "../apps/web/public/icon.png",
     "artifactName": "Sakuya-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "rene-roid",
+        "repo": "sakuya"
+      }
+    ],
     "linux": {
       "target": "AppImage",
       "category": "Graphics"
