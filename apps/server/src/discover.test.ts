@@ -8,6 +8,7 @@ const BASE = 'http://localhost:38772';
 
 const { db, schema, sqlite } = await import('./db');
 const { bumpTasteVersion } = await import('./lib/tasteVersion');
+const { phashColumns } = await import('./lib/phashBands');
 await import('./index'); // starts listening on PORT
 
 const json = async (res: Response | Promise<Response>): Promise<any> => (await (await res).json()) as any;
@@ -241,4 +242,64 @@ test('a 1 s open does not count as a view, a 2 s one does', async () => {
   await progress({ view: true, openSeconds: 2 });
   expect(row().viewCount).toBe(1);
   expect(row().lastViewedAt).toBeGreaterThan(NOW - 1);
+});
+
+test('one folder never fills a window of twenty', async () => {
+  resetLibrary();
+  const others = Array.from({ length: 60 }, (_, i) => add(`other${i}`, []));
+  const batch = Array.from({ length: 30 }, (_, i) => add(`shot${i}`, ['cat'], {}, '/lib/batch'));
+  const liked = add('liked-cat', ['cat'], likedOn(NOW - 1000), '/lib/liked');
+  const ids = await feedIds();
+  const newest = [...batch].reverse();
+
+  // Ranked alone, all thirty shots would come first. Four of them, then the liked item (a fifth
+  // "cat" card is still within the reason cap), then items from other folders.
+  expect(ids.slice(0, 20)).toEqual([...newest.slice(0, 4), liked, ...[...others].reverse().slice(0, 15)]);
+  for (let i = 0; i + 20 <= 60; i++) {
+    expect(ids.slice(i, i + 20).filter((id) => batch.includes(id)).length).toBeLessThanOrEqual(4);
+  }
+  // Nothing is dropped: the rest of the batch comes later.
+  expect(new Set(ids).size).toBe(91);
+});
+
+test('near-duplicates collapse to one per page, wherever they were saved', async () => {
+  resetLibrary();
+  const others = Array.from({ length: 70 }, (_, i) => add(`other${i}`, []));
+  const dupes = Array.from({ length: 10 }, (_, i) =>
+    add(`copy${i}`, ['cat'], phashColumns(`ffff0000ffff00${(i * 3).toString(16).padStart(2, '0')}`)),
+  );
+  add('liked-cat', ['cat'], likedOn(NOW - 1000));
+  const page = (await json(fetch(`${BASE}/api/discover?surprise=0&limit=60`))).items.map((m: { id: number }) => m.id);
+
+  expect(page[0]).toBe(dupes[9]);
+  expect(page.filter((id: number) => dupes.includes(id))).toEqual([dupes[9]]);
+  expect(page).toContain(others[69]);
+});
+
+test('pagination never repeats or skips an item, whatever the page size', async () => {
+  resetLibrary();
+  // Three folders of batches, a reason tag shared by most, near-duplicate hashes: every rule
+  // defers something, which is what a keyset cursor couldn't follow.
+  for (let i = 0; i < 90; i++) {
+    add(`item${i}`, i % 3 ? ['cat'] : ['dog'], phashColumns(i % 4 ? null : `00000000000000${(i % 16).toString(16)}0`), `/lib/f${i % 3}`);
+  }
+  add('liked-cat', ['cat'], likedOn(NOW - 1000));
+  add('liked-dog', ['dog'], likedOn(NOW - 2000));
+  const whole = await feedIds('surprise=0.3&seed=5');
+
+  const walked: number[] = [];
+  let cursor: string | null = null;
+  do {
+    const page: { items: { id: number }[]; nextCursor: string | null } = await json(
+      fetch(`${BASE}/api/discover?surprise=0.3&seed=5&limit=7${cursor ? `&cursor=${cursor}` : ''}`),
+    );
+    walked.push(...page.items.map((m) => m.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+
+  expect(walked).toEqual(whole);
+  expect(new Set(walked).size).toBe(92);
+  // A keyset cursor from before the feed was re-ranked is refused rather than misread as an offset.
+  const legacy = Buffer.from(JSON.stringify([0.43, 12, 1])).toString('base64url');
+  expect((await fetch(`${BASE}/api/discover?cursor=${legacy}`)).status).toBe(400);
 });

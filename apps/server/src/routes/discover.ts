@@ -5,6 +5,7 @@ import { wrap, encodeCursor, decodeCursor } from '../lib/http';
 import type { SQLQueryBindings } from 'bun:sqlite';
 import { rowToMedia, countMedia, type MediaSqlRow } from '../lib/rowToMedia';
 import { tasteVersion } from '../lib/tasteVersion';
+import { Diversifier, folderOf } from '../lib/diversify';
 import { MEDIA_TYPES, type MediaListResponse } from '@sakuya/shared';
 
 export const discoverRouter = Router();
@@ -48,6 +49,15 @@ export const discoverTuning = {
   topK: 5,
   /** Engagement loses half its weight every this many days (0 = never), so taste can move on. */
   halfLifeDays: 60,
+  /** Variety rules, in any `window` consecutive feed items; see lib/diversify.ts. */
+  window: 20,
+  folderCap: 4,
+  reasonCap: 5,
+  /** dHash distance at or under which two images count as the same shot (-1 = off). */
+  dupDistance: 6,
+  /** Near-duplicates are kept at least this many items apart: one per page of 60. */
+  dupWindow: 60,
+  lookahead: 200,
 };
 
 interface ProfileTag {
@@ -234,11 +244,47 @@ function currentSnapshot(): ProfileSnapshot {
   return latest;
 }
 
-/** Drops every cached snapshot, so the next request rebuilds under the current tuning. */
+/**
+ * The feed a scroll walks is the ranked order passed through the variety re-rank
+ * (lib/diversify.ts), which defers items to later slots. A keyset cursor can't describe "past
+ * this key, except these deferred items", so the diversified order is built as one stream per
+ * snapshot and query, served in slices, and the cursor is just an offset into it. The stream is
+ * a pure function of the snapshot and the query, so it's memoised here and rebuilt on a miss.
+ *
+ * It's built lazily: ranking a chunk past the stream's tail costs one ranked query, the same as a
+ * page cost before, and most pages are served from candidates an earlier page already fetched.
+ */
+interface FeedStream {
+  snapshot: number;
+  diversifier: Diversifier;
+  /** Sort key and id of the last ranked row fetched; the next chunk starts below it. */
+  after: { key: number; id: number } | null;
+  exhausted: boolean;
+  served: number[];
+  reasons: Map<number, { tag: string | null; related: number | null }>;
+}
+
+const KEPT_STREAMS = 32;
+const streams = new Map<string, FeedStream>();
+
+/** Drops every cached snapshot and stream, so the next request rebuilds under the current tuning. */
 export function resetDiscoverCache(): void {
   snapshots.clear();
+  streams.clear();
   latest = null;
   sqlite.exec(`DELETE FROM discover_scores`);
+}
+
+function newStream(snapshot: number): FeedStream {
+  const { window, folderCap, reasonCap, dupDistance, dupWindow, lookahead } = discoverTuning;
+  return {
+    snapshot,
+    diversifier: new Diversifier({ window, folderCap, reasonCap, dupDistance, dupWindow, lookahead }),
+    after: null,
+    exhausted: false,
+    served: [],
+    reasons: new Map(),
+  };
 }
 
 const invalidCursor = () => Object.assign(new Error('Invalid cursor'), { status: 400 });
@@ -246,11 +292,13 @@ const invalidCursor = () => Object.assign(new Error('Invalid cursor'), { status:
 export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaListResponse {
   const query = discoverQuerySchema.parse(input);
 
-  let cursor: { key: number; id: number; snapshot: number } | null = null;
+  let cursor: { offset: number; snapshot: number } | null = null;
   if (query.cursor) {
-    const [key, id, snapshot] = decodeCursor(query.cursor);
-    if (typeof key !== 'number' || typeof id !== 'number' || typeof snapshot !== 'number') throw invalidCursor();
-    cursor = { key, id, snapshot };
+    const [offset, snapshot] = decodeCursor(query.cursor);
+    if (typeof offset !== 'number' || !Number.isInteger(offset) || offset < 0 || typeof snapshot !== 'number') {
+      throw invalidCursor();
+    }
+    cursor = { offset, snapshot };
   }
   // A cursor whose snapshot has aged out falls back to the current one: the rest of that scroll
   // may repeat or miss a few items, which is the old behaviour, but only after 8 rebuilds.
@@ -265,58 +313,101 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
   }
 
   // One deterministic sort key blends taste score with a seeded per-item random value, so the
-  // surprise slider is just a mix ratio and cursor pagination stays stable across pages.
+  // surprise slider is just a mix ratio and the ranked order is reproducible chunk after chunk.
   const seed = query.seed % 2147483647;
   // "Seen" is judged as of the snapshot too. Read live, opening a feed item in the viewer sank
-  // it below the cursor and the same scroll served it a second time. Items viewed since only
-  // ever score higher under this rule, and those were opened from pages already served.
+  // it below the stream's tail and the same scroll served it a second time. Items viewed since
+  // only ever score higher under this rule, and those were opened from pages already served.
   const seen = `(m.last_viewed_at <= ${snap.builtAt} OR (m.last_viewed_at IS NULL AND m.view_count > 0))`;
   const taste = `MIN(COALESCE(s.raw, 0) / ${maxScore}, 1.0) * (CASE WHEN ${seen} THEN ${SEEN_FACTOR} ELSE 1.0 END)`;
   const random = `((((m.id + ${seed}) * 2654435761) % 2147483647) / 2147483647.0)`;
   const keyExpr = `(${1 - query.surprise} * ${taste} + ${query.surprise} * ${random})`;
 
+  const streamKey = `${snap.id}|${query.type ?? ''}|${query.surprise}|${seed}`;
+  // A first page always starts a new stream, so media added since (a scan, an upload) shows up
+  // the way it did when every page re-ranked live; only a scroll in progress reuses one.
+  const stream = (cursor && streams.get(streamKey)) || newStream(snap.id);
+  streams.delete(streamKey);
+  // Re-inserted on every use, so the first key is always the least recently used.
+  streams.set(streamKey, stream);
+  while (streams.size > KEPT_STREAMS) streams.delete(streams.keys().next().value!);
+  for (const [key, s] of streams) if (!snapshots.has(s.snapshot)) streams.delete(key);
+
+  // Enough to fill a page and leave a full lookahead behind it, so the next page usually needs
+  // no ranked query of its own.
+  const chunk = discoverTuning.lookahead + query.limit + 1;
+  const fetchChunk = (st: FeedStream) => {
+    const chunkConds = [...conds];
+    const chunkParams = [...params];
+    if (st.after) {
+      chunkConds.push(`(${keyExpr}, m.id) < (?, ?)`);
+      chunkParams.push(st.after.key, st.after.id);
+    }
+    // Ranked on narrow rows; full rows are fetched for the served page only. Every row is ranked,
+    // so a plain table scan is the right plan. Left to itself, SQLite walked a phash band index
+    // instead and fetched each row out of rowid order: 63ms against 22ms on a 34k-item library.
+    const rows = sqlite
+      .query(
+        `SELECT m.id AS id, ${keyExpr} AS sort_key, m.path AS path, m.perceptual_hash AS hash,
+                CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason,
+                CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS related
+         FROM media m NOT INDEXED
+         LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
+         ${chunkConds.length ? 'WHERE ' + chunkConds.join(' AND ') : ''}
+         ORDER BY sort_key DESC, m.id DESC
+         LIMIT ?`,
+      )
+      .all(...chunkParams, chunk) as {
+      id: number;
+      sort_key: number;
+      path: string;
+      hash: string | null;
+      reason: string | null;
+      related: number | null;
+    }[];
+    if (rows.length < chunk) st.exhausted = true;
+    if (rows.length) st.after = { key: rows[rows.length - 1].sort_key, id: rows[rows.length - 1].id };
+    const fresh = rows.filter((r) => !st.reasons.has(r.id));
+    for (const r of fresh) st.reasons.set(r.id, { tag: r.reason, related: r.related });
+    st.diversifier.push(fresh.map((r) => ({ id: r.id, folder: folderOf(r.path), reason: r.reason, hash: r.hash })));
+  };
+
+  const offset = cursor?.offset ?? 0;
+  // One past the page, so the last page knows it's the last and doesn't hand out a cursor to an
+  // empty one.
+  const want = offset + query.limit + 1;
+  while (stream.served.length < want) {
+    if (!stream.exhausted && stream.diversifier.pending < discoverTuning.lookahead) fetchChunk(stream);
+    const next = stream.diversifier.next();
+    if (!next) break;
+    stream.served.push(next.id);
+  }
+
+  const pageIds = stream.served.slice(offset, offset + query.limit);
+  const rows = pageIds.length
+    ? (sqlite
+        .query(
+          `SELECT m.*, l.name AS library_name,
+                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+           FROM media m
+           LEFT JOIN libraries l ON l.id = m.library_id
+           WHERE m.id IN (${pageIds.map(() => '?').join(',')})`,
+        )
+        .all(...pageIds) as MediaSqlRow[])
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const items = pageIds.flatMap((id) => {
+    const row = byId.get(id);
+    if (!row) return [];
+    const reason = stream.reasons.get(id);
+    return [rowToMedia({ ...row, reason_tag: reason?.tag ?? null, reason_related: reason?.related ?? null })];
+  });
+
   // Only the first page pays for the count; the client keeps the total from page one, the same
   // as /api/media.
   const total = cursor ? null : countMedia(conds, params);
-
-  const pageConds = [...conds];
-  const pageParams = [...params];
-  if (cursor) {
-    pageConds.push(`(${keyExpr}, m.id) < (?, ?)`);
-    pageParams.push(cursor.key, cursor.id);
-  }
-
-  // Rank on narrow rows, then fetch full rows for the page only. The sort key covers every media
-  // row, and ranking with m.* and the tag_count subquery in the select list made SQLite build all
-  // of them before LIMIT threw away all but 60.
-  const sql = `
-    WITH page AS (
-      SELECT m.id AS id, ${keyExpr} AS sort_key,
-             CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason_tag,
-             CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS reason_related
-      -- Every row is ranked, so a plain table scan is the right plan. Left to itself, SQLite
-      -- walked a phash band index instead and fetched each row out of rowid order: 63ms
-      -- against 22ms on a 34k-item library.
-      FROM media m NOT INDEXED
-      LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
-      ${pageConds.length ? 'WHERE ' + pageConds.join(' AND ') : ''}
-      ORDER BY sort_key DESC, m.id DESC
-      LIMIT ?
-    )
-    SELECT m.*, page.sort_key, page.reason_tag, page.reason_related, l.name AS library_name,
-           (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-    FROM page
-    JOIN media m ON m.id = page.id
-    LEFT JOIN libraries l ON l.id = m.library_id
-    ORDER BY page.sort_key DESC, m.id DESC`;
-  const items = sqlite.query(sql).all(...pageParams, query.limit) as MediaSqlRow[];
-
-  let nextCursor: string | null = null;
-  if (items.length === query.limit) {
-    const last = items[items.length - 1];
-    nextCursor = encodeCursor([last.sort_key, last.id, snap.id]);
-  }
-  return { items: items.map(rowToMedia), nextCursor, total };
+  const nextCursor = stream.served.length > offset + query.limit ? encodeCursor([offset + query.limit, snap.id]) : null;
+  return { items, nextCursor, total };
 }
 
 discoverRouter.get(
