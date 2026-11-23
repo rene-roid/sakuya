@@ -7,7 +7,7 @@ import { rowToMedia, type MediaSqlRow } from '../lib/rowToMedia';
 import { bumpTasteVersion, tasteVersion } from '../lib/tasteVersion';
 import { Diversifier, diversify, folderOf } from '../lib/diversify';
 import { semanticSearchEnabled } from '../lib/settings';
-import { mediaEmbedding, rankByVector } from '../services/semantic';
+import { mediaEmbedding, scoreAll, topAfter } from '../services/semantic';
 import { shelfById, shelfDefs, recordVisit, type ShelfDef } from '../lib/discoverShelves';
 import {
   DISCOVER_TAG_MODES,
@@ -831,13 +831,7 @@ export function visualNeighbours(sourceId: number, limit: number): number[] | nu
     ).map((r) => r.id),
   );
   excluded.add(sourceId);
-  const out: number[] = [];
-  for (const r of rankByVector(vec)) {
-    if (excluded.has(r.id)) continue;
-    out.push(r.id);
-    if (out.length >= limit) break;
-  }
-  return out;
+  return topAfter(scoreAll(vec), limit, undefined, excluded).map((r) => r.id);
 }
 
 /** Weighted reciprocal-rank fusion: no score scales to reconcile, only each list's order. */

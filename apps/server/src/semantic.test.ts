@@ -14,7 +14,7 @@ await import('./index');
 const { ClipTokenizer, START_TOKEN, END_TOKEN } = await import('./lib/clipTokenizer');
 const { normalize } = await import('./lib/vectors');
 const { setClipEncoder } = await import('./services/semanticModels');
-const { saveEmbedding, rankByVector, clearDescriptionCache } = await import('./services/semantic');
+const { saveEmbedding, rankByVector, topAfter, clearDescriptionCache } = await import('./services/semantic');
 const { fuseRankings } = await import('./routes/discover');
 const { upsertTag } = await import('./services/tagger');
 const { removeMediaRows } = await import('./services/mediaRemoval');
@@ -159,6 +159,17 @@ describe('ranking', () => {
     // Stored as float16: 0.6 comes back as 0.60009765625.
     expect(ranked.map((r) => r.score)).toEqual([1, 0.60009765625, 0, -0.7998046875]);
     removeMediaRows(ids);
+  });
+
+  test('a page is the best items after the cursor, ties going to the newer id', () => {
+    const ranking = { ids: Int32Array.from([1, 2, 3, 4, 5]), scores: Float64Array.from([0.5, 0.9, 0.5, 0.1, 0.5]) };
+    expect(topAfter(ranking, 2)).toEqual([
+      { id: 2, score: 0.9 },
+      { id: 5, score: 0.5 },
+    ]);
+    expect(topAfter(ranking, 2, { id: 5, score: 0.5 }).map((r) => r.id)).toEqual([3, 1]);
+    expect(topAfter(ranking, 9, { id: 1, score: 0.5 }).map((r) => r.id)).toEqual([4]);
+    expect(topAfter(ranking, 9, undefined, new Set([2, 3])).map((r) => r.id)).toEqual([5, 1, 4]);
   });
 
   test('fusion adds each list’s reciprocal rank, weighted', () => {
