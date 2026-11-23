@@ -25,6 +25,47 @@ export function normalizeTagName(raw: string): string {
   return raw.trim().toLowerCase().replace(/\s+/g, '_');
 }
 
+export interface TagLabelParts {
+  label: string;
+  /** A booru disambiguator like the `sao` in `asuna_(sao)`, shown muted beside the label. */
+  qualifier: string | null;
+}
+
+const QUALIFIED = /^(.+?)_\(([^()]+)\)$/;
+
+/**
+ * The automatic human form of a canonical tag name. Underscores become spaces and a trailing
+ * `_(qualifier)` is split off. Characters are names, so every word is capitalised; ratings get a
+ * leading capital; general and user tags stay lowercase, the way booru tags read in a list. Names of
+ * three characters or fewer are left alone, since that is where emoticon tags like `^_^` live.
+ */
+export function prettifyTag(name: string, category?: TagCategory): TagLabelParts {
+  if (name.length <= 3) return { label: name, qualifier: null };
+  const match = QUALIFIED.exec(name);
+  const spaced = (s: string) => s.replace(/_+/g, ' ').trim();
+  const base = spaced(match ? match[1] : name);
+  const qualifier = match ? spaced(match[2]) : null;
+  const label =
+    category === 'character'
+      ? base.replace(/(^|\s)(\S)/g, (_, gap: string, c: string) => gap + c.toUpperCase())
+      : category === 'rating'
+        ? base.charAt(0).toUpperCase() + base.slice(1)
+        : base;
+  return { label: label || name, qualifier: label ? qualifier : null };
+}
+
+/** What a tag is called on screen: its display name if the user gave it one, else the automatic form. */
+export function tagLabel(tag: { name: string; category?: TagCategory; displayName?: string | null }): TagLabelParts {
+  const custom = tag.displayName?.trim();
+  return custom ? { label: custom, qualifier: null } : prettifyTag(tag.name, tag.category);
+}
+
+/** tagLabel as one string, for places that can't style a subtitle (titles, toasts, aria labels). */
+export function tagLabelText(tag: { name: string; category?: TagCategory; displayName?: string | null }): string {
+  const { label, qualifier } = tagLabel(tag);
+  return qualifier ? `${label} (${qualifier})` : label;
+}
+
 type LibraryType = (typeof LIBRARY_TYPES)[number];
 type MediaType = (typeof MEDIA_TYPES)[number];
 type MediaSource = 'folder' | 'upload';
@@ -96,6 +137,7 @@ export interface Media {
 export interface MediaTag {
   name: string;
   category: TagCategory;
+  displayName: string | null;
   confidence: number | null;
   source: TagSource;
 }
@@ -120,7 +162,14 @@ export interface BoardWithStats extends Board {
 export interface TagCount {
   name: string;
   category: TagCategory;
+  displayName: string | null;
   count: number;
+}
+
+export interface TagInfo {
+  name: string;
+  category: TagCategory;
+  displayName: string | null;
 }
 
 export interface Job {
@@ -171,7 +220,10 @@ export interface BulkRenameItem {
 
 export interface Settings {
   ai_tagging_enabled: string;
+  /** Percent; applies to general tags. */
   confidence_threshold: string;
+  /** Percent; applies to character tags. */
+  confidence_threshold_character: string;
   accent_color: string;
   remember_mute_state: string;
   remember_volume_level: string;

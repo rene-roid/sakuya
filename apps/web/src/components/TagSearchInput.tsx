@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
+import { TagName } from './TagName';
 
 interface TagSearchInputProps {
   tags: string[];
@@ -135,7 +136,7 @@ export function TagSearchInput({
               key={tag}
               className="flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/15 py-0.5 pl-2.5 pr-1.5 text-xs font-semibold text-violet-300"
             >
-              {tag}
+              <TagName tag={tag} />
               <span
                 className="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full bg-accent/25"
                 onClick={(e) => {
@@ -182,8 +183,11 @@ export function TagSearchInput({
                   i === highlight ? 'bg-zinc-800 text-zinc-100 glass:bg-white/10' : 'text-zinc-200'
                 }`}
               >
-                <span>{s.name}</span>
-                <span className="text-[11px] text-zinc-500">{s.count}</span>
+                <TagName tag={s} />
+                <span className="ml-2 flex flex-none items-center gap-2 text-[11px] text-zinc-500">
+                  {s.displayName && <span className="text-zinc-600">{s.name}</span>}
+                  {s.count}
+                </span>
               </div>
             ))}
           </div>,

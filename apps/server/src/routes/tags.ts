@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { sqlite } from '../db';
 import { wrap } from '../lib/http';
 import { tagLinksVersion } from '../services/tagger';
-import type { TagCount } from '@sakuya/shared';
+import { normalizeTagName, type TagCount, type TagInfo } from '@sakuya/shared';
 
 export const tagsRouter = Router();
 
@@ -63,20 +63,20 @@ tagsRouter.get(
     const categories = category ? category.split(',') : undefined;
     // Ratings are a small, fixed set — return all of them rather than truncating to `limit`.
     const applyLimit = categories?.length !== 1 || categories[0] !== 'rating';
-    const filters = `${q ? "AND t.name LIKE ? ESCAPE '\\'" : ''} ${categories ? `AND t.category IN (${categories.map(() => '?').join(',')})` : ''}`;
-    const params = [...(q ? [likeContains(q)] : []), ...(categories ?? [])];
+    const filters = `${q ? "AND (t.name LIKE ? ESCAPE '\\' OR t.display_name LIKE ? ESCAPE '\\')" : ''} ${categories ? `AND t.category IN (${categories.map(() => '?').join(',')})` : ''}`;
+    const params = [...(q ? [likeContains(q), likeContains(q)] : []), ...(categories ?? [])];
 
     let rows: TagCount[];
     if (libraryId !== undefined) {
       const tags = sqlite
-        .query(`SELECT t.id, t.name, t.category FROM tags t WHERE 1 ${filters}`)
+        .query(`SELECT t.id, t.name, t.category, t.display_name AS displayName FROM tags t WHERE 1 ${filters}`)
         .all(...params) as (Omit<TagCount, 'count'> & { id: number })[];
       const matching = new Map(tags.map((t) => [t.id, t]));
       rows = [];
       for (const { id, count } of countsForLibrary(libraryId)) {
         const tag = matching.get(id);
         if (!tag) continue;
-        rows.push({ name: tag.name, category: tag.category, count });
+        rows.push({ name: tag.name, category: tag.category, displayName: tag.displayName, count });
         if (applyLimit && rows.length === limit) break;
       }
     } else {
@@ -84,12 +84,61 @@ tagsRouter.get(
       // aggregate.
       rows = sqlite
         .query(
-          `SELECT t.name, t.category, t.usage_count AS count FROM tags t
+          `SELECT t.name, t.category, t.display_name AS displayName, t.usage_count AS count FROM tags t
            WHERE t.usage_count > 0 ${filters}
            ORDER BY t.usage_count DESC, t.name ${applyLimit ? 'LIMIT ?' : ''}`,
         )
         .all(...params, ...(applyLimit ? [limit] : [])) as TagCount[];
     }
     res.json(rows);
+  }),
+);
+
+const TAG_INFO_SELECT = 'SELECT name, category, display_name AS displayName FROM tags';
+
+const infoSchema = z.object({ names: z.string().default('') });
+
+/** Category and display name for tags known only by name: filter chips, Discover reasons. */
+tagsRouter.get(
+  '/api/tags/info',
+  wrap(async (req, res) => {
+    const names = [...new Set(infoSchema.parse(req.query).names.split(',').map(normalizeTagName).filter(Boolean))];
+    if (!names.length) return res.json([]);
+    if (names.length > 200) return res.status(400).json({ error: 'At most 200 names per request' });
+    const rows = sqlite
+      .query(`${TAG_INFO_SELECT} WHERE name IN (${names.map(() => '?').join(',')})`)
+      .all(...names) as TagInfo[];
+    res.json(rows);
+  }),
+);
+
+const displayNameSchema = z.object({ displayName: z.string().max(100).nullable() });
+
+tagsRouter.patch(
+  '/api/tags/:name',
+  wrap(async (req, res) => {
+    const name = normalizeTagName(req.params.name);
+    const tag = sqlite.query('SELECT id FROM tags WHERE name = ?').get(name) as { id: number } | null;
+    if (!tag) return res.status(404).json({ error: 'Tag not found' });
+    const displayName = displayNameSchema.parse(req.body).displayName?.trim().replace(/\s+/g, ' ') || null;
+    if (displayName) {
+      // Two tags that read the same on screen could no longer be told apart in a list.
+      const clash = sqlite
+        .query(
+          `SELECT name, display_name AS displayName FROM tags
+           WHERE id != ? AND (display_name = ? COLLATE NOCASE OR name = ?) LIMIT 1`,
+        )
+        .get(tag.id, displayName, normalizeTagName(displayName)) as { name: string; displayName: string | null } | null;
+      if (clash) {
+        return res.status(409).json({
+          error:
+            clash.displayName?.toLowerCase() === displayName.toLowerCase()
+              ? `"${clash.name}" is already shown as "${clash.displayName}"`
+              : `"${displayName}" is the name of another tag`,
+        });
+      }
+    }
+    sqlite.query('UPDATE tags SET display_name = ? WHERE id = ?').run(displayName, tag.id);
+    res.json(sqlite.query(`${TAG_INFO_SELECT} WHERE id = ?`).get(tag.id) as TagInfo);
   }),
 );

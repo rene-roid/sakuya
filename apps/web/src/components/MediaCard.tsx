@@ -4,6 +4,7 @@ import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { HeartButton } from './HeartButton';
+import { TagName, useTagLabelText } from './TagName';
 
 function VideoBadge() {
   return (
@@ -31,6 +32,21 @@ function DurationBadge({ seconds }: { seconds: number | null }) {
  * click handler: a per-card closure would be a new prop on every parent render and defeat the
  * memo entirely.
  */
+function ReasonBadge({ tag, related }: { tag: string; related: boolean }) {
+  const label = useTagLabelText(tag);
+  return (
+    <div
+      title={related ? `Related to tags you like: "${label}"` : `Recommended because you like "${label}"`}
+      className={`absolute bottom-1.5 left-1.5 flex max-w-[85%] rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
+        related ? 'bg-teal-500/85' : 'bg-accent/85'
+      }`}
+    >
+      {related && <span className="mr-1 flex-none">~</span>}
+      <TagName tag={tag} />
+    </div>
+  );
+}
+
 export const MediaCard = memo(function MediaCard({
   item,
   index,
@@ -60,20 +76,7 @@ export const MediaCard = memo(function MediaCard({
         />
         {item.type === 'video' && <VideoBadge />}
         <DurationBadge seconds={item.durationSeconds} />
-        {item.reasonTag && (
-          <div
-            title={
-              item.reasonRelated
-                ? `Related to tags you like: "${item.reasonTag}"`
-                : `Recommended because you like "${item.reasonTag}"`
-            }
-            className={`absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
-              item.reasonRelated ? 'bg-teal-500/85' : 'bg-accent/85'
-            }`}
-          >
-            {item.reasonRelated ? `~ ${item.reasonTag}` : item.reasonTag}
-          </div>
-        )}
+        {item.reasonTag && <ReasonBadge tag={item.reasonTag} related={!!item.reasonRelated} />}
         {selectMode ? (
           <>
             {!selected && <div className="absolute inset-0 bg-zinc-950/40" />}

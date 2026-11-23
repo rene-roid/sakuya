@@ -1,8 +1,9 @@
-import { Fragment } from 'react';
+import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
 import { api } from '../lib/api';
+import { TagName, TagRenameInput } from './TagName';
 import { exploreQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
@@ -27,6 +28,7 @@ export function TagSidebar({
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [renaming, setRenaming] = useState<string | null>(null);
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, staleTime: 30_000 });
   const { data: savedSearches } = useQuery({
     queryKey: ['saved-searches'],
@@ -130,14 +132,35 @@ export function TagSidebar({
               <div className={`${i < sections.length - 1 ? 'mb-5 ' : ''}flex flex-col gap-px`}>
                 {section.tags.map((tag) => {
                   const active = filters.tags.includes(tag.name);
+                  if (renaming === tag.name) {
+                    return (
+                      <div key={tag.name} className={rowStyle(active)}>
+                        <TagRenameInput tag={tag} onDone={() => setRenaming(null)} className="-my-0.5 w-full" />
+                      </div>
+                    );
+                  }
                   return (
                     <div
                       key={tag.name}
-                      className={rowStyle(active)}
+                      title={tag.name}
+                      className={`group ${rowStyle(active)}`}
                       onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
                     >
-                      <span className="truncate">{tag.name}</span>
-                      <span className="text-[11px] text-zinc-500">{tag.count}</span>
+                      <TagName tag={tag} />
+                      <span className="ml-1.5 flex flex-none items-center gap-1.5">
+                        <button
+                          title="Rename"
+                          aria-label={`Rename ${tag.name}`}
+                          className="hidden cursor-pointer text-zinc-500 hover:text-zinc-200 group-hover:block group-focus-within:block focus:block"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenaming(tag.name);
+                          }}
+                        >
+                          <Pencil size={11} />
+                        </button>
+                        <span className="text-[11px] text-zinc-500">{tag.count}</span>
+                      </span>
                     </div>
                   );
                 })}

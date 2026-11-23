@@ -2,6 +2,7 @@ import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus, ListChecks, MoreVertical } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
+import { TagName } from './TagName';
 import { MenuItem, MenuLabel, MenuPanel } from './Menu';
 import { Segmented, TYPE_OPTIONS } from './Segmented';
 import { api } from '../lib/api';
@@ -283,7 +284,7 @@ export function FilterToolbar({
                 chip.tag ? 'border-accent/40 bg-accent/15 text-violet-300' : 'border-line-strong bg-zinc-800 text-zinc-300'
               }`}
             >
-              {chip.label}
+              {chip.tag ? <TagName tag={chip.label} /> : chip.label}
               <span
                 title={`Remove ${chip.label}`}
                 className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded-full ${

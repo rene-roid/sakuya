@@ -6,9 +6,9 @@ import { transcodePathFor } from './transcoder';
 import { refreshUsageCounts } from './tagger';
 
 /**
- * Remove media rows and everything derived from them: tag links, board memberships (FK cascade),
- * the search index row (trigger), a library cover pointing at them, and the cached thumbnail and
- * transcode on disk. The source file itself is the caller's call — a pruned file is already gone,
+ * Remove media rows and everything derived from them: tag links, board memberships and tag vetoes
+ * (FK cascade), the search index row (trigger), a library cover pointing at them, and the cached
+ * thumbnail and transcode on disk. The source file itself is the caller's call — a pruned file is already gone,
  * and a folder detach must leave it alone.
  *
  * Every delete path used to hand-roll a subset of this, so tag usage counts went stale after any

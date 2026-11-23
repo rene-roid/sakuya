@@ -144,3 +144,63 @@ describe('search index stays in sync', () => {
     expect(idsOf(await json('/api/media?q=platypus'))).toEqual([]);
   });
 });
+
+describe('tag display names', () => {
+  const patch = (name: string, body: unknown) =>
+    fetch(`${BASE}/api/tags/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const item = addMedia('display_name_item.png');
+
+  test('autocomplete matches a display name and returns the canonical name', async () => {
+    await post('/api/media/tags-batch', { ids: [item.id], add: ['uraraka_ochako'], category: 'character' });
+    await post('/api/media/tags-batch', { ids: [item.id], add: ['froppy_tag'], category: 'user' });
+    expect(await json('/api/tags?q=Zero')).toEqual([]);
+
+    const res = await patch('uraraka_ochako', { displayName: '  Zero   Gravity ' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ name: 'uraraka_ochako', category: 'character', displayName: 'Zero Gravity' });
+
+    expect(await json('/api/tags?q=zero')).toEqual([
+      { name: 'uraraka_ochako', category: 'character', displayName: 'Zero Gravity', count: 1 },
+    ]);
+    expect(await json(`/api/tags?q=Grav&libraryId=${library.id}`)).toEqual([
+      { name: 'uraraka_ochako', category: 'character', displayName: 'Zero Gravity', count: 1 },
+    ]);
+    // Filters and free-text search keep the canonical name.
+    expect(idsOf(await json('/api/media?tags=uraraka_ochako'))).toEqual([item.id]);
+    expect(idsOf(await json('/api/media?q=gravity'))).toEqual([]);
+  });
+
+  test('the media detail and tag info carry the display name', async () => {
+    const detail = await json(`/api/media/${item.id}`);
+    expect(detail.tags.find((t: { name: string }) => t.name === 'uraraka_ochako').displayName).toBe('Zero Gravity');
+    expect(await json('/api/tags/info?names=uraraka_ochako,froppy_tag,no_such_tag')).toEqual([
+      { name: 'froppy_tag', category: 'user', displayName: null },
+      { name: 'uraraka_ochako', category: 'character', displayName: 'Zero Gravity' },
+    ]);
+  });
+
+  test('a display name another tag already reads as is a 409 and changes nothing', async () => {
+    const taken = await patch('froppy_tag', { displayName: 'zero gravity' });
+    expect(taken.status).toBe(409);
+    expect(((await taken.json()) as { error: string }).error).toBe('"uraraka_ochako" is already shown as "Zero Gravity"');
+    const canonical = await patch('froppy_tag', { displayName: 'Uraraka Ochako' });
+    expect(canonical.status).toBe(409);
+    expect(((await canonical.json()) as { error: string }).error).toBe('"Uraraka Ochako" is the name of another tag');
+    expect((await json('/api/tags/info?names=froppy_tag'))[0].displayName).toBeNull();
+  });
+
+  test('clearing a display name and renaming a missing tag', async () => {
+    expect(await (await patch('uraraka_ochako', { displayName: '' })).json()).toEqual({
+      name: 'uraraka_ochako',
+      category: 'character',
+      displayName: null,
+    });
+    expect((await patch('uraraka_ochako', { displayName: null })).status).toBe(200);
+    expect(await json('/api/tags?q=zero')).toEqual([]);
+    expect((await patch('no_such_tag', { displayName: 'x' })).status).toBe(404);
+  });
+});

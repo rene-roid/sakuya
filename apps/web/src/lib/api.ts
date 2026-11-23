@@ -25,6 +25,7 @@ import type {
   SystemInfo,
   TagCategory,
   TagCount,
+  TagInfo,
   TaggerModel,
   TaggerStatus,
   JobSchedulesPayload,
@@ -206,6 +207,21 @@ export const api = {
     if (opts.category) params.set('category', ([] as TagCategory[]).concat(opts.category).join(','));
     return request<TagCount[]>(`/api/tags?${params}`);
   },
+  tagInfo: async (names: string[]) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < names.length; i += 200) chunks.push(names.slice(i, i + 200));
+    const parts = await Promise.all(
+      chunks.map((chunk) =>
+        request<TagInfo[]>(`/api/tags/info?${new URLSearchParams({ names: chunk.join(',') })}`),
+      ),
+    );
+    return parts.flat();
+  },
+  renameTag: (name: string, displayName: string | null) =>
+    request<TagInfo>(`/api/tags/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    }),
   settings: () => request<Settings>('/api/settings'),
   patchSettings: (body: Partial<Record<keyof Settings, string>>) =>
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),

@@ -4,7 +4,10 @@ import { DEFAULT_MODEL_ID } from './config';
 
 export const DEFAULTS: Record<string, string> = {
   ai_tagging_enabled: '1',
+  // Percent. The original single threshold, now the general one; characters get their own, much
+  // stricter one because a wrong character name is worse than a missing one.
   confidence_threshold: '35',
+  confidence_threshold_character: '85',
   accent_color: '#8b5cf6',
   remember_mute_state: '0',
   remember_volume_level: '1',
@@ -50,9 +53,23 @@ export function aiTaggingEnabled(): boolean {
   return getSetting('ai_tagging_enabled') === '1';
 }
 
-export function confidenceThreshold(): number {
-  const pct = Number(getSetting('confidence_threshold'));
-  return Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) / 100 : 0.35;
+function thresholdSetting(key: string): number {
+  const raw = getSetting(key);
+  const pct = raw.trim() === '' ? NaN : Number(raw);
+  return (Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) : Number(DEFAULTS[key])) / 100;
+}
+
+export interface TagThresholds {
+  general: number;
+  character: number;
+}
+
+/** Minimum model confidence, 0-1, per tag category. */
+export function confidenceThresholds(): TagThresholds {
+  return {
+    general: thresholdSetting('confidence_threshold'),
+    character: thresholdSetting('confidence_threshold_character'),
+  };
 }
 
 export function thumbnailCacheEnabled(): boolean {
