@@ -195,7 +195,6 @@ describe('characters API', () => {
     for (const k of ['p1', 'p2', 'p3', 'c1', 'c2', 'lone']) ids[k] = await addMedia();
     detect(ids.p1, [near(pepper, randomUnit(11), 0.92)]);
     detect(ids.p2, [near(pepper, randomUnit(12), 0.92)]);
-    // Pepper and Carrot together on one page.
     const group = detect(ids.p3, [near(pepper, randomUnit(13), 0.92), near(carrot, randomUnit(14), 0.92)]);
     detect(ids.c1, [near(carrot, randomUnit(15), 0.92)]);
     detect(ids.c2, []);

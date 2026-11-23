@@ -87,7 +87,6 @@ export function SettingsSearchResults({
   query: string;
   terms: string[];
   results: SettingEntry[];
-  /** Opens a setting in its section. */
   onOpen: (entry: SettingEntry) => void;
   onExample: (query: string) => void;
 }) {

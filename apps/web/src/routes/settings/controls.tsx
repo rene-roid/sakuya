@@ -202,8 +202,6 @@ function ActionControl({ entry }: { entry: ActionEntry }) {
   );
 }
 
-// Custom controls. Each renders on the right of its row unless its entry is a `block`.
-
 export function InterfaceStyleControl() {
   const uiStyle = useUiStyle();
   const save = useSaveSettings();

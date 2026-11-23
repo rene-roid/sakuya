@@ -750,12 +750,6 @@ discoverRouter.delete(
 const MORE_LIKE_LIMIT = 60;
 
 /**
- * Items sharing tags with `id`, each shared tag worth log(N / usage): a tag on three items says far
- * more about a picture than one on half the library. Rating tags are left out, since sharing
- * "general" says nothing about content. Hidden items and anything carrying a muted tag are left
- * out the same as in the feed.
- */
-/**
  * Media sharing tags with `sourceId`, best `limit` by summed idf, hidden and muted items left out.
  *
  * Summing every shared tag's postings is the definition, but on a booru-tagged library a few
@@ -846,6 +840,12 @@ export function fuseRankings(lists: { ids: number[]; weight: number }[], limit: 
     .map(([id]) => id);
 }
 
+/**
+ * Items sharing tags with `id`, each shared tag worth log(N / usage): a tag on three items says far
+ * more about a picture than one on half the library. Rating tags are left out, since sharing
+ * "general" says nothing about content. Hidden items and anything carrying a muted tag are left
+ * out the same as in the feed.
+ */
 export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeResponse {
   const [source] = mediaInOrder([id], new Map());
   if (!source) throw notFound('Media');

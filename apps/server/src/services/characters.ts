@@ -131,7 +131,6 @@ function mediaSource(mediaId: number): { image: string; thumb: string } {
   } | null;
   if (!row) throw new Error(`media ${mediaId} not found`);
   const thumb = thumbPathFor(row.id);
-  // Videos are read from their extracted thumbnail frame.
   return { image: row.type === 'video' ? thumb : row.path, thumb };
 }
 

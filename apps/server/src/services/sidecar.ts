@@ -143,8 +143,6 @@ export function sidecarFor(file: string, jsonFiles: ReadonlySet<string>): string
 }
 
 const vetoedStmt = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
-// Tags are global, so a name first seen in an uncategorised list (a pixiv tag, the tagger) stays
-// 'general' until a site that does categorise it says otherwise.
 // Prepared rather than built through drizzle: a scan runs these once per downloaded file, and the
 // query building alone was ~10% of the sidecar cost on a 5,000-file scan.
 const rowByPathStmt = sqlite.prepare('SELECT id, sidecar_mtime AS sidecarMtime FROM media WHERE path = ?');
@@ -162,6 +160,8 @@ const writeFtsStmt = sqlite.prepare(
                     WHERE mt.media_id = m.id), '')
    FROM media m WHERE m.id = ?`,
 );
+// Tags are global, so a name first seen in an uncategorised list (a pixiv tag, the tagger) stays
+// 'general' until a site that does categorise it says otherwise.
 const promoteStmt = sqlite.prepare(`UPDATE tags SET category = ? WHERE id = ? AND category = 'general'`);
 
 /**

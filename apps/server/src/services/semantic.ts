@@ -59,7 +59,6 @@ async function embedOne(mediaId: number): Promise<void> {
   } | null;
   if (!row) return;
   const thumb = thumbPathFor(row.id);
-  // Videos are read from their extracted thumbnail frame.
   const image = row.type === 'video' ? thumb : row.path;
   if (!fs.existsSync(image)) throw new Error(`no image to embed for media ${mediaId}`);
   let vec: Float32Array;
