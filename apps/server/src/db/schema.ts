@@ -1,5 +1,5 @@
 import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
-import { JOB_TYPES, LIBRARY_TYPES, MEDIA_TYPES, SCHEDULE_JOB_TYPES, SCHEDULE_MODES, TAG_CATEGORIES } from '@sakuya/shared';
+import { JOB_TYPES, LIBRARY_TYPES, MEDIA_TYPES, SCHEDULE_JOB_TYPES, SCHEDULE_MODES, TAG_CATEGORIES, TAG_SOURCES } from '@sakuya/shared';
 
 // Indexes and composite primary keys live in the raw DDL in db/index.ts; nothing here generates SQL.
 
@@ -60,6 +60,8 @@ export const media = sqliteTable('media', {
   phashB5: integer('phash_b5'),
   phashB6: integer('phash_b6'),
   phashB7: integer('phash_b7'),
+  sourceUrl: text('source_url'),
+  sidecarMtime: integer('sidecar_mtime'),
 });
 
 export const tags = sqliteTable('tags', {
@@ -74,7 +76,7 @@ export const mediaTags = sqliteTable('media_tags', {
   mediaId: integer('media_id').notNull(),
   tagId: integer('tag_id').notNull(),
   confidence: real('confidence'),
-  source: text('source', { enum: ['ai', 'user'] }).notNull().default('user'),
+  source: text('source', { enum: TAG_SOURCES }).notNull().default('user'),
 });
 
 // Cascades on both columns (see db/index.ts).

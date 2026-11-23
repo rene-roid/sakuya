@@ -11,8 +11,14 @@ export const JOB_TYPES = [
   'downloader-install',
   'reclassify-gifs',
   'transcode',
+  'tag-relations',
 ] as const;
-export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
+export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user', 'artist', 'copyright'] as const;
+/**
+ * Where a tag link came from. `meta` is read from a gallery-dl sidecar and `implied` is added by a
+ * tag implication; neither is touched by an AI retag, and both are rebuilt by their own source.
+ */
+export const TAG_SOURCES = ['ai', 'user', 'meta', 'implied'] as const;
 export const SCHEDULE_MODES = ['off', 'interval', 'after-scan'] as const;
 export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup'] as const;
 
@@ -35,9 +41,10 @@ const QUALIFIED = /^(.+?)_\(([^()]+)\)$/;
 
 /**
  * The automatic human form of a canonical tag name. Underscores become spaces and a trailing
- * `_(qualifier)` is split off. Characters are names, so every word is capitalised; ratings get a
- * leading capital; general and user tags stay lowercase, the way booru tags read in a list. Names of
- * three characters or fewer are left alone, since that is where emoticon tags like `^_^` live.
+ * `_(qualifier)` is split off. Characters, artists and series are names, so every word is
+ * capitalised; ratings get a leading capital; general and user tags stay lowercase, the way booru
+ * tags read in a list. Names of three characters or fewer are left alone, since that is where
+ * emoticon tags like `^_^` live.
  */
 export function prettifyTag(name: string, category?: TagCategory): TagLabelParts {
   if (name.length <= 3) return { label: name, qualifier: null };
@@ -46,7 +53,7 @@ export function prettifyTag(name: string, category?: TagCategory): TagLabelParts
   const base = spaced(match ? match[1] : name);
   const qualifier = match ? spaced(match[2]) : null;
   const label =
-    category === 'character'
+    category === 'character' || category === 'artist' || category === 'copyright'
       ? base.replace(/(^|\s)(\S)/g, (_, gap: string, c: string) => gap + c.toUpperCase())
       : category === 'rating'
         ? base.charAt(0).toUpperCase() + base.slice(1)
@@ -73,7 +80,7 @@ type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
 export type JobType = (typeof JOB_TYPES)[number];
 type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = (typeof TAG_CATEGORIES)[number];
-type TagSource = 'ai' | 'user';
+export type TagSource = (typeof TAG_SOURCES)[number];
 type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
 export type ScheduleMode = (typeof SCHEDULE_MODES)[number];
 export type ScheduleJobType = (typeof SCHEDULE_JOB_TYPES)[number];
@@ -144,6 +151,8 @@ export interface MediaTag {
 
 export interface MediaDetail extends Media {
   tags: MediaTag[];
+  /** The post or page the file was downloaded from, read from its gallery-dl sidecar. */
+  sourceUrl: string | null;
   /** Boards this media belongs to — the membership marker, editable from the viewer. */
   boards: Board[];
 }
@@ -170,6 +179,28 @@ export interface TagInfo {
   name: string;
   category: TagCategory;
   displayName: string | null;
+}
+
+export interface TagSibling {
+  from: TagInfo;
+  to: TagInfo;
+  createdAt: number;
+}
+
+export interface TagImplication {
+  tag: TagInfo;
+  implies: TagInfo;
+  createdAt: number;
+}
+
+export interface TagRelations {
+  siblings: TagSibling[];
+  implications: TagImplication[];
+}
+
+/** A relation change; `job` is set when existing media are backfilled in the background. */
+export interface TagRelationResult extends TagRelations {
+  job: Job | null;
 }
 
 export interface Job {
