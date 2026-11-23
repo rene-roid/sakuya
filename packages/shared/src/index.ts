@@ -11,10 +11,11 @@ export const JOB_TYPES = [
   'downloader-install',
   'reclassify-gifs',
   'transcode',
+  'backup',
 ] as const;
 export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
 export const SCHEDULE_MODES = ['off', 'interval', 'after-scan'] as const;
-export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup'] as const;
+export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup', 'backup'] as const;
 
 /**
  * Tags are stored lowercase with underscores for spaces. Every user-typed name goes through this, on
@@ -290,6 +291,22 @@ export interface SystemInfo {
   mediaBytes: number;
   dbBytes: number;
   thumbBytes: number;
+  /** How this copy was installed, which decides how it updates. */
+  installKind: InstallKind;
+}
+
+export type InstallKind = 'desktop' | 'docker' | 'source';
+
+export interface BackupFile {
+  name: string;
+  sizeBytes: number;
+  createdAt: number;
+}
+
+export interface BackupsPayload {
+  backups: BackupFile[];
+  keep: number;
+  dir: string;
 }
 
 export interface StorageInfo {

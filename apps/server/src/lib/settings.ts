@@ -28,6 +28,8 @@ export const DEFAULTS: Record<string, string> = {
   ui_style_chosen: '0',
   // The Liquid Glass dashboard banner; its close button turns this off.
   dashboard_hero: '1',
+  // How many database backups <dataDir>/backups keeps; older ones are deleted after each backup.
+  backup_keep: '7',
 };
 
 export function getSetting(key: string): string {
@@ -87,4 +89,9 @@ export function gifsAsVideos(): boolean {
 
 export function videoTranscodeEnabled(): boolean {
   return getSetting('video_transcode_enabled') === '1';
+}
+
+export function backupKeep(): number {
+  const n = Number(getSetting('backup_keep'));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 7;
 }

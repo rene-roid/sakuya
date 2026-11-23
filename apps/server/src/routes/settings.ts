@@ -11,7 +11,8 @@ import { migrateDataDir } from '../lib/storage';
 import { enqueueBulkThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
-import { scheduleAll } from '../services/jobScheduler';
+import { resolveSchedule, scheduleAll } from '../services/jobScheduler';
+import { installKind } from '../lib/installKind';
 import { performCleanup } from '../services/cleanup';
 import { SCHEDULE_JOB_TYPES, SCHEDULE_MODES, type SystemInfo, type StorageInfo, type JobSchedule, type JobSchedulesPayload } from '@sakuya/shared';
 
@@ -74,6 +75,7 @@ settingsRouter.get(
       mediaBytes: media.b,
       dbBytes: fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0,
       thumbBytes: await dirSize(THUMBS_DIR),
+      installKind: installKind(),
     };
     res.json(info);
   }),
@@ -151,6 +153,7 @@ settingsRouter.get(
     for (const r of globalRows) {
       globals[r.jobType] = { mode: r.mode, intervalMinutes: r.intervalMinutes };
     }
+    globals.backup ??= resolveSchedule('backup', null);
     const perLibrary: Record<number, Record<string, JobSchedule>> = {};
     for (const row of perLibRows) {
       if (row.libraryId === null) continue;

@@ -17,6 +17,7 @@ import { dashboardRouter } from './routes/dashboard';
 import { downloaderRouter } from './routes/downloader';
 import { savedSearchesRouter } from './routes/savedSearches';
 import { boardsRouter } from './routes/boards';
+import { backupsRouter } from './routes/backups';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { scheduleAll } from './services/jobScheduler';
@@ -60,6 +61,7 @@ app.use(dashboardRouter);
 app.use(downloaderRouter);
 app.use(savedSearchesRouter);
 app.use(boardsRouter);
+app.use(backupsRouter);
 
 type RouteError = { status?: number; name?: string; message?: string; issues?: unknown } | null | undefined;
 

@@ -1,5 +1,6 @@
 import type {
   AuthStatus,
+  BackupsPayload,
   BoardWithStats,
   BulkRenameItem,
   BulkResult,
@@ -229,6 +230,8 @@ export const api = {
   patchSettings: (body: Partial<Record<keyof Settings, string>>) =>
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
   system: () => request<SystemInfo>('/api/system'),
+  backups: () => request<BackupsPayload>('/api/backups'),
+  runBackup: () => request<Job>('/api/backups', { method: 'POST' }),
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
   storage: () => request<StorageInfo>('/api/system/storage'),
   migrateStorage: (target: 'home' | 'local') =>

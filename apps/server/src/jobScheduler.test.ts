@@ -92,6 +92,10 @@ const unhashed = (libraryId: number) =>
     .all().length;
 
 describe('resolveSchedule', () => {
+  test('the backup schedule resolves to daily by default', () => {
+    expect(resolveSchedule('backup', null)).toEqual({ mode: 'interval', intervalMinutes: 1440 });
+  });
+
   test('a fresh database tags and hashes after each scan, and schedules nothing else', () => {
     expect(resolveSchedule('scan', null).mode).toBe('off');
     expect(resolveSchedule('tag', null).mode).toBe('after-scan');

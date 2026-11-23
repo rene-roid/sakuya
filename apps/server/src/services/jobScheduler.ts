@@ -4,6 +4,7 @@ import { db, schema } from '../db';
 import { enqueueScanJob } from './scanner';
 import { runTagJob, runHashJob, modelReady, untaggedMediaIds, unhashedImageIds } from './tagger';
 import { enqueueCleanupJob } from './cleanup';
+import { enqueueBackupJob, listBackups } from './backup';
 import { runTranscodeJob } from './transcoder';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
@@ -11,6 +12,16 @@ import { mediaIdsWhere } from '../lib/mediaByIds';
 
 const timers = new Map<string, ReturnType<typeof setInterval>>();
 const PER_LIBRARY_TYPES: ScheduleJobType[] = ['scan', 'tag', 'hash'];
+const GLOBAL_TYPES: ScheduleJobType[] = ['cleanup', 'backup'];
+
+/** What a global schedule resolves to before anyone has saved one. */
+const DEFAULT_GLOBALS: Partial<Record<ScheduleJobType, JobSchedule>> = {
+  backup: { mode: 'interval', intervalMinutes: 1440 },
+};
+
+/** How often a backup schedule checks whether its next backup is due. */
+const BACKUP_CHECK_MS = 10 * 60_000;
+let lastBackupAttempt = 0;
 
 function activeJobForLibrary(libraryId: number | null, jobType: ScheduleJobType): boolean {
   const active = db
@@ -44,7 +55,7 @@ export function resolveSchedule(jobType: ScheduleJobType, libraryId: number | nu
     if (!row || row.useGlobal) return resolveSchedule(jobType, null);
     return { mode: row.mode, intervalMinutes: row.intervalMinutes };
   }
-  if (!row) return { mode: 'off', intervalMinutes: 0 };
+  if (!row) return DEFAULT_GLOBALS[jobType] ?? { mode: 'off', intervalMinutes: 0 };
   return { mode: row.mode, intervalMinutes: row.intervalMinutes };
 }
 
@@ -92,12 +103,13 @@ function dispatchTranscodeForLibrary(libraryId: number): void {
 }
 
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
-  if (activeJobForLibrary(jobType === 'cleanup' ? null : libraryId, jobType)) return;
+  if (activeJobForLibrary(GLOBAL_TYPES.includes(jobType) ? null : libraryId, jobType)) return;
   try {
     if (jobType === 'scan') enqueueScanJob(libraryId);
     else if (jobType === 'tag') dispatchTagForLibrary(libraryId);
     else if (jobType === 'hash') dispatchHashForLibrary(libraryId);
     else if (jobType === 'cleanup') enqueueCleanupJob();
+    else if (jobType === 'backup') enqueueBackupJob();
   } catch (err) {
     console.error(`[job-scheduler] failed to dispatch ${jobType} for library ${libraryId}:`, err);
   }
@@ -144,12 +156,27 @@ export function runAllNow(scope: 'global' | number, jobType?: ScheduleJobType): 
     }
   }
 
-  if (scope === 'global' && (!jobType || jobType === 'cleanup')) {
-    const cleanupSchedule = resolveSchedule('cleanup', null);
-    if (jobType === 'cleanup' || cleanupSchedule.mode === 'interval') {
-      dispatchForLibrary('cleanup', 0);
-    }
+  if (scope !== 'global') return;
+  if (jobType === 'cleanup' || (!jobType && resolveSchedule('cleanup', null).mode === 'interval')) {
+    dispatchForLibrary('cleanup', 0);
   }
+  // A backup only runs when asked for by name: "run everything" is about the libraries.
+  if (jobType === 'backup') dispatchForLibrary('backup', 0);
+}
+
+/**
+ * Start a backup when the newest one (or the last attempt, so a failing backup is not retried every
+ * check) is a full interval old. Keyed to the files on disk rather than to a timer started at boot,
+ * so a server restarted more often than the interval still backs up, and once per interval.
+ */
+export function checkBackupSchedule(now: number = Date.now()): boolean {
+  const { mode, intervalMinutes } = resolveSchedule('backup', null);
+  if (mode !== 'interval' || intervalMinutes <= 0) return false;
+  const newest = listBackups()[0]?.createdAt ?? 0;
+  if (now - Math.max(newest, lastBackupAttempt) < intervalMinutes * 60_000) return false;
+  lastBackupAttempt = now;
+  dispatchForLibrary('backup', 0);
+  return true;
 }
 
 function setTimer(jobType: ScheduleJobType, libraryId: number | null, schedule: JobSchedule): void {
@@ -183,8 +210,13 @@ export function scheduleAll(): void {
     }
   }
 
-  const cleanupSchedule = resolveSchedule('cleanup', null);
-  setTimer('cleanup', null, cleanupSchedule);
+  setTimer('cleanup', null, resolveSchedule('cleanup', null));
+
+  const backup = resolveSchedule('backup', null);
+  if (backup.mode === 'interval' && backup.intervalMinutes > 0) {
+    const every = Math.min(backup.intervalMinutes * 60_000, BACKUP_CHECK_MS);
+    timers.set('backup:0', setInterval(() => checkBackupSchedule(), every));
+  }
 
   console.log(`[job-scheduler] initialized ${timers.size} interval timers`);
 }
