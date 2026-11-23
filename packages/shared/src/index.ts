@@ -311,6 +311,8 @@ export interface Settings {
   /** How many database backups to keep; older ones are deleted after each backup. */
   backup_keep: string;
   character_detection_enabled: string;
+  /** Search by description: the Describe toggle, and indexing new files after each scan. */
+  semantic_search_enabled: string;
 }
 
 export type UiStyle = 'glass' | 'classic';

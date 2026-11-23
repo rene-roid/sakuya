@@ -8,6 +8,7 @@ import type {
   CharacterDetection,
   CharacterMediaResponse,
   CharacterModelStatus,
+  SemanticStatus,
   CharactersResponse,
   CharacterSummary,
   ConsoleSessionStatus,
@@ -94,6 +95,8 @@ export interface MediaFilters {
   tags: string[];
   liked?: boolean;
   q: string[];
+  /** Search by description: ranks by how well each picture fits, instead of `sort`. */
+  describe?: string;
   sort: 'recent' | 'name' | 'size' | 'random';
   dir: 'asc' | 'desc';
   seed: number;
@@ -108,6 +111,7 @@ function filterParams(filters: MediaFilters): URLSearchParams {
   if (filters.tags.length) params.set('tags', filters.tags.join(','));
   if (filters.liked) params.set('liked', '1');
   for (const term of filters.q) params.append('q', term);
+  if (filters.describe) params.set('describe', filters.describe);
   params.set('sort', filters.sort);
   params.set('dir', filters.dir);
   params.set('seed', String(filters.seed));
@@ -310,6 +314,9 @@ export const api = {
   characterStatus: () => request<CharacterModelStatus>('/api/characters/status'),
   characterDownload: () => request<{ job: Job }>('/api/characters/download', { method: 'POST' }),
   characterRun: () => request<{ job: Job }>('/api/characters/run', { method: 'POST' }),
+  semanticStatus: () => request<SemanticStatus>('/api/semantic/status'),
+  semanticDownload: () => request<{ job: Job }>('/api/semantic/download', { method: 'POST' }),
+  semanticRun: () => request<{ job: Job }>('/api/semantic/run', { method: 'POST' }),
   characters: (includeHidden = false) =>
     request<CharactersResponse>(`/api/characters${includeHidden ? '?hidden=1' : ''}`),
   character: (id: number) => request<CharacterSummary>(`/api/characters/${id}`),

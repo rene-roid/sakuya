@@ -8,6 +8,10 @@ import {
   CharacterModelMeta,
   FindCharactersControl,
   FindCharactersMeta,
+  IndexForSearchControl,
+  IndexForSearchMeta,
+  SemanticModelControl,
+  SemanticModelMeta,
   HashImagesControl,
   HashImagesMeta,
   HomeFolderControl,
@@ -392,6 +396,39 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: FindCharactersControl,
     Meta: FindCharactersMeta,
   },
+  {
+    id: 'semantic-search',
+    section: 'tagging',
+    group: 'Search by description',
+    label: 'Search by description',
+    description:
+      'Adds a Describe switch to the search boxes, so “a witch flying on a broom” finds the pictures that show it. New files are indexed after each scan.',
+    keywords: 'semantic describe clip embeddings natural language search similar visual more like this',
+    kind: 'toggle',
+    key: 'semantic_search_enabled',
+  },
+  {
+    id: 'semantic-model',
+    section: 'tagging',
+    group: 'Search by description',
+    label: 'Search model',
+    description: 'OpenAI CLIP ViT-B/32, which reads both pictures and text, downloaded once.',
+    keywords: 'clip onnx semantic describe download',
+    kind: 'custom',
+    Control: SemanticModelControl,
+    Meta: SemanticModelMeta,
+  },
+  {
+    id: 'index-for-search',
+    section: 'tagging',
+    group: 'Search by description',
+    label: 'Index new files for search',
+    description: 'Index every file not indexed yet, without waiting for the next scan.',
+    keywords: 'semantic describe clip embeddings index run bulk',
+    kind: 'custom',
+    Control: IndexForSearchControl,
+    Meta: IndexForSearchMeta,
+  },
 
   // Media processing
   {
@@ -747,6 +784,7 @@ export const ALL_SETTINGS_KEYS = Object.keys({
   dashboard_hero: 1,
   backup_keep: 1,
   character_detection_enabled: 1,
+  semantic_search_enabled: 1,
 } satisfies Record<SettingsKey, 1>) as SettingsKey[];
 
 export function entryKeys(entry: SettingEntry): SettingsKey[] {
