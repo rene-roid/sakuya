@@ -6,7 +6,8 @@
  *
  * --models holds model.onnx and selected_tags.csv. For each video it tags the thumbnail frame the
  * scanner would make, then N sampled frames combined by max confidence, with and without requiring
- * a general tag to clear the threshold in at least two frames. Writes results.json and a copy of
+ * a general tag to clear the threshold in at least two frames. Frames that look like one already
+ * scored are skipped, as in the tag job. Writes results.json and a copy of
  * every sampled frame (named after its time) under --out, and prints a summary table.
  */
 import fs from 'node:fs';
@@ -40,7 +41,7 @@ fs.writeFileSync(
 process.env.SAKUYA_CONFIG = path.join(dataDir, 'sakuya.config.json');
 
 const { predictScores, selectTags, combineFrameScores, parseLabels } = await import('../services/tagger');
-const { frameTimes, withVideoFrames } = await import('../services/videoFrames');
+const { distinctFrames, frameSignature, frameTimes, withVideoFrames } = await import('../services/videoFrames');
 const { generateThumbnail } = await import('../services/thumbnailer');
 const { probeVideo } = await import('../services/scanner');
 const { confidenceThresholds } = await import('../lib/settings');
@@ -94,9 +95,15 @@ for (const file of videos) {
     const frameDir = path.join(outDir, file, `n${n}`);
     fs.mkdirSync(frameDir, { recursive: true });
     t0 = performance.now();
+    // As tagOneMedia does it: frames that look like one already scored are skipped.
+    const analysed: number[] = [];
     const scores = await withVideoFrames(src, times, async (frames) => {
+      const signatures = await Promise.all(frames.map((f) => frameSignature(f)));
       const out: Float32Array[] = [];
-      for (const f of frames) out.push(await predictScores(f));
+      for (const i of distinctFrames(signatures)) {
+        analysed.push(times[i]);
+        out.push(await predictScores(frames[i]));
+      }
       return out;
     });
     const ms = performance.now() - t0;
@@ -107,6 +114,7 @@ for (const file of videos) {
     row[`n${n}`] = {
       ms,
       times,
+      analysed,
       perFrame: scores.map((s) => tagNames(selectTags(s, labels, thresholds))),
       max: selectTags(combineFrameScores(scores), labels, thresholds),
       twoFrame: selectWithTwoFrameRule(scores),
@@ -117,11 +125,11 @@ for (const file of videos) {
   const s = new Set(tagNames(single));
   const parts = [`${file} (${duration?.toFixed(1)}s) single ${s.size} tags ${singleMs.toFixed(0)}ms`];
   for (const n of counts) {
-    const r = row[`n${n}`] as { ms: number; max: Tag[]; twoFrame: Tag[] };
+    const r = row[`n${n}`] as { ms: number; analysed: number[]; times: number[]; max: Tag[]; twoFrame: Tag[] };
     const max = tagNames(r.max);
     const two = tagNames(r.twoFrame);
     parts.push(
-      `n${n}: max ${max.length} (+${max.filter((t) => !s.has(t)).length}/-${[...s].filter((t) => !max.includes(t)).length})` +
+      `n${n}: analysed ${r.analysed.length}/${r.times.length} max ${max.length} (+${max.filter((t) => !s.has(t)).length}/-${[...s].filter((t) => !max.includes(t)).length})` +
         ` 2f ${two.length} (+${two.filter((t) => !s.has(t)).length}/-${[...s].filter((t) => !two.includes(t)).length}) ${r.ms.toFixed(0)}ms`,
     );
   }

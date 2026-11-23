@@ -8,6 +8,10 @@ an image.
 - Frames sit in the middle of equal slices of the video, skipping the first and last second (black
   intros, title cards and fade-outs). A video shorter than 3 s is sampled across its whole length,
   with frames at least 0.5 s apart, so a 2 s clip gets 4 frames and a 0.4 s one gets 1.
+- The model is the expensive part (about 3 to 4 s per frame on a 2-CPU budget), so a video costs
+  at most five inferences however long it is, and a frame that looks like one already scored is
+  skipped: same layout (dHash within 10 bits, the "similar images" cut-off) and mean colour within
+  24 of 255 per channel. A still or single-shot video costs one inference.
 - A video with no known duration (ffprobe could not read it), or whose frames ffmpeg cannot
   extract, falls back to the thumbnail frame as before.
 - Frames are extracted one at a time with one ffmpeg thread, as PNGs no wider or taller than 640 px,
@@ -21,6 +25,26 @@ an image.
 Measured with `bun apps/server/src/scripts/videoTagEval.ts` over the nine fixture videos (pan and
 zoom slideshows of Pepper&Carrot pages and stock photos, plus an ffmpeg test pattern), with the
 default thresholds (general 0.35, character 0.85) and `limits.cpus` 2.
+
+## Long videos and cost
+
+Extraction seeks to each frame rather than decoding the video, so it does not grow with length: five
+frames from a 30-minute 1080p video took 1.07 s, the same as from a 30-second 1080p fixture (1.35 s),
+and 0.7 s from a 10-minute 720p one. Hashing the five frames adds about 25 ms.
+
+Real model, load 2 to 3, one run each:
+
+| Video                                 | Frames scored | 1 frame | 5 frames | Tags (1 frame → 5 frames) |
+| ------------------------------------- | ------------- | ------- | -------- | ------------------------- |
+| still photo, 30 min, 1080p            | 1 of 5        | 3.5 s   | 4.8 s    | 11 → 13                   |
+| testsrc-360p (moving test pattern)    | 1 of 5        | 2.7 s   | 3.4 s    | 6 → 6                     |
+| one photo panned slowly, 10 min, 720p | 5 of 5        | 3.1 s   | 17.2 s   | 13 → 14                   |
+| pepper-pan-720p (five comic pages)    | 5 of 5        | 2.6 s   | 16.0 s   | 7 → 31                    |
+
+Without the skip the still video would have cost five inferences (about 17 s) for the same tags. A
+slow pan over one photo still costs five, because each crop really differs (dHash 16 to 25 between
+frames, the same range as different scenes), but it does not over-tag: one picture gives about one
+picture's tags. Tag counts only grow where the video really shows different things.
 
 ## Tags per video
 
