@@ -121,6 +121,16 @@ function freshTrashDir(mediaId: number, now: number, claimed: string[]): string 
   }
 }
 
+/** Each file derived from media `id` and where it waits in the trash entry `dir`. */
+function derivedFiles(id: number, dir: string): [live: string, trashed: string][] {
+  const abs = path.join(TRASH_DIR, dir, DERIVED);
+  return [
+    [thumbPathFor(id), path.join(abs, THUMB)],
+    [spritePathFor(id), path.join(abs, SPRITE)],
+    [transcodePathFor(id), path.join(abs, TRANSCODE)],
+  ];
+}
+
 const insertTrash = () =>
   sqlite.prepare(
     `INSERT INTO trash (media_id, library_id, filename, type, size_bytes, original_path, trashed_path, trashed_at, media_json)
@@ -170,9 +180,7 @@ async function moveToTrash(rows: MediaRow[], now: number, claimed: string[]): Pr
       failed.push({ id: row.id, error: `Could not move to trash: ${(err as Error).message}` });
       return;
     }
-    await moveIfPresent(thumbPathFor(row.id), path.join(abs, DERIVED, THUMB));
-    await moveIfPresent(spritePathFor(row.id), path.join(abs, DERIVED, SPRITE));
-    await moveIfPresent(transcodePathFor(row.id), path.join(abs, DERIVED, TRANSCODE));
+    for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(live, trashed);
     moved.push({ row, dir });
   };
   // A few at a time: one by one, a 500-item delete spent most of its time waiting on each rename.
@@ -204,6 +212,7 @@ async function moveToTrash(rows: MediaRow[], now: number, claimed: string[]): Pr
   } catch (err) {
     for (const { row, dir } of moved) {
       await moveFile(path.join(TRASH_DIR, dir, path.basename(row.path)), row.path).catch(() => {});
+      for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(trashed, live);
       fs.rmSync(path.join(TRASH_DIR, dir), { recursive: true, force: true });
     }
     throw err;

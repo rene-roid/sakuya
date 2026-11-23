@@ -260,3 +260,24 @@ test('emptying the trash while a bulk delete is still moving files leaves that d
   expect(fs.existsSync(path.join(bulk, item.filename))).toBe(true);
   await send('DELETE', '/api/trash');
 });
+
+test('a delete whose database write fails puts the file and its thumbnail and transcode back', async () => {
+  await writeImage('orange.png', '#ff8800');
+  await scan();
+  const id = idOf('orange.png')!;
+  const thumb = path.join(dataDir, 'thumbnails', `${id}.webp`);
+  const transcode = path.join(dataDir, 'transcodes', `${id}.mp4`);
+  fs.writeFileSync(transcode, 'transcoded');
+  expect(fs.existsSync(thumb)).toBe(true);
+  sqlite.exec(`CREATE TEMP TRIGGER trash_fails BEFORE INSERT ON trash BEGIN SELECT RAISE(ABORT, 'disk full'); END`);
+  try {
+    expect((await send('DELETE', `/api/media/${id}`)).status).toBe(500);
+  } finally {
+    sqlite.exec('DROP TRIGGER temp.trash_fails');
+  }
+  expect(idOf('orange.png')).toBe(id);
+  expect(fs.existsSync(path.join(root, 'orange.png'))).toBe(true);
+  expect(fs.existsSync(thumb)).toBe(true);
+  expect(fs.readFileSync(transcode, 'utf8')).toBe('transcoded');
+  expect(fs.readdirSync(TRASH_DIR)).toEqual([]);
+});
