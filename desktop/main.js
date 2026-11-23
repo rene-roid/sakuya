@@ -12,9 +12,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { createUpdater } from './updates.js';
 
-// electron-updater runs the new AppImage once with this set after installing it on quit; the
-// process it starts must not open a second Sakuya.
-if (process.env.APPIMAGE_EXIT_AFTER_INSTALL === 'true') process.exit(0);
 // The new AppImage that "Restart to update" starts can come up before this one has let go of the
 // lock, so it waits for it instead of exiting.
 if (!(await singleInstanceLock(process.env.APPIMAGE_SILENT_INSTALL === 'true' ? 15_000 : 0))) process.exit(0);
@@ -38,7 +35,9 @@ const icon = nativeImage.createFromPath(path.join(appDir, 'apps/web/dist/icon.pn
 const dataDir = path.join(os.homedir(), '.sakuya');
 fs.mkdirSync(dataDir, { recursive: true });
 const logFile = path.join(dataDir, 'desktop.log');
-const log = fs.createWriteStream(logFile);
+// Appended, so the lines an update writes just before restarting survive into the next run.
+if ((fs.statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) > 5_000_000) fs.renameSync(logFile, `${logFile}.1`);
+const log = fs.createWriteStream(logFile, { flags: 'a' });
 const logLine = (line) => log.write(`${new Date().toISOString()} ${line}\n`);
 // Lets this process call its own server's API when auth is on; it never leaves this machine.
 const desktopToken = crypto.randomBytes(32).toString('hex');
