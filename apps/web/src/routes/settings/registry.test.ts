@@ -18,10 +18,11 @@ test('every Settings key appears in exactly one registry entry, or is named as s
     const elsewhere = key in KEYS_SET_ELSEWHERE;
     expect({ key, count: ids.length + (elsewhere ? 1 : 0) }).toEqual({ key, count: 1 });
   }
-  expect(ALL_SETTINGS_KEYS).toHaveLength(17);
+  expect(ALL_SETTINGS_KEYS).toHaveLength(18);
   expect(owners.get('confidence_threshold')).toEqual(['confidence-threshold']);
   expect(owners.get('confidence_threshold_character')).toEqual(['character-threshold']);
   expect(owners.get('discover_enabled')).toEqual(['discover-enabled']);
+  expect(owners.get('backup_keep')).toEqual(['backup-keep']);
   expect(Object.keys(KEYS_SET_ELSEWHERE).sort()).toEqual(['downloader_concurrency', 'ui_style_chosen']);
 });
 
@@ -108,6 +109,27 @@ test('thumb finds the thumbnail rows under Media processing and the cleanup row 
     'thumbnail-size',
     'cleanup-orphans',
   ]);
+});
+
+test('update, version, auto-update and restart find the About updates panel', () => {
+  expect(ids('update')).toEqual(['updates']);
+  expect(ids('version')).toEqual(['updates', 'release-notes']);
+  expect(ids('auto-update')).toEqual(['updates']);
+  expect(ids('restart')).toEqual(['updates']);
+});
+
+test('backup finds the Storage backup rows and the Jobs schedule, and trash finds the trash row', () => {
+  expect(ids('backup')).toEqual([
+    'schedule-backup',
+    'backup-now',
+    'backup-keep',
+    'backup-schedule',
+    'backup-list',
+  ]);
+  expect(ids('restore')).toEqual(['remember-explore-filters', 'trash', 'backup-now']);
+  expect(ids('trash')).toEqual(['trash']);
+  expect(settingHref('trash')).toBe('/settings?tab=storage#trash');
+  expect(settingHref('schedule-backup')).toBe('/settings?tab=jobs#schedule-backup');
 });
 
 test('an empty or unmatched query finds nothing', () => {
