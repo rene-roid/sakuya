@@ -11,7 +11,11 @@
   "scripts": {
     "stage": "bash stage.sh",
     "start": "electron .",
-    "dist": "electron-builder --publish never"
+    "dist": "electron-builder --publish never",
+    "test": "node --test 'test/*.test.js'"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "electron": "^45.2.3",
@@ -20,7 +24,9 @@
   "build": {
     "appId": "io.github.rene-roid.sakuya",
     "files": [
-      "main.js"
+      "main.js",
+      "updates.js",
+      "preload.cjs"
     ],
     "extraResources": [
       {
