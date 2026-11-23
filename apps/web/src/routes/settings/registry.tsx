@@ -37,6 +37,7 @@ import {
   TrashMeta,
 } from './BackupsAndTrash';
 import { UpdatesPanel } from '../../components/UpdatesPanel';
+import { TagRelations } from './TagRelations';
 
 export type SettingsKey = keyof Settings;
 
@@ -391,6 +392,18 @@ export const SETTINGS: readonly SettingEntry[] = [
     kind: 'custom',
     Control: FindCharactersControl,
     Meta: FindCharactersMeta,
+  },
+  {
+    id: 'tag-relations',
+    section: 'tagging',
+    group: 'Tag relations',
+    label: 'Merges and implications',
+    description:
+      'A merged tag lands on the tag it was merged into. An implied tag is added to everything carrying the tag that implies it.',
+    keywords: 'implication implies imply sibling alias merge synonym series character relation booru',
+    kind: 'custom',
+    block: true,
+    Control: TagRelations,
   },
 
   // Media processing

@@ -20,6 +20,11 @@ test('prettifyTag title-cases character names and splits off a trailing qualifie
   expect(prettifyTag('saber_(fate/stay_night)', 'character')).toEqual({ label: 'Saber', qualifier: 'fate/stay night' });
 });
 
+test('prettifyTag title-cases artist and series names like characters', () => {
+  expect(prettifyTag('david_revoy', 'artist')).toEqual({ label: 'David Revoy', qualifier: null });
+  expect(prettifyTag('boku_no_hero_academia', 'copyright')).toEqual({ label: 'Boku No Hero Academia', qualifier: null });
+});
+
 test('prettifyTag keeps general and user tags lowercase and capitalises ratings', () => {
   expect(prettifyTag('1girl', 'general')).toEqual({ label: '1girl', qualifier: null });
   expect(prettifyTag('looking_at_viewer', 'general')).toEqual({ label: 'looking at viewer', qualifier: null });

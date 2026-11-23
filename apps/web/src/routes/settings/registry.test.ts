@@ -83,6 +83,8 @@ test('settingHref links a setting by its section and id', () => {
 test('search finds settings by label, description and keywords', () => {
   expect(ids('gif')).toEqual(['gifs-as-videos', 'reclassify-gifs']);
   expect(ids('volume')).toEqual(['remember-volume']);
+  expect(ids('implication')).toEqual(['tag-relations']);
+  expect(ids('alias')).toEqual(['tag-relations']);
   expect(ids('hevc')).toEqual(['video-transcoding', 'transcode-videos']);
 });
 

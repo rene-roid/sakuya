@@ -69,7 +69,9 @@ CREATE TABLE IF NOT EXISTS media (
   phash_b4 INTEGER,
   phash_b5 INTEGER,
   phash_b6 INTEGER,
-  phash_b7 INTEGER
+  phash_b7 INTEGER,
+  source_url TEXT,
+  sidecar_mtime INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
 -- (library_id, created_at) rather than library_id alone: browsing a library sorts by created_at,
@@ -107,6 +109,22 @@ CREATE TABLE IF NOT EXISTS media_tag_vetoes (
   PRIMARY KEY (media_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS media_tag_vetoes_tag_idx ON media_tag_vetoes(tag_id);
+-- Booru-style siblings: from_tag_id is an alias of to_tag_id. Every write of the alias lands on
+-- the target, so to_tag_id is never itself an alias.
+CREATE TABLE IF NOT EXISTS tag_siblings (
+  from_tag_id INTEGER PRIMARY KEY REFERENCES tags(id) ON DELETE CASCADE,
+  to_tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_siblings_to_idx ON tag_siblings(to_tag_id);
+-- tag_id implies implies_tag_id: an item carrying the first gets the second with source 'implied'.
+CREATE TABLE IF NOT EXISTS tag_implications (
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  implies_tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (tag_id, implies_tag_id)
+);
+CREATE INDEX IF NOT EXISTS tag_implications_implies_idx ON tag_implications(implies_tag_id);
 CREATE TABLE IF NOT EXISTS boards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -312,6 +330,10 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 22, sql: 'DROP INDEX IF EXISTS media_type_idx' },
   // A label shown instead of the canonical name, which URLs, filters and search keep using.
   { version: 23, sql: 'ALTER TABLE tags ADD COLUMN display_name TEXT' },
+  // The post a gallery-dl download came from, and the mtime of the sidecar it was read from so a
+  // rescan only re-reads a sidecar that changed.
+  { version: 41, sql: 'ALTER TABLE media ADD COLUMN source_url TEXT' },
+  { version: 42, sql: 'ALTER TABLE media ADD COLUMN sidecar_mtime INTEGER' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;

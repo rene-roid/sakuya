@@ -11,6 +11,7 @@ import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, unlinkTag, clearVeto } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { trashMedia } from '../services/trash';
+import { canonicalTagNames, linkTag, recomputeImplied, resolveSibling, siblingTargetName } from '../services/tagRelations';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -87,8 +88,14 @@ function pathIndexed(filePath: string): boolean {
  * of full scan to under 10ms — and it's what search-as-you-type users expect. Terms that tokenize
  * to nothing (pure punctuation) match nothing rather than erroring.
  */
-function ftsMatchExpr(terms: string[]): string {
-  return terms.map((term) => `"${term.replace(/"/g, '""')}"*`).join(' AND ');
+function ftsMatchExpr(terms: string[], aliasTarget: (name: string) => string | null): string {
+  const quote = (term: string) => `"${term.replace(/"/g, '""')}"`;
+  return terms
+    .map((term) => {
+      const target = aliasTarget(normalizeTagName(term));
+      return target ? `(${quote(term)}* OR ${quote(target)})` : `${quote(term)}*`;
+    })
+    .join(' AND ');
 }
 
 /**
@@ -98,7 +105,8 @@ function ftsMatchExpr(terms: string[]): string {
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
   // Deduped because the HAVING below counts distinct tags against this length: "a,a" or
   // "Blue Hair,blue_hair" would otherwise require two different tags and match nothing.
-  const tagNames = [...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))];
+  // A merged tag's old name finds what it was merged into.
+  const tagNames = canonicalTagNames([...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))]);
 
   const conds: string[] = [];
   const params: SQLQueryBindings[] = [];
@@ -124,7 +132,7 @@ function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: S
     .filter(Boolean);
   if (qTerms.length) {
     conds.push('m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)');
-    params.push(ftsMatchExpr(qTerms));
+    params.push(ftsMatchExpr(qTerms, siblingTargetName));
   }
   if (tagNames.length) {
     const placeholders = tagNames.map(() => '?').join(',');
@@ -338,16 +346,14 @@ mediaRouter.post(
     const addTagIds = addNames.map((name) => upsertTag(name, body.category));
     const removeTagIds = removeNames
       .map((name) => db.select().from(schema.tags).where(eq(schema.tags.name, name)).get()?.id)
-      .filter((id): id is number => id !== undefined);
+      .filter((id): id is number => id !== undefined)
+      .map(resolveSibling);
 
     // Resolve every media row once too, rather than re-querying inside the loop.
     const rows = mediaRowsByIds(body.ids);
     const failed: BulkFailure[] = [];
     let updated = 0;
-    // Prepared once: building a Drizzle query per link added ~280ms to a 5000-item batch.
-    const link = sqlite.prepare(
-      `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, NULL, 'user') ON CONFLICT DO NOTHING`,
-    );
+    const touched = new Set([...addTagIds, ...removeTagIds]);
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
         if (!rows.has(id)) {
@@ -355,15 +361,16 @@ mediaRouter.post(
           continue;
         }
         for (const tagId of addTagIds) {
-          link.run(id, tagId);
+          linkTag(id, tagId, 'user');
           clearVeto(id, tagId);
         }
         for (const tagId of removeTagIds) unlinkTag(id, tagId);
         updated++;
       }
+      for (const tagId of recomputeImplied(body.ids.filter((id) => rows.has(id)))) touched.add(tagId);
     });
     apply();
-    refreshUsageCounts([...addTagIds, ...removeTagIds]);
+    refreshUsageCounts([...touched]);
 
     const result: BulkResult = { ok: true, updated, failed };
     res.json(result);
@@ -517,7 +524,8 @@ function getDetail(id: number): MediaDetail | null {
       `SELECT t.name, t.category, t.display_name AS displayName, mt.confidence, mt.source
        FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
        WHERE mt.media_id = ?
-       ORDER BY CASE t.category WHEN 'rating' THEN 0 WHEN 'character' THEN 1 ELSE 2 END, mt.confidence DESC, t.name`,
+       ORDER BY CASE t.category WHEN 'artist' THEN 0 WHEN 'copyright' THEN 1 WHEN 'rating' THEN 2
+                WHEN 'character' THEN 3 ELSE 4 END, mt.confidence DESC, t.name`,
     )
     .all(id) as MediaDetail['tags'];
   const boardRows = sqlite
@@ -527,7 +535,7 @@ function getDetail(id: number): MediaDetail | null {
        WHERE bm.media_id = ? ORDER BY b.name`,
     )
     .all(id) as MediaDetail['boards'];
-  return { ...rowToMedia(row), tags: tagRows, boards: boardRows };
+  return { ...rowToMedia(row), tags: tagRows, boards: boardRows, sourceUrl: row.source_url ?? null };
 }
 
 mediaRouter.get(
@@ -647,10 +655,7 @@ mediaRouter.patch(
       const name = normalizeTagName(raw);
       if (!name) continue;
       const tagId = upsertTag(name, body.category);
-      db.insert(schema.mediaTags)
-        .values({ mediaId: id, tagId, confidence: null, source: 'user' })
-        .onConflictDoNothing()
-        .run();
+      linkTag(id, tagId, 'user');
       clearVeto(id, tagId);
       touched.push(tagId);
     }
@@ -658,9 +663,11 @@ mediaRouter.patch(
       const name = normalizeTagName(raw);
       const tag = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
       if (!tag) continue;
-      unlinkTag(id, tag.id);
-      touched.push(tag.id);
+      const tagId = resolveSibling(tag.id);
+      unlinkTag(id, tagId);
+      touched.push(tagId);
     }
+    touched.push(...recomputeImplied([id]));
     if (body.setCategory) {
       for (const [rawName, category] of Object.entries(body.setCategory)) {
         const name = normalizeTagName(rawName);

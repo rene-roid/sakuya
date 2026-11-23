@@ -69,6 +69,8 @@ export const media = sqliteTable('media', {
   phashB5: integer('phash_b5'),
   phashB6: integer('phash_b6'),
   phashB7: integer('phash_b7'),
+  sourceUrl: text('source_url'),
+  sidecarMtime: integer('sidecar_mtime'),
 });
 
 export const tags = sqliteTable('tags', {

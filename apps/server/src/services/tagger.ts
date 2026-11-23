@@ -12,6 +12,7 @@ import { phashColumns } from '../lib/phashBands';
 import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
 import { downloadFile } from '../lib/download';
 import { createModelSession } from '../lib/modelSession';
+import { ensureTag, impliedOn, linkTag, recomputeImplied, resolveSibling } from './tagRelations';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
 
 const INPUT_SIZE = 448;
@@ -164,10 +165,9 @@ export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresh
   return out;
 }
 
+/** The id a link to `name` is written under: the tag itself, or the tag it was merged into. */
 export function upsertTag(name: string, category: TagCategory): number {
-  const existing = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
-  if (existing) return existing.id;
-  return db.insert(schema.tags).values({ name, category }).returning().get().id;
+  return resolveSibling(ensureTag(name, category));
 }
 
 let tagLinksChanges = 0;
@@ -204,14 +204,15 @@ const insertVeto = sqlite.prepare(
   'INSERT INTO media_tag_vetoes (media_id, tag_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
 );
 const deleteVeto = sqlite.prepare('DELETE FROM media_tag_vetoes WHERE media_id = ? AND tag_id = ?');
-const vetoedNames = sqlite.prepare(
-  'SELECT t.name FROM media_tag_vetoes v JOIN tags t ON t.id = v.tag_id WHERE v.media_id = ?',
-);
+const vetoedIds = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
 
-/** Take a tag off one item by hand. Removing an AI tag records a veto so the next retag leaves it off. */
+/**
+ * Take a tag off one item by hand. Removing a tag something else put there (the AI, a sidecar, an
+ * implication) records a veto so that source leaves it off from now on.
+ */
 export function unlinkTag(mediaId: number, tagId: number): void {
   const removed = unlinkReturningSource.get(mediaId, tagId) as { source: string } | null;
-  if (removed?.source === 'ai') insertVeto.run(mediaId, tagId, Date.now());
+  if (removed && (removed.source !== 'user' || impliedOn(mediaId, tagId))) insertVeto.run(mediaId, tagId, Date.now());
 }
 
 /** Adding a tag by hand overrides any earlier rejection of it. */
@@ -243,8 +244,8 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
 
 /** Replace an item's AI tags with `predicted`, minus any the user vetoed on it. */
 export function applyPredictedTags(mediaId: number, predicted: PredictedTag[]): number {
-  const vetoed = new Set((vetoedNames.all(mediaId) as { name: string }[]).map((r) => r.name));
-  const kept = vetoed.size ? predicted.filter((t) => !vetoed.has(t.name)) : predicted;
+  const vetoed = new Set((vetoedIds.all(mediaId) as { tag_id: number }[]).map((r) => r.tag_id));
+  let kept = 0;
   // One transaction for the swap: the old AI tags and the new ones commit together, so a reader
   // never sees the item momentarily untagged, and the ~30 inserts (each rewriting the item's
   // search-index row via trigger) share one commit instead of paying one each.
@@ -260,18 +261,19 @@ export function applyPredictedTags(mediaId: number, predicted: PredictedTag[]): 
       .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
       .run();
 
-    for (const tag of kept) {
+    for (const tag of predicted) {
+      // Checked by id after the sibling lookup: a veto on a merged tag covers its aliases too.
       const tagId = upsertTag(tag.name, tag.category);
+      if (vetoed.has(tagId)) continue;
+      kept++;
       touched.add(tagId);
-      db.insert(schema.mediaTags)
-        .values({ mediaId, tagId, confidence: tag.confidence, source: 'ai' })
-        .onConflictDoNothing()
-        .run();
+      linkTag(mediaId, tagId, 'ai', tag.confidence);
     }
+    for (const tagId of recomputeImplied([mediaId])) touched.add(tagId);
     db.update(schema.media).set({ taggedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
     refreshUsageCounts([...touched]);
   })();
-  return kept.length;
+  return kept;
 }
 
 export function enqueueTagJob(mediaIds: number[], label: string, libraryId: number | null = null) {
