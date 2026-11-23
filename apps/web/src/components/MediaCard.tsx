@@ -5,6 +5,7 @@ import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { HeartButton } from './HeartButton';
 import { TagName, useTagLabelText } from './TagName';
+import { VideoScrub } from './VideoScrub';
 
 function VideoBadge() {
   return (
@@ -74,6 +75,7 @@ export const MediaCard = memo(function MediaCard({
           loading="lazy"
           className="h-full w-full object-cover"
         />
+        {item.type === 'video' && <VideoScrub media={item} />}
         {item.type === 'video' && <VideoBadge />}
         <DurationBadge seconds={item.durationSeconds} />
         {item.reasonTag && <ReasonBadge tag={item.reasonTag} related={!!item.reasonRelated} />}
@@ -122,6 +124,7 @@ export function WideCard({
     <div className="group w-[200px] flex-none cursor-pointer" onClick={onClick}>
       <div className="relative h-[112px] w-[200px] overflow-hidden rounded-media border border-line bg-zinc-900 glass:border-white/[0.07] glass:transition-colors glass:group-hover:border-white/25">
         <img src={thumbUrl(item.id)} alt={item.filename} loading="lazy" className="h-full w-full object-cover" />
+        {item.type === 'video' && <VideoScrub media={item} />}
         {showProgress && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15">
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />

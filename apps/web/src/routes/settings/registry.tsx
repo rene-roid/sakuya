@@ -363,7 +363,7 @@ export const SETTINGS: readonly SettingEntry[] = [
     section: 'processing',
     group: 'Thumbnails',
     label: 'Thumbnail cache',
-    description: 'Serve small webp thumbnails. Off serves full-resolution originals (videos still use a frame).',
+    description: 'Serve small webp thumbnails and video hover previews. Off serves full-resolution originals (videos still use a frame).',
     keywords: 'thumbs webp performance',
     kind: 'toggle',
     key: 'thumbnail_cache_enabled',
