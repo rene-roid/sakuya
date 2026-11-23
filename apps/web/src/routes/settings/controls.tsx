@@ -327,6 +327,90 @@ function JobMeta({ job, idle }: { job: Job | undefined; idle: string }) {
   );
 }
 
+function useCharacterStatus() {
+  return useQuery({
+    queryKey: ['character-status'],
+    queryFn: api.characterStatus,
+    refetchInterval: (query) => (query.state.data?.status === 'downloading' ? 2000 : false),
+  }).data;
+}
+
+export function CharacterModelMeta() {
+  const status = useCharacterStatus();
+  if (!status) return null;
+  if (status.status === 'ready')
+    return (
+      <>
+        <span className="font-semibold text-emerald-500">Ready</span> · {formatBytes(status.modelSizeBytes ?? 0)}
+      </>
+    );
+  return <>{status.status === 'downloading' ? 'Downloading… (see Jobs)' : 'Not downloaded · about 195 MB'}</>;
+}
+
+export function CharacterModelControl() {
+  const queryClient = useQueryClient();
+  const status = useCharacterStatus();
+  const download = useMutation({
+    mutationFn: api.characterDownload,
+    onSuccess: () => {
+      toast('Character model download started');
+      queryClient.invalidateQueries({ queryKey: ['character-status'] });
+    },
+    onError: (err) => toast(err.message),
+  });
+  if (!status || status.status === 'ready') return null;
+  const downloading = status.status === 'downloading';
+  return (
+    <button
+      type="button"
+      disabled={downloading || download.isPending}
+      onClick={() => download.mutate()}
+      className={buttonClass('primary')}
+    >
+      {downloading ? 'Downloading…' : 'Download'}
+    </button>
+  );
+}
+
+export function FindCharactersMeta() {
+  const status = useCharacterStatus();
+  const job = useActiveJob('characters');
+  const n = status?.pendingCount ?? 0;
+  const found = status ? ` · ${status.characterCount} characters so far` : '';
+  return (
+    <JobMeta
+      job={job}
+      idle={n > 0 ? `${n} file${n === 1 ? '' : 's'} not scanned yet${found}` : `Every file is scanned${found}`}
+    />
+  );
+}
+
+export function FindCharactersControl() {
+  const queryClient = useQueryClient();
+  const status = useCharacterStatus();
+  const job = useActiveJob('characters');
+  const run = useMutation({
+    mutationFn: api.characterRun,
+    onSuccess: () => {
+      toast('Looking for characters…');
+      queryClient.invalidateQueries({ queryKey: ['character-status'] });
+    },
+    onError: (err) => toast(err.message),
+  });
+  const n = status?.pendingCount ?? 0;
+  return (
+    <button
+      type="button"
+      disabled={!!job || status?.status !== 'ready' || n === 0 || run.isPending}
+      onClick={() => run.mutate()}
+      title={status?.status !== 'ready' ? 'Download the character models first' : undefined}
+      className={buttonClass('primary')}
+    >
+      {job ? 'Scanning…' : n > 0 ? `Scan ${n} file${n === 1 ? '' : 's'}` : 'Scan'}
+    </button>
+  );
+}
+
 export function TagUntaggedMeta() {
   const tagger = useTagger();
   const job = useActiveJob('tag');
