@@ -1,9 +1,12 @@
 import { Fragment, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, Pencil, X } from 'lucide-react';
+import { ArrowRight, ChevronLeft, ChevronRight, Merge, MoreHorizontal, Pencil, X } from 'lucide-react';
+import type { TagCount } from '@sakuya/shared';
 import { api } from '../lib/api';
 import { TagName, TagRenameInput } from './TagName';
+import { MenuItem, MenuPanel } from './Menu';
+import { TagRelationDialog, type TagRelationKind } from './TagRelationDialog';
 import { exploreQueryString } from '../hooks/useFilters';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 
@@ -29,6 +32,8 @@ export function TagSidebar({
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [relation, setRelation] = useState<{ tag: TagCount; kind: TagRelationKind } | null>(null);
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries, staleTime: 30_000 });
   const { data: savedSearches } = useQuery({
     queryKey: ['saved-searches'],
@@ -45,6 +50,16 @@ export function TagSidebar({
     queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'rating' }),
     staleTime: 30_000,
   });
+  const { data: artistTags } = useQuery({
+    queryKey: ['tags', 'sidebar', 'artist', filters.libraryId],
+    queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'artist', limit: 7 }),
+    staleTime: 30_000,
+  });
+  const { data: seriesTags } = useQuery({
+    queryKey: ['tags', 'sidebar', 'copyright', filters.libraryId],
+    queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'copyright', limit: 7 }),
+    staleTime: 30_000,
+  });
   const { data: characterTags } = useQuery({
     queryKey: ['tags', 'sidebar', 'character', filters.libraryId],
     queryFn: () => api.tags({ libraryId: filters.libraryId, category: 'character', limit: 7 }),
@@ -57,6 +72,8 @@ export function TagSidebar({
   });
 
   const sections = [
+    { title: 'ARTISTS', tags: artistTags ?? [] },
+    { title: 'SERIES', tags: seriesTags ?? [] },
     { title: 'RATING', tags: ratingTags ?? [] },
     { title: 'CHARACTERS', tags: characterTags ?? [] },
     { title: 'TAGS', tags: generalTags ?? [] },
@@ -147,19 +164,49 @@ export function TagSidebar({
                       onClick={() => (active ? actions.removeTag(tag.name) : actions.addTag(tag.name))}
                     >
                       <TagName tag={tag} />
-                      <span className="ml-1.5 flex flex-none items-center gap-1.5">
+                      <span className="relative ml-1.5 flex flex-none items-center gap-1.5">
                         <button
-                          title="Rename"
-                          aria-label={`Rename ${tag.name}`}
-                          className="hidden cursor-pointer text-zinc-500 hover:text-zinc-200 group-hover:block group-focus-within:block focus:block"
+                          title="Tag options"
+                          aria-label={`Options for ${tag.name}`}
+                          className={`${menuFor === tag.name ? 'block' : 'hidden'} cursor-pointer text-zinc-500 hover:text-zinc-200 group-hover:block group-focus-within:block focus:block`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setRenaming(tag.name);
+                            setMenuFor(menuFor === tag.name ? null : tag.name);
                           }}
                         >
-                          <Pencil size={11} />
+                          <MoreHorizontal size={13} />
                         </button>
                         <span className="text-[11px] text-zinc-500">{tag.count}</span>
+                        {menuFor === tag.name && (
+                          // The panel's own clicks must not reach the row, which toggles the filter.
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <MenuPanel width={170} onClose={() => setMenuFor(null)}>
+                              {[
+                                { icon: <Pencil size={13} />, label: 'Rename…', run: () => setRenaming(tag.name) },
+                                {
+                                  icon: <Merge size={13} />,
+                                  label: 'Merge into…',
+                                  run: () => setRelation({ tag, kind: 'merge' }),
+                                },
+                                {
+                                  icon: <ArrowRight size={13} />,
+                                  label: 'Implies…',
+                                  run: () => setRelation({ tag, kind: 'imply' }),
+                                },
+                              ].map((item) => (
+                                <MenuItem
+                                  key={item.label}
+                                  icon={item.icon}
+                                  label={item.label}
+                                  onClick={() => {
+                                    setMenuFor(null);
+                                    item.run();
+                                  }}
+                                />
+                              ))}
+                            </MenuPanel>
+                          </div>
+                        )}
                       </span>
                     </div>
                   );
@@ -172,6 +219,7 @@ export function TagSidebar({
         <div className="px-2.5 py-1 text-[11.5px] text-zinc-600">No tags yet</div>
       )}
       </div>
+      {relation && <TagRelationDialog tag={relation.tag} kind={relation.kind} onClose={() => setRelation(null)} />}
     </>
   );
 }

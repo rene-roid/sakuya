@@ -1,16 +1,30 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
+import {
+  X,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  FolderOpen,
+  Copy,
+  Pencil,
+  Trash2,
+  ExternalLink,
+  Merge,
+  ArrowRight,
+} from 'lucide-react';
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
-import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
+import { CATEGORIES, categoryLabel, formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { patchCachedMedia } from '../lib/mediaCache';
 import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TagName, TagRenameInput } from './TagName';
+import { TagRelationDialog, type TagRelationKind } from './TagRelationDialog';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
@@ -86,6 +100,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   const navigate = useNavigate();
   const [tagInput, setTagInput] = useState('');
   const [addCategory, setAddCategory] = useState<TagCategory>('general');
+  const [relation, setRelation] = useState<{ tag: MediaTag; kind: TagRelationKind } | null>(null);
   // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
   const [jumpItem, setJumpItem] = useState<Media | null>(null);
   // Tracks the item we jumped from via the similar/duplicates panel, so it can be
@@ -489,6 +504,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
               </button>
             </span>
           </div>
+          {detail?.id === item.id && detail.sourceUrl && <SourceRow url={detail.sourceUrl} />}
           <MetaRow label="Size" value={formatBytes(item.sizeBytes)} />
           <MetaRow
             label="Dimensions"
@@ -511,19 +527,34 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
             AI re-tag
           </button>
         </div>
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {(detail?.tags ?? []).map((tag) => (
+        {TAG_GROUPS.map((group) => {
+          const tags = (detail?.tags ?? []).filter((t) => group.categories.includes(t.category));
+          if (!tags.length) return null;
+          const pills = tags.map((tag) => (
             <TagPill
               key={tag.name}
               tag={tag}
               onOpen={() => openTag(tag.name)}
               onRemove={() => tagMutation.mutate({ remove: [tag.name] })}
               onSetCategory={(category) => tagMutation.mutate({ setCategory: { [tag.name]: category } })}
+              onRelation={(kind) => setRelation({ tag, kind })}
             />
-          ))}
-          {detail && detail.tags.length === 0 && <div className="text-[11.5px] text-zinc-600">No tags yet</div>}
-        </div>
-        <div className="mb-1.5 flex gap-1">
+          ));
+          return group.title ? (
+            <div key={group.title} className="mb-2 flex items-start gap-2">
+              <div className="w-[46px] flex-none pt-[5px] text-[10.5px] font-bold tracking-[0.4px] text-zinc-500">
+                {group.title}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{pills}</div>
+            </div>
+          ) : (
+            <div key="rest" className="mb-3 flex flex-wrap gap-1.5">
+              {pills}
+            </div>
+          );
+        })}
+        {detail && detail.tags.length === 0 && <div className="mb-3 text-[11.5px] text-zinc-600">No tags yet</div>}
+        <div className="mb-1.5 flex flex-wrap gap-1">
           {CATEGORIES.map((c) => (
             <div
               key={c}
@@ -532,7 +563,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
                 addCategory === c ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              {c}
+              {categoryLabel(c)}
             </div>
           ))}
         </div>
@@ -545,11 +576,12 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
               setTagInput('');
             }
           }}
-          placeholder={`Add ${addCategory} tag, press Enter…`}
+          placeholder={`Add ${categoryLabel(addCategory)} tag, press Enter…`}
           className="w-full rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
         />
         <BoardsSection mediaId={item.id} boards={detail?.id === item.id ? detail.boards : []} />
       </div>
+      {relation && <TagRelationDialog tag={relation.tag} kind={relation.kind} onClose={() => setRelation(null)} />}
       {showDeleteConfirm && (
         <ConfirmDialog
           title="Delete this file?"
@@ -663,12 +695,45 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
   );
 }
 
+/** Artist and series get a labelled row each, first, the way a booru post lists them. */
+const TAG_GROUPS: { title: string | null; categories: TagCategory[] }[] = [
+  { title: 'ARTIST', categories: ['artist'] },
+  { title: 'SERIES', categories: ['copyright'] },
+  { title: null, categories: ['rating', 'character', 'general', 'user'] },
+];
+
 function categoryClasses(category: TagCategory): string {
   return category === 'rating'
     ? 'bg-accent/20 text-violet-300'
     : category === 'character'
       ? 'bg-emerald-500/15 text-emerald-300'
-      : 'bg-zinc-800 text-zinc-200';
+      : category === 'artist'
+        ? 'bg-amber-500/15 text-amber-300'
+        : category === 'copyright'
+          ? 'bg-sky-500/15 text-sky-300'
+          : 'bg-zinc-800 text-zinc-200';
+}
+
+function SourceRow({ url }: { url: string }) {
+  let host = '';
+  try {
+    host = new URL(url).host.replace(/^www\./, '');
+  } catch {}
+  return (
+    <div className="flex justify-between gap-3 text-[12.5px]">
+      <span className="flex-none text-zinc-500">Source</span>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={url}
+        className="flex min-w-0 items-center gap-1.5 font-semibold text-accent hover:opacity-80"
+      >
+        <span className="truncate">View source{host && <span className="font-normal text-zinc-500"> · {host}</span>}</span>
+        <ExternalLink size={12} className="flex-none" />
+      </a>
+    </div>
+  );
 }
 
 function TagPill({
@@ -676,11 +741,13 @@ function TagPill({
   onOpen,
   onRemove,
   onSetCategory,
+  onRelation,
 }: {
   tag: MediaTag;
   onOpen: () => void;
   onRemove: () => void;
   onSetCategory: (category: TagCategory) => void;
+  onRelation: (kind: TagRelationKind) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -702,7 +769,7 @@ function TagPill({
       <button
         className="flex h-[15px] w-[15px] flex-none cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={() => setMenuOpen((v) => !v)}
-        title="Rename or change category"
+        title="Rename, merge or change category"
       >
         <ChevronDown size={11} />
       </button>
@@ -724,6 +791,24 @@ function TagPill({
             <Pencil size={11} />
             Rename…
           </div>
+          {(
+            [
+              ['merge', 'Merge into…', <Merge key="merge" size={11} />],
+              ['imply', 'Implies…', <ArrowRight key="imply" size={11} />],
+            ] as const
+          ).map(([kind, label, icon], i) => (
+            <div
+              key={kind}
+              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1.5 text-[11.5px] text-zinc-200 hover:bg-zinc-800 ${i === 1 ? 'border-b border-line' : ''}`}
+              onClick={() => {
+                setMenuOpen(false);
+                onRelation(kind);
+              }}
+            >
+              {icon}
+              {label}
+            </div>
+          ))}
           {CATEGORIES.map((c) => (
             <div
               key={c}
@@ -733,7 +818,7 @@ function TagPill({
                 onSetCategory(c);
               }}
             >
-              {c}
+              {categoryLabel(c)}
             </div>
           ))}
         </div>

@@ -32,4 +32,9 @@ export function timeAgo(ts: number | null): string {
 }
 
 /** Tag categories, in the order every category picker lists them. */
-export const CATEGORIES: TagCategory[] = ['general', 'character', 'rating', 'user'];
+export const CATEGORIES: TagCategory[] = ['general', 'character', 'artist', 'copyright', 'rating', 'user'];
+
+/** A category's on-screen name. Boorus call a work's franchise its copyright; people say series. */
+export function categoryLabel(category: TagCategory): string {
+  return category === 'copyright' ? 'series' : category;
+}

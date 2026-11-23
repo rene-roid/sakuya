@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { normalizeTagName, tagLabelText, type Media, type TagCategory } from '@sakuya/shared';
 import { api } from '../lib/api';
-import { CATEGORIES } from '../lib/format';
+import { CATEGORIES, categoryLabel } from '../lib/format';
 import { TagSearchInput } from './TagSearchInput';
 import { TagName } from './TagName';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
@@ -93,7 +93,7 @@ export function BulkTagDialog({
       </div>
 
       <div className="mb-1.5 text-xs font-bold tracking-[0.4px] text-zinc-500">ADD</div>
-      <div className="mb-1.5 flex gap-1">
+      <div className="mb-1.5 flex flex-wrap gap-1">
         {CATEGORIES.map((c) => (
           <div
             key={c}
@@ -102,7 +102,7 @@ export function BulkTagDialog({
               category === c ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            {c}
+            {categoryLabel(c)}
           </div>
         ))}
       </div>
