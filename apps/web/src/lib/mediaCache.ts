@@ -1,5 +1,12 @@
 import type { InfiniteData, QueryClient } from '@tanstack/react-query';
-import type { DashboardResponse, Media, MediaListResponse, SimilarResponse } from '@sakuya/shared';
+import type {
+  DashboardResponse,
+  DiscoverLikeResponse,
+  DiscoverShelvesResponse,
+  Media,
+  MediaListResponse,
+  SimilarResponse,
+} from '@sakuya/shared';
 import type { MediaFilters } from './api';
 
 function patchList<T extends Media>(items: T[], id: number, patch: Partial<Media>): T[] {
@@ -38,6 +45,12 @@ export function patchCachedMedia(queryClient: QueryClient, id: number, patch: Pa
           recentlyAdded: patchList(data.recentlyAdded, id, patch),
         }
       : data,
+  );
+  queryClient.setQueriesData<DiscoverShelvesResponse>({ queryKey: ['discover-shelves'] }, (data) =>
+    data ? { shelves: data.shelves.map((s) => ({ ...s, items: patchList(s.items, id, patch) })) } : data,
+  );
+  queryClient.setQueriesData<DiscoverLikeResponse>({ queryKey: ['discover-like'] }, (data) =>
+    data ? { ...data, items: patchList(data.items, id, patch) } : data,
   );
   queryClient.setQueriesData<SimilarResponse>({ queryKey: ['similar'] }, (data) =>
     data ? { duplicates: patchList(data.duplicates, id, patch), similar: patchList(data.similar, id, patch) } : data,

@@ -12,6 +12,10 @@ import type {
   CharacterSummary,
   ConsoleSessionStatus,
   DashboardResponse,
+  DiscoverLikeResponse,
+  DiscoverProfileResponse,
+  DiscoverShelvesResponse,
+  DiscoverTagMode,
   DownloadBatchWithItems,
   DownloadCookie,
   DownloadLogLine,
@@ -122,6 +126,8 @@ export interface DiscoverFilters {
   /** 0 = pure taste match, 1 = pure random. */
   surprise: number;
   seed: number;
+  /** One shelf's items only: a shelf's "See all". */
+  shelf?: string;
 }
 
 function discoverQueryString(filters: DiscoverFilters, cursor?: string): string {
@@ -129,6 +135,7 @@ function discoverQueryString(filters: DiscoverFilters, cursor?: string): string 
   if (filters.type) params.set('type', filters.type);
   params.set('surprise', String(filters.surprise));
   params.set('seed', String(filters.seed));
+  if (filters.shelf) params.set('shelf', filters.shelf);
   params.set('limit', '60');
   if (cursor) params.set('cursor', cursor);
   return params.toString();
@@ -171,6 +178,24 @@ export const api = {
   mediaDetail: (id: number) => request<MediaDetail>(`/api/media/${id}`),
   discover: (filters: DiscoverFilters, cursor?: string) =>
     request<MediaListResponse>(`/api/discover?${discoverQueryString(filters, cursor)}`),
+  discoverShelves: (filters: Omit<DiscoverFilters, 'shelf'>) => {
+    const params = new URLSearchParams({ surprise: String(filters.surprise), seed: String(filters.seed), visit: '1' });
+    if (filters.type) params.set('type', filters.type);
+    return request<DiscoverShelvesResponse>(`/api/discover/shelves?${params}`);
+  },
+  discoverProfile: () => request<DiscoverProfileResponse>('/api/discover/profile'),
+  setDiscoverTagMode: (tag: string, mode: DiscoverTagMode | null) =>
+    request<{ name: string; mode: DiscoverTagMode | null }>(`/api/discover/tags/${encodeURIComponent(tag)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ mode }),
+    }),
+  setDiscoverHidden: (mediaId: number, hidden: boolean) =>
+    request<{ mediaId: number; hidden: boolean }>('/api/discover/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ mediaId, hidden }),
+    }),
+  clearDiscoverHidden: () => request<{ cleared: number }>('/api/discover/feedback', { method: 'DELETE' }),
+  moreLikeThis: (id: number) => request<DiscoverLikeResponse>(`/api/discover/like/${id}`),
   patchTags: (
     id: number,
     body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> },

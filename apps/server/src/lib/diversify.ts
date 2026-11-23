@@ -35,6 +35,8 @@ export interface Candidate {
   reason: string | null;
   /** 16-char hex dHash, or null. */
   hash: string | null;
+  /** Replaces the reason cap for this item, e.g. for a tag the user asked to see more of. */
+  reasonCap?: number;
 }
 
 interface Entry extends Candidate {
@@ -99,13 +101,13 @@ export class Diversifier {
     const [entry] = this.queue.splice(chosen, 1);
     this.recent.push(entry);
     if (this.recent.length > this.keep) this.recent.shift();
-    return { id: entry.id, folder: entry.folder, reason: entry.reason, hash: entry.hash };
+    return { id: entry.id, folder: entry.folder, reason: entry.reason, hash: entry.hash, reasonCap: entry.reasonCap };
   }
 
   /** relax 0 checks every rule; 1 drops the reason cap, 2 also the folder cap. */
   private fits(c: Entry, relax: number): boolean {
     const { window, reasonCap: cap, dupDistance, dupWindow } = this.opts;
-    const reasonCap = relax >= 1 ? 0 : cap;
+    const reasonCap = relax >= 1 ? 0 : (c.reasonCap ?? cap);
     const folderCap = relax >= 2 ? 0 : this.opts.folderCap;
     const n = this.recent.length;
     if (folderCap > 0 || reasonCap > 0) {

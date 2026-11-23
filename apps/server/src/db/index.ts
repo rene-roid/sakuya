@@ -232,6 +232,19 @@ CREATE TABLE IF NOT EXISTS character_scans (
   scanned_at INTEGER NOT NULL,
   detections INTEGER NOT NULL
 );
+-- Discover steering. Keyed by tag name rather than id: a cleanup prunes unused tag rows, and a
+-- mute has to survive the tag coming back on the next tag run.
+CREATE TABLE IF NOT EXISTS tag_preferences (
+  tag TEXT PRIMARY KEY,
+  mode TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS media_feedback (
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, kind)
+);
 
 -- Free-text search index over filenames/paths and tag names. Replaces a pair of unindexable
 -- LIKE '%term%' scans; see buildMediaFilter in routes/media.ts.

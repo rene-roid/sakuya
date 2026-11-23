@@ -192,6 +192,45 @@ export interface Job {
   updatedAt: number;
 }
 
+/** A user's standing instruction for one tag in Discover. "less" halves its weight, "boost" doubles it,
+ * "mute" removes every item carrying it. */
+export const DISCOVER_TAG_MODES = ['boost', 'less', 'mute'] as const;
+export type DiscoverTagMode = (typeof DISCOVER_TAG_MODES)[number];
+
+export interface DiscoverTasteTag extends TagInfo {
+  /** Strength in the profile before boost/less/mute, relative to the strongest tag (0..1). */
+  weight: number;
+  /** Reached through co-occurrence with tags you like rather than your own engagement. */
+  related: boolean;
+  mode: DiscoverTagMode | null;
+}
+
+export interface DiscoverProfileResponse {
+  tags: DiscoverTasteTag[];
+  /** Tags still steering the feed: zero when nothing is liked yet or every taste tag is muted. */
+  activeTags: number;
+  hiddenCount: number;
+}
+
+export interface DiscoverShelf {
+  id: string;
+  title: string;
+  subtitle: string;
+  /** The tag a "because you like" shelf is built on. */
+  tag?: string;
+  items: Media[];
+}
+
+export interface DiscoverShelvesResponse {
+  shelves: DiscoverShelf[];
+}
+
+export interface DiscoverLikeResponse {
+  source: Media;
+  /** Ranked by shared tags, rarest counting most; reasonTag is the rarest one each item shares. */
+  items: Media[];
+}
+
 export interface MediaListResponse {
   items: Media[];
   nextCursor: string | null;
