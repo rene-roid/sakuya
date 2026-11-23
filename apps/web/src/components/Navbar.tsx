@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings, Sparkles } from 'lucide-react';
+import { Activity, Download, Home, Images, LayoutGrid, Lock, Settings, Sparkles, UsersRound } from 'lucide-react';
 import { useJobs } from '../hooks/useJobs';
 import { useAuth } from '../hooks/useAuth';
 import { useScanAllLibraries } from '../hooks/useScanAllLibraries';
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: '/explore', label: 'Explore', icon: LayoutGrid },
   { to: '/discover', label: 'Discover', icon: Sparkles },
   { to: '/boards', label: 'Boards', icon: Images },
+  { to: '/characters', label: 'Characters', icon: UsersRound },
   { to: '/downloader', label: 'Downloader', icon: Download },
 ];
 

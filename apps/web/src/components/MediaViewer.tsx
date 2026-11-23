@@ -12,6 +12,7 @@ import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
 import { ConfirmDialog } from './ConfirmDialog';
 import { TagName, TagRenameInput } from './TagName';
+import { CharacterBoxes, CharacterBoxesButton, useCharacterBoxesToggle } from './characters/CharacterOverlay';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
@@ -108,6 +109,8 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   const lastSavedProgress = useRef(0);
   const completedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [showCharacters, toggleCharacters] = useCharacterBoxesToggle();
   // Watch-time tracking: accumulates real seconds played between flushes (see saveProgress).
   const lastPlayedTime = useRef(0);
   const pendingWatchedSeconds = useRef(0);
@@ -375,6 +378,9 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
         className="relative flex min-h-[65vh] min-w-0 flex-1 items-center justify-center p-2 sm:min-h-0 sm:p-10"
       >
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          {item.type === 'image' && (
+            <CharacterBoxesButton mediaId={item.id} on={showCharacters} onToggle={toggleCharacters} />
+          )}
           <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
           <button
             className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-zinc-100 hover:bg-white/10"
@@ -414,12 +420,14 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
         ) : (
           <img
             key={item.id}
+            ref={imgRef}
             src={fileUrl(item.id)}
             alt={displayName}
             style={size ? { width: size.width, height: size.height } : undefined}
             className="max-h-[95%] max-w-[98%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         )}
+        {showCharacters && item.type === 'image' && <CharacterBoxes mediaId={item.id} imgRef={imgRef} />}
 
         {hasSimilar && (
           <SimilarPanel

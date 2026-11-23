@@ -6,6 +6,7 @@ import type {
   BulkRenameItem,
   BulkResult,
   CharacterDetection,
+  CharacterDetectionsResponse,
   CharacterMediaResponse,
   CharacterModelStatus,
   CharactersResponse,
@@ -290,6 +291,15 @@ export const api = {
   character: (id: number) => request<CharacterSummary>(`/api/characters/${id}`),
   characterMedia: (id: number, offset = 0, limit = 60) =>
     request<CharacterMediaResponse>(`/api/characters/${id}/media?offset=${offset}&limit=${limit}`),
+  characterDetections: (id: number, offset = 0, limit = 120) =>
+    request<CharacterDetectionsResponse>(`/api/characters/${id}/detections?offset=${offset}&limit=${limit}`),
+  dismissCharacterSuggestion: (id: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/dismiss-suggestion`, { method: 'POST' }),
+  nameDetection: (detectionId: number, name: string) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/name`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
   nameCharacter: (id: number, name: string) =>
     request<CharacterSummary>(`/api/characters/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
   acceptCharacterSuggestion: (id: number) =>
