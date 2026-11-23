@@ -1,6 +1,6 @@
 # What the roadmap branch could not do on this machine
 
-This lists everything from [the roadmap plan](plans/sakuya-roadmap-plan.md) that was skipped, could not be proven here, or still has a known gap. The branch was built and tested on one Linux machine (Intel N95, 4 cores, about 6 GB free memory, no display, no Windows, no Mac), with only safe test images and videos (see [Test data](#test-data)).
+This lists everything from the 1.8.0 roadmap that was skipped, could not be proven here, or still has a known gap. The branch was built and tested on one Linux machine (Intel N95, 4 cores, about 6 GB free memory, no display, no Windows, no Mac), with only safe test images and videos (see [Test data](#test-data)).
 
 ## Needs a machine this one is not
 
@@ -16,7 +16,7 @@ This lists everything from [the roadmap plan](plans/sakuya-roadmap-plan.md) that
 
 ## Plan verification steps that were replaced
 
-The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second review video per PR, and copies of review screenshots in `docs/plans/media/`. None of that tooling exists here. Instead each change has behavior tests through the HTTP API, a walk-through on a seeded demo instance with screenshots, and the perf numbers below. No review videos were recorded.
+The roadmap plan asked for ten live test lanes per PR on cloud VMs and a 30 to 60 second review video per PR. None of that tooling exists here. Instead each change has behavior tests through the HTTP API, a walk-through on a seeded demo instance with screenshots, and the perf numbers below. No review videos were recorded.
 
 ## Performance targets that were not met or not measured
 
