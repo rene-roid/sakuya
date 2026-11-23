@@ -368,12 +368,14 @@ describe('characters API', () => {
     expect(linksOf('pepper_(pepper&carrot)').map((l) => l.media_id)).toContain(ids.lone);
   });
 
-  test('deleting media removes its detections and crops', () => {
+  test('deleting media removes its detections and crops', async () => {
     removeMediaRows([ids.p3]);
     expect(sqlite.query('SELECT COUNT(*) AS c FROM character_detections WHERE media_id = ?').get(ids.p3)).toEqual({
       c: 0,
     });
     expect(sqlite.query('SELECT COUNT(*) AS c FROM character_scans WHERE media_id = ?').get(ids.p3)).toEqual({ c: 0 });
+    // Files are removed in the background, after the rows.
+    for (let i = 0; i < 100 && fs.existsSync(characterCropDirFor(ids.p3)); i++) await Bun.sleep(10);
     expect(fs.existsSync(characterCropDirFor(ids.p3))).toBe(false);
     expect(sqlite.query('SELECT cover_detection_id FROM characters WHERE id = ?').get(ids.pepperChar)).toEqual({
       cover_detection_id: null,
