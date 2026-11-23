@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ChevronRight, ScanFace, UserX } from 'lucide-react';
-import { tagLabel, type CharacterDetection } from '@sakuya/shared';
+import { tagLabel, tagLabelText, type CharacterDetection } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { characterLabelText, clampLeft, containRect, type Rect } from '../../lib/characters';
 import { Crop, NamePicker } from './NamePicker';
@@ -96,19 +96,23 @@ export function CharacterBoxes({ mediaId, imgRef }: { mediaId: number; imgRef: R
   const open = detections.find((d) => d.id === openId) ?? null;
 
   return (
+    // Under the viewer's buttons and arrows, which a box filling a phone-width image would cover,
+    // and over them while a box's menu is open.
     <div
-      className="pointer-events-none absolute z-10"
+      className={`pointer-events-none absolute ${open ? 'z-30' : 'z-[5]'}`}
       style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
     >
       {detections.map((d) => {
         const known = d.assignment !== 'rejected' && d.characterId !== null;
         const named = known && d.characterName !== null;
+        const tag = named ? { name: d.characterName!, category: 'character' as const, displayName: d.characterDisplayName } : null;
+        const text = tag ? tagLabel(tag).label : known ? 'Unnamed' : 'Unknown';
         return (
           <button
             type="button"
             key={d.id}
             onClick={() => setOpenId(openId === d.id ? null : d.id)}
-            aria-label={`Character: ${characterLabelText({ name: d.characterName, displayName: d.characterDisplayName }, 'Unknown')}`}
+            aria-label={`Character: ${tag ? tagLabelText(tag) : text}`}
             className={`group pointer-events-auto absolute cursor-pointer rounded-[6px] border-2 shadow-[0_0_0_1px_rgba(0,0,0,0.45)] transition-colors ${
               openId === d.id
                 ? 'border-white bg-white/10'
@@ -128,11 +132,7 @@ export function CharacterBoxes({ mediaId, imgRef }: { mediaId: number; imgRef: R
                 named ? 'text-zinc-100' : 'text-zinc-400'
               }`}
             >
-              {named
-                ? tagLabel({ name: d.characterName!, category: 'character', displayName: d.characterDisplayName }).label
-                : known
-                  ? 'Unnamed'
-                  : 'Unknown'}
+              {text}
             </span>
           </button>
         );
@@ -213,7 +213,7 @@ function BoxMenu({ detection, rect, onClose }: { detection: CharacterDetection; 
             className="mt-1.5 flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12.5px] font-semibold text-zinc-300 hover:bg-white/5 hover:text-zinc-100 disabled:opacity-40"
           >
             <UserX size={13} className="text-zinc-500" />
-            Not {label}
+            {detection.characterName ? `Not ${label}` : 'Not this character'}
           </button>
         )}
       </div>
