@@ -29,12 +29,16 @@ The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second rev
 | D02 desktop | cold start against trunk | Not measured. |
 | P01 backups | request latency during a backup against trunk | Only the head side was measured. |
 | V02 | 100-video run and scroll frame-time trace | Not run. |
+| ML03 Characters | first paint with 500 characters | Not measured. |
+| ML04 describe search | p95 under 400 ms on 30k vectors | 82 to 89 ms at normal load, 862 ms while other builds ran. The first search after the model unloads adds about 1.2 s. |
 
 ## Quality that the safe test data cannot show
 
 - **Character tag threshold (T02).** The WD tagger has no labels for the Pepper&Carrot characters, so no correct character prediction exists in the test data and character recall cannot be measured. The default stays at 85%.
 - **Character name suggestions (ML02).** Suggestions come from WD character tags on `solo` images. The test data has none, so suggestions are covered by tests only.
 - **Character clustering (ML02).** Pepper, Saffron and Coriander cluster cleanly. The three mentors share one cluster, and Carrot shares one with other animals. This looks like a limit of CCIP on painterly and non-human figures.
+- **Search by description (ML04).** CLIP ViT-B/32 int8 got 5/5 for "a cat" and "the sea", 4/5 for "a dragon" and "a forest path", but 1/5 to 2/5 for "a book", "a city at night" and "a witch flying on a broom" (the right picture is first). The int8 export drifts a little from fp32 (image cosine 0.93). No Python was available to compare embeddings against the reference implementation, so preprocessing was checked by matching the fp16 export to fp32 (cosine 1.0000 on all fixtures).
+- **Character suggestions in the demo (ML03).** To show a suggestion on screen, AI `solo` and character tags were written straight into the throwaway demo database, because the tagger does not know these characters.
 - **Discover "Off the beaten path" shelf (R04).** It never appears on a 163-item library. It is covered by tests and the eval script.
 
 ## Known gaps and edge cases
