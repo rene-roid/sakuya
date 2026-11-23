@@ -264,7 +264,7 @@ interface FeedStream {
   reasons: Map<number, { tag: string | null; related: number | null }>;
 }
 
-const KEPT_STREAMS = 32;
+const KEPT_STREAMS = 16;
 const streams = new Map<string, FeedStream>();
 
 /** Drops every cached snapshot and stream, so the next request rebuilds under the current tuning. */
