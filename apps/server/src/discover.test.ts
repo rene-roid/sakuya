@@ -573,7 +573,10 @@ describe('more like this', () => {
     return items;
   }
   const like = async (id: number) => json(fetch(`${BASE}/api/discover/like/${id}`));
-  const likeIds = async (id: number) => (await like(id)).items.map((m: { id: number }) => m.id);
+  const likeIds = async (id: number, limit?: number) =>
+    (await json(fetch(`${BASE}/api/discover/like/${id}${limit ? `?limit=${limit}` : ''}`))).items.map(
+      (m: { id: number }) => m.id,
+    );
 
   test('a rare shared tag outranks a common one, and sharing two beats sharing one', async () => {
     const it = seedLike();
@@ -606,6 +609,25 @@ describe('more like this', () => {
     await hide(it.both);
     await setMode('outdoors', 'mute');
     expect(await likeIds(it.source)).toEqual([it.rainOnly, it.umbrella2, it.umbrellaOnly]);
+  });
+
+  test('on a larger library the distinctive-tag shortcut ranks the same as the full walk', async () => {
+    resetLibrary();
+    // 100 "solo" fillers make solo common (idf 0.10); the two rare tags are distinctive (>= ln 20).
+    const fillers = Array.from({ length: 100 }, (_, i) => add(`filler${i}`, ['solo']));
+    const source = add('source', ['rare_a', 'rare_b', 'solo']);
+    const both = add('both', ['rare_a', 'rare_b']);
+    const aSolo = add('a-solo', ['rare_a', 'solo']);
+    const bSolo = add('b-solo', ['rare_b', 'solo']);
+    const b = add('b', ['rare_b']);
+    const a = add('a', ['rare_a']);
+    // 106 items: rare_a on 4 (ln 26.5 = 3.28), rare_b on 4, solo on 103 (ln 1.03 = 0.03).
+    // Equal idf for the two rare tags, so ties go to the newer item.
+    const top = [both, bSolo, aSolo, a, b];
+    // limit 3: settled from the rare tags' postings alone.
+    expect(await likeIds(source, 3)).toEqual(top.slice(0, 3));
+    // limit 60: fewer than 60 share a rare tag, so the solo-only fillers fill the rest.
+    expect(await likeIds(source, 60)).toEqual([...top, ...[...fillers].reverse().slice(0, 55)]);
   });
 
   test('an untagged or rating-only item has nothing to match, and a missing one is a 404', async () => {

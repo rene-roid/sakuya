@@ -374,6 +374,49 @@ async function metrics() {
     `R04 shelves (rediscover ${shelvesLib.shelfTuning.rediscoverLikedDays}/${shelvesLib.shelfTuning.rediscoverUnopenedDays} d), totals over ${libraries.length} libraries`,
     [...shelfRows].map(([k, r]) => [k, r]),
   );
+  // R05: more like this, distinctive-tag shortcut against the full idf sum.
+  const likeRows: [string, Row][] = [];
+  for (const [likeDistinctive, likeRerank] of [
+    [20, 3],
+    [20, 10],
+    [10, 3],
+    [10, 10],
+    [5, 5],
+  ]) {
+    const like: Row = {};
+    const fullMs: number[] = [];
+    const fastMs: number[] = [];
+    libraries.forEach((_, s) => {
+      load(s);
+      clearFeedback();
+      const ids = (sqlite.query(`SELECT id FROM media ORDER BY id`).all() as { id: number }[]).map((r) => r.id);
+      const sample = Array.from({ length: 40 }, (_, i) => ids[(i * 7919) % ids.length]);
+      for (const id of sample) {
+        discover.discoverTuning.likeShortcut = false;
+        let t = performance.now();
+        const full = discover.moreLikeThis(id).items.map((m) => m.id);
+        fullMs.push(performance.now() - t);
+        Object.assign(discover.discoverTuning, { likeShortcut: true, likeDistinctive, likeRerank });
+        t = performance.now();
+        const fast = discover.moreLikeThis(id).items.map((m) => m.id);
+        fastMs.push(performance.now() - t);
+        const n = sample.length * libraries.length;
+        like['overlap@60'] =
+          (like['overlap@60'] ?? 0) + fast.filter((x) => full.includes(x)).length / Math.max(full.length, 1) / n;
+        like['overlap@10'] =
+          (like['overlap@10'] ?? 0) + fast.slice(0, 10).filter((x) => full.slice(0, 10).includes(x)).length / 10 / n;
+        like['same order@10'] =
+          (like['same order@10'] ?? 0) + (fast.slice(0, 10).join() === full.slice(0, 10).join() ? 1 : 0) / n;
+      }
+    });
+    like['full p50 ms'] = quantile(fullMs, 0.5);
+    like['full p95 ms'] = quantile(fullMs, 0.95);
+    like['shortcut p50 ms'] = quantile(fastMs, 0.5);
+    like['shortcut p95 ms'] = quantile(fastMs, 0.95);
+    likeRows.push([`1 in ${likeDistinctive}, rerank x${likeRerank}`, like]);
+  }
+  Object.assign(discover.discoverTuning, defaults);
+  print('R05 more like this: shortcut against the full sum (40 items per library)', likeRows);
   fs.rmSync(root, { recursive: true, force: true });
 }
 

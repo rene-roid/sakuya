@@ -90,6 +90,12 @@ export const discoverTuning = {
    * more cards, and at the plain cap that held its share flat or even lowered it.
    */
   boostedReasonCap: 10,
+  /** More like this ranks on distinctive tags first (see rankSharedTags); false = the full sum. */
+  likeShortcut: true,
+  /** A tag on at most 1 in this many items counts as distinctive. */
+  likeDistinctive: 10,
+  /** Distinctive-tag leaders re-ranked with every shared tag, per result kept. */
+  likeRerank: 10,
 };
 
 const modeFactor = (mode: DiscoverTagMode | null) =>
@@ -731,52 +737,99 @@ const MORE_LIKE_LIMIT = 60;
  * "general" says nothing about content. Hidden items and anything carrying a muted tag are left
  * out the same as in the feed.
  */
+/**
+ * Media sharing tags with `sourceId`, best `limit` by summed idf, hidden and muted items left out.
+ *
+ * Summing every shared tag's postings is the definition, but on a booru-tagged library a few
+ * dozen tags ("solo", "simple background") sit on a large share of items, and an item carrying
+ * many of them turned each call into a walk over 100k+ rows: 1-2 s on 30k items. So candidates
+ * are ranked on the distinctive tags (on at most 1 in 10 items) and the leaders re-ranked with
+ * every shared tag; discover-eval.ts measures how close that stays to the full sum. The full walk
+ * still runs when too few items share a distinctive tag, e.g. a source tagged only "1girl".
+ */
+export function rankSharedTags(sourceId: number, tags: { tagId: number; idf: number }[], limit: number): number[] {
+  const distinctive = discoverTuning.likeShortcut ? tags.filter((t) => t.idf >= Math.log(discoverTuning.likeDistinctive)) : [];
+  const common = tags.filter((t) => !distinctive.includes(t));
+  const list = (n: number) => Array.from({ length: n }, () => '?').join(',');
+  const walk = (walked: typeof tags, take: number) =>
+    sqlite
+      .query(
+        `WITH shared(tag_id, idf) AS (VALUES ${walked.map(() => '(?, ?)').join(', ')})
+         SELECT o.media_id AS id, SUM(sh.idf) AS score
+         FROM shared sh JOIN media_tags o ON o.tag_id = sh.tag_id
+         WHERE o.media_id <> ?
+           AND NOT EXISTS (SELECT 1 FROM media_feedback f WHERE f.media_id = o.media_id AND f.kind = 'hidden')
+         GROUP BY o.media_id
+         HAVING NOT EXISTS (
+           SELECT 1 FROM tag_preferences p JOIN tags t ON t.name = p.tag JOIN media_tags x ON x.tag_id = t.id
+           WHERE p.mode = 'mute' AND x.media_id = o.media_id
+         )
+         ORDER BY score DESC, o.media_id DESC
+         LIMIT ?`,
+      )
+      .all(...walked.flatMap((t) => [t.tagId, t.idf]), sourceId, take) as { id: number; score: number }[];
+
+  if (distinctive.length) {
+    const leaders = walk(distinctive, limit * discoverTuning.likeRerank);
+    if (leaders.length >= limit) {
+      const extra = new Map<number, number>();
+      if (common.length) {
+        const idf = new Map(common.map((t) => [t.tagId, t.idf]));
+        const rows = sqlite
+          .query(
+            `SELECT media_id AS id, tag_id AS tagId FROM media_tags
+             WHERE media_id IN (${list(leaders.length)}) AND tag_id IN (${list(common.length)})`,
+          )
+          .all(...leaders.map((l) => l.id), ...common.map((t) => t.tagId)) as { id: number; tagId: number }[];
+        for (const r of rows) extra.set(r.id, (extra.get(r.id) ?? 0) + idf.get(r.tagId)!);
+      }
+      return leaders
+        .map((l) => ({ id: l.id, score: l.score + (extra.get(l.id) ?? 0) }))
+        .sort((a, b) => b.score - a.score || b.id - a.id)
+        .slice(0, limit)
+        .map((l) => l.id);
+    }
+  }
+  return walk(tags, limit).map((r) => r.id);
+}
+
 export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeResponse {
   const [source] = mediaInOrder([id], new Map());
   if (!source) throw notFound('Media');
   const total = (sqlite.query(`SELECT COUNT(*) AS c FROM media`).get() as { c: number }).c;
-  const rows = sqlite
+  const shared = sqlite
     .query(
-      `WITH shared AS (
-         SELECT mt.tag_id, t.name,
-                ln(${total}.0 / MAX((SELECT COUNT(*) FROM media_tags x WHERE x.tag_id = mt.tag_id), 1)) AS idf
-         FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
-         WHERE mt.media_id = ? AND t.category <> 'rating'
-       ),
-       muted AS (
-         SELECT mt.media_id FROM tag_preferences p
-         JOIN tags t ON t.name = p.tag
-         JOIN media_tags mt ON mt.tag_id = t.id
-         WHERE p.mode = 'mute'
-       ),
-       scored AS (
-         SELECT o.media_id AS id, SUM(sh.idf) AS score,
-                (SELECT sh2.name FROM shared sh2 JOIN media_tags o2 ON o2.tag_id = sh2.tag_id
-                 WHERE o2.media_id = o.media_id ORDER BY sh2.idf DESC, sh2.tag_id LIMIT 1) AS reason
-         FROM shared sh JOIN media_tags o ON o.tag_id = sh.tag_id
-         WHERE o.media_id <> ?
-         GROUP BY o.media_id
-       )
-       SELECT id, reason FROM scored
-       WHERE score > 0
-         AND id NOT IN (SELECT media_id FROM media_feedback WHERE kind = 'hidden')
-         AND id NOT IN (SELECT media_id FROM muted)
-       ORDER BY score DESC, id DESC
-       LIMIT ?`,
+      `SELECT mt.tag_id AS tagId, t.name AS name,
+              ln(${total}.0 / MAX((SELECT COUNT(*) FROM media_tags x WHERE x.tag_id = mt.tag_id), 1)) AS idf
+       FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+       WHERE mt.media_id = ? AND t.category <> 'rating'`,
     )
-    .all(id, id, limit) as { id: number; reason: string }[];
-  return {
-    source,
-    items: mediaInOrder(
-      rows.map((r) => r.id),
-      new Map(rows.map((r) => [r.id, { tag: r.reason, related: null }])),
-    ),
-  };
+    .all(id) as { tagId: number; name: string; idf: number }[];
+  const weighted = shared.filter((t) => t.idf > 0);
+  if (!weighted.length) return { source, items: [] };
+
+  const ids = rankSharedTags(id, weighted, limit);
+  const rarest = [...weighted].sort((a, b) => b.idf - a.idf || a.tagId - b.tagId);
+  const tagsOf = new Map<number, Set<number>>();
+  if (ids.length) {
+    const links = sqlite
+      .query(
+        `SELECT media_id AS mediaId, tag_id AS tagId FROM media_tags
+         WHERE media_id IN (${ids.map(() => '?').join(',')}) AND tag_id IN (${weighted.map(() => '?').join(',')})`,
+      )
+      .all(...ids, ...weighted.map((t) => t.tagId)) as { mediaId: number; tagId: number }[];
+    for (const l of links) tagsOf.set(l.mediaId, (tagsOf.get(l.mediaId) ?? new Set()).add(l.tagId));
+  }
+  const reasons = new Map(
+    ids.map((mid) => [mid, { tag: rarest.find((t) => tagsOf.get(mid)?.has(t.tagId))?.name ?? null, related: null }]),
+  );
+  return { source, items: mediaInOrder(ids, reasons) };
 }
 
 discoverRouter.get(
   '/api/discover/like/:id',
   wrap(async (req, res) => {
-    res.json(moreLikeThis(intParam(String(req.params.id))));
+    const { limit } = z.object({ limit: z.coerce.number().int().min(1).max(200).default(MORE_LIKE_LIMIT) }).parse(req.query);
+    res.json(moreLikeThis(intParam(String(req.params.id)), limit));
   }),
 );
