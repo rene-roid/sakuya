@@ -225,6 +225,9 @@ const insertVeto = sqlite.prepare(
 );
 const deleteVeto = sqlite.prepare('DELETE FROM media_tag_vetoes WHERE media_id = ? AND tag_id = ?');
 const vetoedIds = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
+const clearKeptScores = sqlite.prepare(
+  `UPDATE media_tags SET confidence = NULL WHERE media_id = ? AND source IN ('meta', 'character') AND confidence IS NOT NULL`,
+);
 
 /**
  * Take a tag off one item by hand. Removing a tag something else put there (the AI, a sidecar, an
@@ -306,6 +309,8 @@ export function applyPredictedTags(mediaId: number, predicted: PredictedTag[]): 
     db.delete(schema.mediaTags)
       .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
       .run();
+    // The AI's scores kept on sidecar and character links are re-written below for what it still predicts.
+    clearKeptScores.run(mediaId);
 
     for (const tag of predicted) {
       // Checked by id after the sibling lookup: a veto on a merged tag covers its aliases too.

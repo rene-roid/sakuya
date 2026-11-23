@@ -70,6 +70,27 @@ export function linkTag(mediaId: number, tagId: number, source: TagSource, confi
   linkStmts[source].run(mediaId, tagId, confidence);
 }
 
+/**
+ * Take the `source` links matching `where` off. One that still carries the AI's score goes back
+ * to the AI rather than away. Returns the pairs that changed.
+ */
+export function releaseLinks(
+  source: 'meta' | 'character',
+  where: string,
+  ...params: number[]
+): { media_id: number; tag_id: number }[] {
+  const handedBack = sqlite
+    .query(
+      `UPDATE media_tags SET source = 'ai' WHERE source = '${source}' AND confidence IS NOT NULL AND (${where})
+       RETURNING media_id, tag_id`,
+    )
+    .all(...params) as { media_id: number; tag_id: number }[];
+  const dropped = sqlite
+    .query(`DELETE FROM media_tags WHERE source = '${source}' AND (${where}) RETURNING media_id, tag_id`)
+    .all(...params) as { media_id: number; tag_id: number }[];
+  return [...handedBack, ...dropped];
+}
+
 // Both tables are tiny and only change through this module, so whether either has any rows is
 // kept here and every tag write skips the lookups while the user has no relations at all.
 let siblingsExist = false;

@@ -16,7 +16,7 @@ const { DEFAULT_CCIP_PARAMS } = await import('./services/characterModels');
 const { clusterDetections, clusterParams, saveDetections, enqueueCharacterJob, characterCropDirFor } =
   await import('./services/characters');
 const { removeMediaRows } = await import('./services/mediaRemoval');
-const { upsertTag, refreshUsageCounts } = await import('./services/tagger');
+const { upsertTag, refreshUsageCounts, applyPredictedTags } = await import('./services/tagger');
 
 const DIMS = 768;
 const params = clusterParams(DEFAULT_CCIP_PARAMS);
@@ -598,5 +598,35 @@ describe('character links and the other tag writers', () => {
     expect(await json(fetch(`${BASE}/api/characters/${ann.id}`))).toMatchObject({ name: 'ann', mediaCount: 4 });
     expect(linksOf('ann').map((l) => l.media_id)).toEqual([...annMedia, ...anneMedia]);
     expect(linksOf('anne')).toEqual([]);
+  });
+
+  test('a tag the AI predicted on its own goes back to the AI when the character lets go of it', async () => {
+    const media = [await addMedia(), await addMedia()];
+    tagMedia(media[0], 'hatsune_miku', 'character', 'ai');
+    const { id, dets } = await namedCluster('hatsune_miku', 1500, media);
+    expect(linksWithScore('hatsune_miku')).toEqual([
+      { media_id: media[0], source: 'character', confidence: 0.9 },
+      { media_id: media[1], source: 'character', confidence: null },
+    ]);
+
+    expect((await post(`/api/character-detections/${dets[0]}/reject`)).status).toBe(200);
+    expect(linksWithScore('hatsune_miku')).toEqual([
+      { media_id: media[0], source: 'ai', confidence: 0.9 },
+      { media_id: media[1], source: 'character', confidence: null },
+    ]);
+
+    await post(`/api/characters/${id}/name`, { name: 'miku_hatsune' });
+    expect(linksWithScore('hatsune_miku')).toEqual([{ media_id: media[0], source: 'ai', confidence: 0.9 }]);
+  });
+
+  test('a tag the AI stopped predicting goes away with the character instead of back to the AI', async () => {
+    const media = [await addMedia(), await addMedia()];
+    applyPredictedTags(media[0], [{ name: 'kasane_teto', category: 'character', confidence: 0.8 }]);
+    const { dets } = await namedCluster('kasane_teto', 1600, media);
+    expect(linksWithScore('kasane_teto')[0]).toEqual({ media_id: media[0], source: 'character', confidence: 0.8 });
+
+    applyPredictedTags(media[0], []);
+    expect((await post(`/api/character-detections/${dets[0]}/reject`)).status).toBe(200);
+    expect(linksOf('kasane_teto')).toEqual([{ media_id: media[1], source: 'character' }]);
   });
 });
