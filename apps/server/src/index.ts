@@ -18,9 +18,11 @@ import { downloaderRouter } from './routes/downloader';
 import { savedSearchesRouter } from './routes/savedSearches';
 import { boardsRouter } from './routes/boards';
 import { backupsRouter } from './routes/backups';
+import { trashRouter } from './routes/trash';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { scheduleAll } from './services/jobScheduler';
+import { startTrashPurge } from './services/trash';
 
 // Set once here, before any thumbnail or tagger preprocessing can touch it — sharp is a singleton
 // and this is a runtime setter.
@@ -62,6 +64,7 @@ app.use(downloaderRouter);
 app.use(savedSearchesRouter);
 app.use(boardsRouter);
 app.use(backupsRouter);
+app.use(trashRouter);
 
 type RouteError = { status?: number; name?: string; message?: string; issues?: unknown } | null | undefined;
 
@@ -80,4 +83,5 @@ app.listen(port, host, () => {
   const limits = describeLimits(LIMITS_REPORT);
   if (limits) console.log(limits);
   scheduleAll();
+  startTrashPurge();
 });

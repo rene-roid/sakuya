@@ -239,6 +239,8 @@ export interface Settings {
   ui_style: UiStyle;
   ui_style_chosen: string;
   dashboard_hero: string;
+  /** How many database backups to keep; older ones are deleted after each backup. */
+  backup_keep: string;
 }
 
 export type UiStyle = 'glass' | 'classic';
@@ -307,6 +309,43 @@ export interface BackupsPayload {
   backups: BackupFile[];
   keep: number;
   dir: string;
+}
+
+/** A deleted media item waiting in <dataDir>/trash until it is restored or purged. */
+export interface TrashItem {
+  id: number;
+  mediaId: number;
+  libraryId: number;
+  /** Null when the library was deleted after the item was trashed. */
+  libraryName: string | null;
+  filename: string;
+  type: MediaType;
+  sizeBytes: number;
+  originalPath: string;
+  trashedAt: number;
+  /** When the automatic purge removes it for good. */
+  expiresAt: number;
+}
+
+export interface TrashPayload {
+  items: TrashItem[];
+  count: number;
+  totalBytes: number;
+  retentionDays: number;
+}
+
+export interface TrashRestoreResult {
+  ok: true;
+  mediaId: number;
+  path: string;
+  /** True when a file already sat at the original path, so the item came back under a new name. */
+  renamed: boolean;
+}
+
+export interface TrashRemoveResult {
+  ok: true;
+  removed: number;
+  freedBytes: number;
 }
 
 export interface StorageInfo {

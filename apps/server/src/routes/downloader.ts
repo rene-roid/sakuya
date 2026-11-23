@@ -204,7 +204,7 @@ downloaderRouter.delete(
   '/api/downloader/items/:id',
   wrap(async (req, res) => {
     const body = removeBodySchema.parse(req.body ?? {});
-    removeItem(intParam(req.params.id), body);
+    await removeItem(intParam(req.params.id), body);
     res.json({ ok: true });
   }),
 );
