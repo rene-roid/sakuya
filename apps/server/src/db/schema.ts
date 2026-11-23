@@ -232,3 +232,12 @@ export const characterScans = sqliteTable('character_scans', {
   scannedAt: integer('scanned_at').notNull(),
   detections: integer('detections').notNull(),
 });
+
+// One CLIP image embedding per media item, for search by description (services/semantic.ts).
+export const mediaEmbeddings = sqliteTable('media_embeddings', {
+  mediaId: integer('media_id').primaryKey(),
+  model: text('model').notNull(),
+  // 512 little-endian float16 values (lib/vectors.ts).
+  embedding: blob('embedding', { mode: 'buffer' }).notNull(),
+  createdAt: integer('created_at').notNull(),
+});

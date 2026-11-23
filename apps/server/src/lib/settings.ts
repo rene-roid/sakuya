@@ -32,6 +32,8 @@ export const DEFAULTS: Record<string, string> = {
   backup_keep: '7',
   // Off until switched on: the job downloads ~195 MB of models and is slow on small CPUs.
   character_detection_enabled: '0',
+  // Off until switched on: search by description downloads ~155 MB and embeds every file.
+  semantic_search_enabled: '0',
 };
 
 export function getSetting(key: string): string {
@@ -100,4 +102,8 @@ export function backupKeep(): number {
 
 export function characterDetectionEnabled(): boolean {
   return getSetting('character_detection_enabled') === '1';
+}
+
+export function semanticSearchEnabled(): boolean {
+  return getSetting('semantic_search_enabled') === '1';
 }

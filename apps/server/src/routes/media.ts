@@ -17,6 +17,7 @@ import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
 import { phashBands } from '../lib/phashBands';
+import { describeSearch, type Scored } from '../services/semantic';
 import {
   MEDIA_TYPES,
   TAG_CATEGORIES,
@@ -39,6 +40,8 @@ const filterSchema = z.object({
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
   q: z.union([z.string(), z.array(z.string())]).optional(),
+  /** Search by description: ranks by image-embedding similarity instead of `sort`. */
+  describe: z.string().max(500).optional(),
   sort: z.enum(['recent', 'name', 'size', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
   seed: z.coerce.number().int().default(1),
@@ -152,10 +155,41 @@ function sortDir(query: MediaFilterQuery): 'asc' | 'desc' {
   return query.dir ?? (query.sort === 'name' ? 'asc' : 'desc');
 }
 
+/** The page of a describe ranking after `cursor`, which holds the last item's [score, id]. */
+function rankedPage(ranked: Scored[], cursor: string | undefined, limit: number): Scored[] {
+  let start = 0;
+  if (cursor) {
+    const [score, id] = decodeCursor(cursor);
+    if (typeof score !== 'number' || typeof id !== 'number') throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+    start = ranked.findIndex((r) => r.score < score || (r.score === score && r.id < id));
+    if (start < 0) start = ranked.length;
+  }
+  return ranked.slice(start, start + limit);
+}
+
 mediaRouter.get(
   '/api/media',
   wrap(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
+    const describe = query.describe?.trim();
+    if (describe) {
+      const { info, ranked } = await describeSearch(describe, buildMediaFilter(query));
+      const page = rankedPage(ranked, query.cursor, query.limit);
+      const rows = page.length
+        ? (sqlite.query(`${MEDIA_SELECT} WHERE m.id IN (${page.map(() => '?').join(',')})`).all(
+            ...page.map((r) => r.id),
+          ) as MediaSqlRow[])
+        : [];
+      const byId = new Map(rows.map((r) => [r.id, rowToMedia(r)]));
+      const last = page[page.length - 1];
+      const body: MediaListResponse = {
+        items: page.map((r) => byId.get(r.id)).filter((m) => m !== undefined),
+        nextCursor: page.length === query.limit && last !== ranked[ranked.length - 1] ? encodeCursor([last.score, last.id]) : null,
+        total: query.cursor ? null : ranked.length,
+        semantic: info,
+      };
+      return res.json(body);
+    }
     const dir = sortDir(query);
     const { conds, params } = buildMediaFilter(query);
     const keyExpr = sortKeyExpr(query);
@@ -209,6 +243,11 @@ mediaRouter.get(
   wrap(async (req, res) => {
     const query = filterSchema.parse(req.query);
     const { conds, params } = buildMediaFilter(query);
+    const describe = query.describe?.trim();
+    if (describe) {
+      const ids = (await describeSearch(describe, { conds, params })).ranked.map((r) => r.id);
+      return res.json({ ids, total: ids.length } satisfies MediaIdsResponse);
+    }
     const keyExpr = sortKeyExpr(query);
     const dir = sortDir(query);
     const rows = sqlite

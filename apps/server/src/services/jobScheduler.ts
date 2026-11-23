@@ -7,9 +7,11 @@ import { enqueueCleanupJob } from './cleanup';
 import { enqueueBackupJob, listBackups } from './backup';
 import { runTranscodeJob } from './transcoder';
 import { enqueueJob, type JobHandle } from './jobQueue';
-import { aiTaggingEnabled, characterDetectionEnabled, videoTranscodeEnabled } from '../lib/settings';
+import { aiTaggingEnabled, characterDetectionEnabled, semanticSearchEnabled, videoTranscodeEnabled } from '../lib/settings';
 import { runCharacterJob, unscannedMediaIds } from './characters';
 import { characterModelsReady } from './characterModels';
+import { runEmbeddingJob, unembeddedMediaIds } from './semantic';
+import { clipModelsReady } from './semanticModels';
 import { mediaIdsWhere } from '../lib/mediaByIds';
 
 const timers = new Map<string, ReturnType<typeof setInterval>>();
@@ -72,7 +74,7 @@ function libraryName(libraryId: number): string {
  * at a time, so the next one starts after the current one has marked its ids done.
  */
 function enqueueCatchUp(
-  jobType: 'tag' | 'hash' | 'transcode' | 'characters',
+  jobType: 'tag' | 'hash' | 'transcode' | 'characters' | 'embeddings',
   label: string,
   libraryId: number,
   pending: () => number[],
@@ -109,6 +111,11 @@ function dispatchCharactersForLibrary(libraryId: number): void {
   enqueueCatchUp('characters', 'Find characters', libraryId, () => unscannedMediaIds(libraryId), runCharacterJob);
 }
 
+function dispatchEmbeddingsForLibrary(libraryId: number): void {
+  if (!semanticSearchEnabled() || !clipModelsReady()) return;
+  enqueueCatchUp('embeddings', 'Index for search', libraryId, () => unembeddedMediaIds(libraryId), runEmbeddingJob);
+}
+
 function dispatchForLibrary(jobType: ScheduleJobType, libraryId: number): void {
   if (activeJobForLibrary(GLOBAL_TYPES.includes(jobType) ? null : libraryId, jobType)) return;
   try {
@@ -135,6 +142,7 @@ export function dispatchAfterScan(libraryId: number): void {
 
   dispatchTranscodeForLibrary(libraryId);
   dispatchCharactersForLibrary(libraryId);
+  dispatchEmbeddingsForLibrary(libraryId);
 }
 
 /**
