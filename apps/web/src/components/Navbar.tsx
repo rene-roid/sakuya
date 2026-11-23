@@ -139,7 +139,8 @@ function LockButton() {
 
 /**
  * Bottom tab bar that carries the navigation on phones, where the top bar has no room for it.
- * Sized so all five labels fit whole down to a 360px screen, and below that at a smaller size.
+ * Sized so five labels fit whole down to a 360px screen, and below that at a smaller size; six (with
+ * Discover on) get the smaller size throughout.
  */
 function MobileDock({ items }: { items: typeof NAV_ITEMS }) {
   return (
@@ -152,7 +153,9 @@ function MobileDock({ items }: { items: typeof NAV_ITEMS }) {
           key={to}
           to={to}
           className={({ isActive }) =>
-            `flex min-w-0 flex-col items-center justify-center gap-[5px] px-0.5 text-[10.5px] font-semibold transition-colors max-[359px]:px-0 max-[359px]:text-[10px] max-[359px]:tracking-tight ${
+            `flex min-w-0 flex-col items-center justify-center gap-[5px] px-0.5 font-semibold transition-colors max-[359px]:px-0 max-[359px]:text-[10px] max-[359px]:tracking-tight ${
+              items.length > 5 ? 'text-[10px] tracking-tight' : 'text-[10.5px]'
+            } ${
               isActive ? 'text-zinc-100 [&_svg]:text-accent' : 'text-zinc-500 glass:hover:text-zinc-300'
             }`
           }
