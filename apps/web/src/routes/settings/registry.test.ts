@@ -5,6 +5,8 @@ mock.module('../../lib/releases', () => ({ releases: [], compareVersions: () => 
 
 const { ALL_SETTINGS_KEYS, KEYS_SET_ELSEWHERE, SECTIONS, SETTINGS, entryKeys, resolveSection, settingHref } =
   await import('./registry');
+const { highlightSegments, queryTerms, searchSettings } = await import('./search');
+const ids = (query: string) => searchSettings(query).map((s) => s.id);
 
 test('every Settings key appears in exactly one registry entry, or is named as set elsewhere', () => {
   const owners = new Map<string, string[]>();
@@ -73,4 +75,58 @@ test('settingHref links a setting by its section and id', () => {
   expect(settingHref('thumbnail-cache')).toBe('/settings?tab=processing#thumbnail-cache');
   expect(settingHref('remember-volume')).toBe('/settings?tab=playback#remember-volume');
   expect(() => settingHref('no-such-setting')).toThrow('Unknown setting: no-such-setting');
+});
+
+test('search finds settings by label, description and keywords', () => {
+  expect(ids('gif')).toEqual(['gifs-as-videos', 'reclassify-gifs']);
+  expect(ids('volume')).toEqual(['remember-volume']);
+  expect(ids('hevc')).toEqual(['video-transcoding', 'transcode-videos']);
+});
+
+test('every word must match, in any field and any case', () => {
+  expect(ids('video hevc')).toEqual(['video-transcoding', 'transcode-videos']);
+  expect(ids('  VIDEO   Hevc ')).toEqual(['video-transcoding', 'transcode-videos']);
+  expect(ids('thumbnail clear')).toEqual(['clear-thumbnails']);
+  expect(ids('hevc volume')).toEqual([]);
+});
+
+test('section and group names match too', () => {
+  expect(ids('playback')).toEqual(['continue-watching', 'remember-volume', 'remember-mute']);
+  expect(ids('usage')).toEqual(['media-size', 'database-size', 'thumbnail-size']);
+});
+
+test('thumb finds the thumbnail rows under Media processing and the cleanup row under Storage', () => {
+  const hits = searchSettings('thumb');
+  expect(hits.filter((h) => h.section === 'processing').map((h) => h.id)).toEqual([
+    'thumbnail-cache',
+    'regenerate-thumbnails',
+    'clear-thumbnails',
+  ]);
+  expect(hits.filter((h) => h.section === 'storage').map((h) => h.id)).toEqual([
+    'home-folder',
+    'thumbnail-size',
+    'cleanup-orphans',
+  ]);
+});
+
+test('an empty or unmatched query finds nothing', () => {
+  expect(ids('')).toEqual([]);
+  expect(ids('   ')).toEqual([]);
+  expect(ids('zzz')).toEqual([]);
+  expect(queryTerms(' Video  HEVC ')).toEqual(['video', 'hevc']);
+});
+
+test('highlightSegments marks every occurrence of every term, merging overlaps', () => {
+  expect(highlightSegments('Video transcoding', ['video'])).toEqual([
+    { text: 'Video', match: true },
+    { text: ' transcoding', match: false },
+  ]);
+  expect(highlightSegments('Transcode all videos', ['video', 'trans'])).toEqual([
+    { text: 'Trans', match: true },
+    { text: 'code all ', match: false },
+    { text: 'video', match: true },
+    { text: 's', match: false },
+  ]);
+  expect(highlightSegments('aaa', ['aa', 'a'])).toEqual([{ text: 'aaa', match: true }]);
+  expect(highlightSegments('No match', ['zzz'])).toEqual([{ text: 'No match', match: false }]);
 });

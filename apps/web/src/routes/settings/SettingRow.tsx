@@ -2,6 +2,25 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { settingHref, type SettingEntry } from './registry';
 import { EntryControl } from './controls';
+import { highlightSegments } from './search';
+
+/** Text with every query term wrapped in <mark>. */
+export function Highlight({ text, terms }: { text: string; terms: string[] }) {
+  if (!terms.length) return <>{text}</>;
+  return (
+    <>
+      {highlightSegments(text, terms).map((seg, i) =>
+        seg.match ? (
+          <mark key={i} className="rounded-[2px] bg-accent/30 text-inherit">
+            {seg.text}
+          </mark>
+        ) : (
+          seg.text
+        ),
+      )}
+    </>
+  );
+}
 
 /** One bordered panel holding a group's rows, separated by dividers. */
 export function SettingsPanel({ children }: { children: ReactNode }) {
@@ -22,13 +41,28 @@ export function GroupHeading({ children }: { children: ReactNode }) {
  * brings its own cards. In search results it shrinks to a link into its section, so a whole library
  * manager doesn't land in the result list.
  */
-export function SettingRow({ entry, flash, inResults }: { entry: SettingEntry; flash?: boolean; inResults?: boolean }) {
+export function SettingRow({
+  entry,
+  terms = [],
+  flash,
+  inResults,
+}: {
+  entry: SettingEntry;
+  /** Search words to highlight in the label and description. */
+  terms?: string[];
+  flash?: boolean;
+  inResults?: boolean;
+}) {
   const block = entry.kind === 'custom' && entry.block;
   const Meta = entry.Meta;
   const text = (
     <div className="min-w-0">
-      <div className="text-[13px] font-semibold text-zinc-100">{entry.label}</div>
-      <div className="mt-px max-w-[440px] text-[12px] leading-snug text-zinc-500">{entry.description}</div>
+      <div className="text-[13px] font-semibold text-zinc-100">
+        <Highlight text={entry.label} terms={terms} />
+      </div>
+      <div className="mt-px max-w-[440px] text-[12px] leading-snug text-zinc-500">
+        <Highlight text={entry.description} terms={terms} />
+      </div>
       {Meta && (
         <div className="mt-1 text-[11.5px] text-zinc-400">
           <Meta />
