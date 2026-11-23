@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import sharp from 'sharp';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
-import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY, LIMITS } from '../lib/config';
+import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY } from '../lib/config';
 import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
@@ -11,9 +11,8 @@ import { bumpTasteVersion } from '../lib/tasteVersion';
 import { phashColumns } from '../lib/phashBands';
 import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
 import { downloadFile } from '../lib/download';
+import { createModelSession } from '../lib/modelSession';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
-// Type-only: the native module itself is imported lazily, when a tag actually runs.
-import type { InferenceSession } from 'onnxruntime-node';
 
 const INPUT_SIZE = 448;
 
@@ -22,52 +21,11 @@ export interface LabelEntry {
   category: TagCategory;
 }
 
-let session: Promise<InferenceSession> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
-// The loaded model holds ~800 MB of native memory. Tagging comes in bursts (after a scan, an upload),
-// so free it once nothing has used it for a while; the next tag reloads it in a second or two.
-const SESSION_IDLE_MS = 60_000;
-let sessionIdleTimer: ReturnType<typeof setTimeout> | null = null;
-let inFlight = 0;
-
-/**
- * glibc keeps freed memory in its arenas instead of returning it to the OS: after release() the
- * process still held ~620 of the model's ~790 MB (measured). malloc_trim hands it back. No-op where
- * there is no glibc (macOS, Windows, musl).
- */
-async function trimNativeHeap(): Promise<void> {
-  if (process.platform !== 'linux') return;
-  try {
-    const { dlopen, FFIType } = await import('bun:ffi');
-    const libc = dlopen('libc.so.6', { malloc_trim: { args: [FFIType.u64], returns: FFIType.i32 } });
-    libc.symbols.malloc_trim(0);
-    libc.close();
-  } catch {
-    // Not glibc.
-  }
-}
-
-/** Free the model's native memory now. Dropping the reference alone leaves it to a GC finalizer. */
-function releaseSession(): void {
-  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
-  sessionIdleTimer = null;
-  const old = session;
-  session = null;
-  old
-    ?.then((loaded) => loaded.release())
-    .then(trimNativeHeap)
-    .catch((err: unknown) => console.error('tagger: failed to release model session:', err));
-}
-
-function scheduleSessionRelease(): void {
-  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
-  sessionIdleTimer = setTimeout(() => {
-    if (inFlight === 0) releaseSession();
-  }, SESSION_IDLE_MS);
-  sessionIdleTimer.unref();
-}
+// The loaded model holds ~800 MB of native memory, freed 60 s after the last tag.
+const model = createModelSession(MODEL_PATH, { label: 'tagger' });
 
 export function modelReady(): boolean {
   return fs.existsSync(MODEL_PATH) && fs.existsSync(MODEL_TAGS_PATH);
@@ -113,12 +71,12 @@ export function taggerStatus(): TaggerStatus {
 /** Switch the active tagger model. Clears cached model files/session so the new one must be downloaded. */
 export function selectModel(modelId: string): void {
   if (downloading) throw new Error('Cannot switch models while a download is in progress');
-  if (inFlight > 0) throw new Error('Cannot switch models while images are being tagged');
+  if (model.inFlight() > 0) throw new Error('Cannot switch models while images are being tagged');
   if (!MODEL_REGISTRY.some((m) => m.id === modelId)) throw new Error(`Unknown model: ${modelId}`);
   if (selectedModelId() === modelId) return;
   setSetting('tagger_model', modelId);
   // Model files are shared paths; a switch invalidates the currently-downloaded model.
-  releaseSession();
+  model.release();
   labels = null;
   fs.rmSync(MODEL_PATH, { force: true });
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
@@ -141,32 +99,6 @@ export function parseLabels(csv: string): LabelEntry[] {
 function loadLabels(): LabelEntry[] {
   labels ??= parseLabels(fs.readFileSync(MODEL_TAGS_PATH, 'utf8'));
   return labels;
-}
-
-/** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
-function getSession(): Promise<InferenceSession> {
-  if (session) return session;
-  const load = loadSession();
-  session = load;
-  // A failed load must not stick, or every later tag would get the same rejection.
-  load.catch(() => {
-    if (session === load) session = null;
-  });
-  return load;
-}
-
-async function loadSession() {
-  const ort = await import('onnxruntime-node');
-  return ort.InferenceSession.create(MODEL_PATH, {
-    executionProviders: ['cpu'],
-    graphOptimizationLevel: 'all',
-    // Cap threads so bulk tagging can't monopolize every core and starve
-    // request handling (thumbnail/video serving) or other host services.
-    // Tunable via SAKUYA_MAX_CPUS / SAKUYA_ONNX_THREADS; the defaults are the 2/1 this used
-    // to hardcode.
-    intraOpNumThreads: LIMITS.onnxIntraOpThreads,
-    interOpNumThreads: LIMITS.onnxInterOpThreads,
-  });
 }
 
 /** Pad to square (white), resize to 448x448, RGB→BGR, float32 0-255, NHWC. */
@@ -197,18 +129,12 @@ export interface PredictedTag {
 export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
   if (!modelReady()) throw new Error('Tagger model not downloaded');
   const ort = await import('onnxruntime-node');
-  let probs: Float32Array;
-  inFlight++;
-  try {
-    const sess = await getSession();
+  const probs = await model.use(async (sess) => {
     const input = await preprocess(imagePath);
     const tensor = new ort.Tensor('float32', input, [1, INPUT_SIZE, INPUT_SIZE, 3]);
     const results = await sess.run({ [sess.inputNames[0]]: tensor });
-    probs = results[sess.outputNames[0]].data as Float32Array;
-  } finally {
-    inFlight--;
-    scheduleSessionRelease();
-  }
+    return results[sess.outputNames[0]].data as Float32Array;
+  });
   return selectTags(probs, loadLabels(), confidenceThreshold());
 }
 
@@ -388,7 +314,7 @@ export function enqueueModelDownload() {
         }
       });
       labels = null;
-      releaseSession();
+      model.release();
       return 'Model downloaded and ready.';
     } finally {
       downloading = false;
