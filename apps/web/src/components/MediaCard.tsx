@@ -1,10 +1,12 @@
 import { memo, type MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { HeartButton } from './HeartButton';
 import { TagName, useTagLabelText } from './TagName';
+import { DiscoverCardMenu } from './DiscoverCardMenu';
 
 function VideoBadge() {
   return (
@@ -34,16 +36,22 @@ function DurationBadge({ seconds }: { seconds: number | null }) {
  */
 function ReasonBadge({ tag, related }: { tag: string; related: boolean }) {
   const label = useTagLabelText(tag);
+  const navigate = useNavigate();
   return (
-    <div
-      title={related ? `Related to tags you like: "${label}"` : `Recommended because you like "${label}"`}
-      className={`absolute bottom-1.5 left-1.5 flex max-w-[85%] rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
+    <button
+      type="button"
+      title={`${related ? `Related to tags you like: "${label}"` : `Recommended because you like "${label}"`}. Click to browse it.`}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigate(`/explore?tags=${encodeURIComponent(tag)}`);
+      }}
+      className={`absolute bottom-1.5 left-1.5 flex max-w-[85%] cursor-pointer rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur hover:brightness-110 ${
         related ? 'bg-teal-500/85' : 'bg-accent/85'
       }`}
     >
       {related && <span className="mr-1 flex-none">~</span>}
       <TagName tag={tag} />
-    </div>
+    </button>
   );
 }
 
@@ -53,6 +61,7 @@ export const MediaCard = memo(function MediaCard({
   onActivate,
   selectMode,
   selected,
+  discoverMenu,
 }: {
   item: Media;
   index: number;
@@ -60,6 +69,8 @@ export const MediaCard = memo(function MediaCard({
   /** In select mode a click toggles the card instead of opening the viewer. */
   selectMode?: boolean;
   selected?: boolean;
+  /** Discover's "⋯" menu: Not interested, Less of, More like this. */
+  discoverMenu?: boolean;
 }) {
   return (
     <div className="cursor-pointer select-none" onClick={(e) => onActivate(index, e)}>
@@ -89,12 +100,11 @@ export const MediaCard = memo(function MediaCard({
             </div>
           </>
         ) : (
-          <div
-            className={`absolute right-1.5 top-1.5 transition-opacity ${
-              item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            }`}
-          >
-            <HeartButton mediaId={item.id} liked={item.liked} />
+          <div className="absolute right-1.5 top-1.5 flex items-center gap-1.5">
+            {discoverMenu && <DiscoverCardMenu item={item} />}
+            <div className={`transition-opacity ${item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <HeartButton mediaId={item.id} liked={item.liked} />
+            </div>
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
