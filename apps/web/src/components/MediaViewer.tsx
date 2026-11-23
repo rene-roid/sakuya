@@ -761,7 +761,10 @@ function TagPill({
   return (
     <div
       title={`${tag.name} · ${tag.confidence != null ? `${tag.source} ${(tag.confidence * 100).toFixed(0)}%` : tag.source}`}
-      className={`relative flex min-w-0 max-w-full items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)}`}
+      className={`relative flex min-w-0 max-w-full items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)} ${
+        // Added by an implication, so it goes away with the tag that implies it.
+        tag.source === 'implied' ? 'outline-1 -outline-offset-1 outline-dashed outline-white/30' : ''
+      }`}
     >
       <span className="flex min-w-0 cursor-pointer hover:underline" onClick={onOpen}>
         <TagName tag={tag} />
