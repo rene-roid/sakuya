@@ -106,6 +106,7 @@ writeJson('tweet.png.json', {
 await writeImage('generic.png');
 writeJson('generic.json', {
   tags: ['Blue Sky', 'clouds'],
+  artist: 'Jane Doe',
   post_url: 'https://example.org/p/9',
   unknown: { nested: [1, 2, 3] },
   width: 8,
@@ -170,9 +171,9 @@ describe('gallery-dl sidecars', () => {
     expect(detail.sourceUrl).toBe('https://x.com/davidrevoy/status/111');
   });
 
-  test('a generic tags array maps to general tags, unknown fields are ignored', async () => {
+  test('a generic tags array maps to general tags, an artist string is one name, unknown fields are ignored', async () => {
     const detail = await itemByName('generic.png');
-    expect(tagsOf(detail)).toEqual(['general:blue_sky:meta', 'general:clouds:meta']);
+    expect(tagsOf(detail)).toEqual(['artist:jane_doe:meta', 'general:blue_sky:meta', 'general:clouds:meta']);
     expect(detail.sourceUrl).toBe('https://example.org/p/9');
   });
 
@@ -207,6 +208,7 @@ describe('gallery-dl sidecars', () => {
     expect(artists.map((t: { name: string; count: number }) => [t.name, t.count])).toEqual([
       ['david_revoy', 3],
       ['davidrevoy', 1],
+      ['jane_doe', 1],
       ['revoy', 1],
     ]);
   });

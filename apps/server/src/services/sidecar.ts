@@ -102,7 +102,16 @@ export function parseSidecar(data: unknown): SidecarMetadata | null {
 
   const e621 = isObject(data.tags) ? data.tags : null;
   const fields: [TagCategory, unknown[]][] = [
-    ['artist', [data.tag_string_artist, data.tags_artist, e621?.artist, data.artist]],
+    // A bare `artist` string is one name ("David Revoy"), not a space-separated tag string.
+    [
+      'artist',
+      [
+        data.tag_string_artist,
+        data.tags_artist,
+        e621?.artist,
+        typeof data.artist === 'string' ? [data.artist] : data.artist,
+      ],
+    ],
     ['copyright', [data.tag_string_copyright, data.tags_copyright, e621?.copyright]],
     ['character', [data.tag_string_character, data.tags_character, e621?.character]],
     ['general', [data.tag_string_general, data.tags_general, e621?.general, e621?.species]],
