@@ -1,4 +1,4 @@
-import { recomputeImplied } from './tagRelations';
+import { linkTag, recomputeImplied } from './tagRelations';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -196,9 +196,10 @@ function pruneEmptyCharacters(): void {
 }
 
 /**
- * Make a named character's tag sit on exactly the media its accepted detections are on. Links it
- * writes carry source 'character', which retagging leaves alone; an AI link for the same tag is
- * taken over, so a retag that stops predicting it can't remove it.
+ * Make a named character's tag sit on exactly the media its accepted detections are on, except
+ * where the user took it off by hand. Links it writes carry source 'character', which retagging
+ * leaves alone; an AI link for the same tag is taken over, so a retag that stops predicting it
+ * can't remove it.
  */
 function syncCharacterLinks(characterIds: number[]): void {
   const tags: number[] = [];
@@ -210,21 +211,15 @@ function syncCharacterLinks(characterIds: number[]): void {
       } | null;
       if (!row?.tag_id) continue;
       tags.push(row.tag_id);
+      const members = `SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected'`;
       for (const r of sqlite
-        .query(
-          `SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'
-           UNION SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected'`,
-        )
-        .all(row.tag_id, id) as { media_id: number }[])
+        .query(`SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'`)
+        .all(row.tag_id) as { media_id: number }[])
         touchedMedia.add(r.media_id);
-      sqlite
-        .query(
-          `INSERT INTO media_tags (media_id, tag_id, confidence, source)
-           SELECT DISTINCT media_id, ?, NULL, 'character' FROM character_detections
-           WHERE character_id = ? AND assignment != 'rejected'
-           ON CONFLICT (media_id, tag_id) DO UPDATE SET source = 'character' WHERE media_tags.source IN ('ai', 'implied')`,
-        )
-        .run(row.tag_id, id);
+      for (const { media_id } of sqlite.query(members).all(id) as { media_id: number }[]) {
+        touchedMedia.add(media_id);
+        linkTag(media_id, row.tag_id, 'character');
+      }
       sqlite
         .query(
           `DELETE FROM media_tags WHERE tag_id = ? AND source = 'character' AND media_id NOT IN

@@ -534,3 +534,44 @@ describe('characters tab API', () => {
     expect((await nameOf(dets.mira[0], ids.mira0)).characterId).toBe(ids.miraChar);
   });
 });
+
+describe('character links and the other tag writers', () => {
+  async function namedCluster(name: string, seed: number, media: number[]): Promise<{ id: number; dets: number[] }> {
+    const base = randomUnit(seed);
+    const dets = media.flatMap((m, i) => detect(m, [near(base, randomUnit(seed + 10 + i), 0.93)]));
+    clusterDetections(dets, params);
+    const { character_id: id } = sqlite
+      .query('SELECT character_id FROM character_detections WHERE id = ?')
+      .get(dets[0]) as { character_id: number };
+    expect((await post(`/api/characters/${id}/name`, { name })).status).toBe(200);
+    return { id, dets };
+  }
+  const newFace = async (seed: number, nearSeed: number) => {
+    const media = await addMedia();
+    const [det] = detect(media, [near(randomUnit(seed), randomUnit(nearSeed), 0.93)]);
+    clusterDetections([det], params);
+    return { media, det };
+  };
+  const linksWithScore = (tagName: string) =>
+    sqlite
+      .query(
+        `SELECT mt.media_id, mt.source, mt.confidence FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+         WHERE t.name = ? ORDER BY mt.media_id`,
+      )
+      .all(tagName);
+
+  test('a character tag removed from one item by hand stays off when the character grows', async () => {
+    const media = [await addMedia(), await addMedia()];
+    await namedCluster('lila', 1100, media);
+    expect(linksOf('lila')).toEqual(media.map((id) => ({ media_id: id, source: 'character' })));
+
+    const removed = await fetch(`${BASE}/api/media/${media[0]}/tags`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remove: ['lila'] }),
+    });
+    expect(removed.status).toBe(200);
+    const later = await newFace(1100, 1130);
+    expect(linksOf('lila').map((l) => l.media_id)).toEqual([media[1], later.media]);
+  });
+});
