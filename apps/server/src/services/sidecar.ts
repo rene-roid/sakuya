@@ -4,7 +4,7 @@ import path from 'node:path';
 import { sqlite } from '../db';
 import { normalizeTagName, type TagCategory } from '@sakuya/shared';
 import { upsertTag } from './tagger';
-import { linkTag, recomputeImplied } from './tagRelations';
+import { linkTag, recomputeImplied, releaseLinks } from './tagRelations';
 
 export interface SidecarTag {
   name: string;
@@ -182,10 +182,7 @@ export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: numb
   const vetoed = new Set((vetoedStmt.all(mediaId) as { tag_id: number }[]).map((r) => r.tag_id));
   sqlite.transaction(() => {
     dropFtsStmt.run(mediaId);
-    const old = sqlite
-      .query(`DELETE FROM media_tags WHERE media_id = ? AND source = 'meta' RETURNING tag_id`)
-      .all(mediaId) as { tag_id: number }[];
-    for (const r of old) touched.add(r.tag_id);
+    for (const r of releaseLinks('meta', 'media_id = ?', mediaId)) touched.add(r.tag_id);
     for (const tag of meta.tags) {
       const tagId = upsertTag(tag.name, tag.category);
       if (tag.category !== 'general') promoteStmt.run(tag.category, tagId);
