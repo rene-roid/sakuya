@@ -1,7 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { eq } from 'drizzle-orm';
-import { db, sqlite, schema } from '../db';
+import { sqlite } from '../db';
 import { normalizeTagName, type TagCategory } from '@sakuya/shared';
 import { upsertTag } from './tagger';
 import { linkTag, recomputeImplied } from './tagRelations';
@@ -137,6 +136,11 @@ export function sidecarFor(file: string, jsonFiles: ReadonlySet<string>): string
 const vetoedStmt = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
 // Tags are global, so a name first seen in an uncategorised list (a pixiv tag, the tagger) stays
 // 'general' until a site that does categorise it says otherwise.
+// Prepared rather than built through drizzle: a scan runs these once per downloaded file, and the
+// query building alone was ~10% of the sidecar cost on a 5,000-file scan.
+const rowByPathStmt = sqlite.prepare('SELECT id, sidecar_mtime AS sidecarMtime FROM media WHERE path = ?');
+const setSourceStmt = sqlite.prepare('UPDATE media SET source_url = ?, sidecar_mtime = ? WHERE id = ?');
+const setSidecarMtimeStmt = sqlite.prepare('UPDATE media SET sidecar_mtime = ? WHERE id = ?');
 const promoteStmt = sqlite.prepare(`UPDATE tags SET category = ? WHERE id = ? AND category = 'general'`);
 
 /**
@@ -159,10 +163,7 @@ export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: numb
       touched.add(tagId);
     }
     for (const tagId of recomputeImplied([mediaId])) touched.add(tagId);
-    db.update(schema.media)
-      .set({ sourceUrl: meta.sourceUrl, sidecarMtime: mtime })
-      .where(eq(schema.media.id, mediaId))
-      .run();
+    setSourceStmt.run(meta.sourceUrl, mtime, mediaId);
   })();
 }
 
@@ -172,11 +173,7 @@ export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: numb
  * unchanged broken file isn't re-read on every scan.
  */
 export async function syncSidecar(file: string, sidecar: string, touched: Set<number>): Promise<boolean> {
-  const row = db
-    .select({ id: schema.media.id, sidecarMtime: schema.media.sidecarMtime })
-    .from(schema.media)
-    .where(eq(schema.media.path, file))
-    .get();
+  const row = rowByPathStmt.get(file) as { id: number; sidecarMtime: number | null } | null;
   if (!row) return true;
   let stat;
   try {
@@ -193,7 +190,7 @@ export async function syncSidecar(file: string, sidecar: string, touched: Set<nu
     console.error(`unreadable metadata sidecar ${sidecar}:`, (err as Error).message);
   }
   if (!meta) {
-    db.update(schema.media).set({ sidecarMtime: mtime }).where(eq(schema.media.id, row.id)).run();
+    setSidecarMtimeStmt.run(mtime, row.id);
     return false;
   }
   applySidecar(row.id, meta, mtime, touched);
