@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
-import sharp from 'sharp';
+import sharp, { type Sharp } from 'sharp';
 import { and, eq, isNull } from 'drizzle-orm';
 import { THUMBS_DIR } from '../lib/config';
 import { db, schema } from '../db';
@@ -20,6 +20,8 @@ const FRAME_LONG_SIDE = 640;
  * close to its slot, and it skips decoding up to a whole GOP per frame.
  */
 const KEYFRAME_ONLY_INTERVAL_S = 30;
+/** Up to this length one decode of the whole video beats ten seeks (measured on the fixture videos). */
+const SINGLE_PASS_MAX_S = 60;
 /** Hover asks for missing sprites one card at a time; this keeps a sweep across a grid from forking an encoder per card. */
 const MAX_PARALLEL = 2;
 
@@ -46,37 +48,18 @@ export function removeSprite(mediaId: number): void {
   fs.rmSync(spritePathFor(mediaId), { force: true });
 }
 
-/** One frame as PNG bytes, or null when the seek lands past the last decodable frame. */
-function extractFrame(sourcePath: string, seconds: number, keyframeOnly: boolean): Promise<Buffer | null> {
-  const s = FRAME_SHORT_SIDE;
-  const l = FRAME_LONG_SIDE;
-  const args = [
-    '-v',
-    'error',
-    '-threads',
-    '1',
-    // Frames nothing else references can be dropped without corrupting the rest, which roughly
-    // halves the decode between the keyframe and the seek point.
-    '-skip_frame',
-    keyframeOnly ? 'nokey' : 'noref',
-    ...(keyframeOnly ? ['-noaccurate_seek'] : []),
-    '-ss',
-    seconds.toFixed(3),
-    '-i',
-    sourcePath,
-    '-frames:v',
-    '1',
-    '-an',
-    '-vf',
-    `scale=w='trunc(iw*min(${s}/min(iw\\,ih)\\,${l}/max(iw\\,ih))/2)*2':h=-2,setsar=1`,
-    '-f',
-    'image2pipe',
-    '-c:v',
-    'png',
-    'pipe:1',
-  ];
+const SCALE = `scale=w='trunc(iw*min(${FRAME_SHORT_SIDE}/min(iw\\,ih)\\,${FRAME_LONG_SIDE}/max(iw\\,ih))/2)*2':h=-2,setsar=1`;
+
+/** Run ffmpeg writing one PNG to stdout; resolves null when it wrote nothing. */
+function ffmpegPng(args: string[]): Promise<Buffer | null> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const proc = spawn(
+      FFMPEG_PATH,
+      ['-v', 'error', '-threads', '1', ...args, '-f', 'image2pipe', '-c:v', 'png', 'pipe:1'],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     const chunks: Buffer[] = [];
     let stderr = '';
     proc.stdout.on('data', (d: Buffer) => chunks.push(d));
@@ -89,11 +72,49 @@ function extractFrame(sourcePath: string, seconds: number, keyframeOnly: boolean
   });
 }
 
-async function writeSprite(sourcePath: string, durationSeconds: number, dest: string): Promise<void> {
+/**
+ * The whole strip from one decode pass, taking the first frame at or after each slot. Cheaper than
+ * ten seeks while the video is short, since each seek decodes from its keyframe in a fresh process.
+ */
+function singlePassStrip(sourcePath: string, intervalSeconds: number): Promise<Buffer | null> {
+  const slot = `(selected_n+0.5)*${intervalSeconds.toFixed(3)}`;
+  return ffmpegPng([
+    // Frames nothing else references can be dropped without corrupting the rest, which roughly
+    // halves the decode.
+    '-skip_frame',
+    'noref',
+    '-i',
+    sourcePath,
+    '-an',
+    '-vf',
+    `select='gte(t-start_t\\,${slot})',${SCALE},tile=${SPRITE_FRAMES}x1`,
+    '-frames:v',
+    '1',
+  ]);
+}
+
+function seekFrame(sourcePath: string, seconds: number, keyframeOnly: boolean): Promise<Buffer | null> {
+  return ffmpegPng([
+    '-skip_frame',
+    keyframeOnly ? 'nokey' : 'noref',
+    ...(keyframeOnly ? ['-noaccurate_seek'] : []),
+    '-ss',
+    seconds.toFixed(3),
+    '-i',
+    sourcePath,
+    '-an',
+    '-vf',
+    SCALE,
+    '-frames:v',
+    '1',
+  ]);
+}
+
+async function seekStrip(sourcePath: string, durationSeconds: number): Promise<Sharp> {
   const keyframeOnly = durationSeconds / SPRITE_FRAMES >= KEYFRAME_ONLY_INTERVAL_S;
   const frames: Buffer[] = [];
   for (const t of spriteFrameTimes(durationSeconds)) {
-    const frame = await extractFrame(sourcePath, t, keyframeOnly);
+    const frame = await seekFrame(sourcePath, t, keyframeOnly);
     // A slot past the last decodable frame repeats the previous one rather than leaving a hole.
     if (frame) frames.push(frame);
     else if (frames.length) frames.push(frames[frames.length - 1]);
@@ -108,10 +129,19 @@ async function writeSprite(sourcePath: string, durationSeconds: number, dest: st
       top: 0,
     })),
   );
-  await sharp({ create: { width: width * SPRITE_FRAMES, height, channels: 3, background: '#000' } })
-    .composite(tiles)
-    .webp({ quality: 70 })
-    .toFile(dest);
+  return sharp({ create: { width: width * SPRITE_FRAMES, height, channels: 3, background: '#000' } }).composite(tiles);
+}
+
+async function writeSprite(sourcePath: string, durationSeconds: number, dest: string): Promise<void> {
+  let strip: Sharp;
+  if (durationSeconds <= SINGLE_PASS_MAX_S) {
+    const png = await singlePassStrip(sourcePath, durationSeconds / SPRITE_FRAMES);
+    if (!png) throw new Error('ffmpeg produced no frames');
+    strip = sharp(png);
+  } else {
+    strip = await seekStrip(sourcePath, durationSeconds);
+  }
+  await strip.webp({ quality: 70 }).toFile(dest);
 }
 
 let active = 0;

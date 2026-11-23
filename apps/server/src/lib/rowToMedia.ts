@@ -67,7 +67,9 @@ export function rowToMedia(row: MediaSqlRow): Media {
       row.sprite_frames != null && row.sprite_at
         ? {
             frames: row.sprite_frames,
-            intervalSeconds: row.sprite_frames ? (row.duration_seconds ?? 0) / row.sprite_frames : 0,
+            intervalSeconds: row.sprite_frames
+              ? Math.round(((row.duration_seconds ?? 0) / row.sprite_frames) * 1000) / 1000
+              : 0,
             version: row.sprite_at,
           }
         : undefined,

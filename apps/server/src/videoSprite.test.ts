@@ -28,7 +28,7 @@ const send = (method: string, url: string, body?: unknown) =>
   });
 
 /** testsrc draws a moving pattern and a frame counter, so every sampled frame differs. */
-async function writeVideo(name: string, size: string, seconds: number) {
+async function writeVideo(name: string, size: string, seconds: number, rate = 10) {
   const out = path.join(root, name);
   const tmp = path.join(dataDir, `tmp-${name}`);
   await run(FFMPEG_PATH, [
@@ -38,7 +38,10 @@ async function writeVideo(name: string, size: string, seconds: number) {
     '-f',
     'lavfi',
     '-i',
-    `testsrc=duration=${seconds}:size=${size}:rate=10`,
+    `testsrc=duration=${seconds}:size=${size}:rate=${rate}`,
+    // A keyframe every two seconds, like most real encodes, so keyframe-only seeks land near their slot.
+    '-g',
+    String(rate * 2),
     '-pix_fmt',
     'yuv420p',
     '-f',
@@ -162,6 +165,26 @@ test('deleting a video moves its sprite out with it and restoring brings it back
   expect((await send('POST', `/api/trash/${entry.id}/restore`)).status).toBe(200);
   expect(fs.existsSync(spritePathFor(wide.id))).toBe(true);
   expect((await item('wide.mp4')).sprite).toEqual(wide.sprite);
+});
+
+test('longer videos are sampled by seeking, and still give ten distinct frames', async () => {
+  await writeVideo('minute.mp4', '160x90', 70, 2);
+  await writeVideo('long.mp4', '160x90', 320, 1);
+  await scan();
+  for (const [name, interval] of [
+    ['minute.mp4', 7],
+    ['long.mp4', 32],
+  ] as const) {
+    const media = await item(name);
+    expect(media.sprite).toMatchObject({ frames: 10, intervalSeconds: interval });
+    // 160x90 scaled up so its short side is 240.
+    expect(await inspect(await send('GET', `/api/media/${media.id}/sprite`), 10)).toEqual({
+      format: 'webp',
+      width: 4260,
+      height: 240,
+      distinct: 10,
+    });
+  }
 });
 
 test('cleanup removes the sprite of a media row that no longer exists', () => {
