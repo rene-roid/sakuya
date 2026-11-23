@@ -55,6 +55,10 @@ The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second rev
 - If ffprobe reports a longer duration than a video really has, the last frames of a short clip's sprite are black.
 - On phones the Explore sidebar's rename pencil needs hover, so rename from the viewer's tag menu instead.
 - The Discover folder cap cannot hold on a library with fewer than 5 folders.
+- A database whose characters already point at a tag that was merged away before the review fixes is not repaired. The fix only stops new cases; renaming the character onto the merge target repairs one by hand.
+- No test covers restoring a gallery-dl sidecar when its file comes back under a "(restored)" name.
+- Folders that a removed download's files came from are kept even when empty, so a restore from the trash still has a folder to go back to.
+- After a failed desktop update install, the code that restarts the server in `desktop/main.js` passed a syntax check but never ran under Electron; only `desktop/updates.js` is under test.
 - No live gallery-dl run (gallery-dl is not installed here). A fake gallery-dl in the tests writes the sidecar.
 
 ## Test data
