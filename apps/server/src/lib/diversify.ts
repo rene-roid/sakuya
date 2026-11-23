@@ -10,8 +10,9 @@
  * A candidate that breaks a rule is deferred, not dropped: it stays at the head of the queue and
  * takes the first slot where it fits. Only `lookahead` candidates are considered per slot. When
  * none of them fits, the rules are let go one at a time, least visible first: the reason cap,
- * then near-duplicate spacing, then the folder cap. A library that is one folder still fills
- * the feed, in rank order.
+ * then the folder cap, then near-duplicate spacing, since a fifth shot from one folder reads as
+ * variety gone thin while the same picture twice reads as a bug. A library that is one folder
+ * still fills the feed, in rank order.
  *
  * The output order depends only on the input order, never on page size, which is what lets the
  * route serve pages as slices of one deterministic stream.
@@ -101,11 +102,11 @@ export class Diversifier {
     return { id: entry.id, folder: entry.folder, reason: entry.reason, hash: entry.hash };
   }
 
-  /** relax 0 checks every rule; 1 drops the reason cap, 2 also near-duplicates. */
+  /** relax 0 checks every rule; 1 drops the reason cap, 2 also the folder cap. */
   private fits(c: Entry, relax: number): boolean {
-    const { window, folderCap, dupWindow } = this.opts;
-    const reasonCap = relax >= 1 ? 0 : this.opts.reasonCap;
-    const dupDistance = relax >= 2 ? -1 : this.opts.dupDistance;
+    const { window, reasonCap: cap, dupDistance, dupWindow } = this.opts;
+    const reasonCap = relax >= 1 ? 0 : cap;
+    const folderCap = relax >= 2 ? 0 : this.opts.folderCap;
     const n = this.recent.length;
     if (folderCap > 0 || reasonCap > 0) {
       let folders = 0;

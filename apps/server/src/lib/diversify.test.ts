@@ -64,6 +64,17 @@ test('when nothing fits, the reason cap gives way before the folder cap', () => 
   expect(diversify(ranked, opts)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 10]);
 });
 
+test('a near-duplicate waits longer than a fifth item from one folder', () => {
+  const base = 'ffff0000ffff0000';
+  const ranked = [
+    ...ids(1, 4).map((id) => item(id, '/b')),
+    item(5, '/x', null, base),
+    item(6, '/y', null, 'ffff0000ffff0001'), // a copy of 5
+    item(7, '/b'), // a fifth from /b
+  ];
+  expect(diversify(ranked, opts)).toEqual([1, 2, 3, 4, 5, 7, 6]);
+});
+
 test('a library that is one folder still fills the feed in rank order', () => {
   const ranked = ids(1, 50).map((id) => item(id, '/only', 'solo'));
   expect(diversify(ranked, opts)).toEqual(ids(1, 50));
