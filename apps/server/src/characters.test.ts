@@ -396,7 +396,6 @@ describe('characters API', () => {
 describe('characters tab API', () => {
   const mira = randomUnit(400);
   const zed = randomUnit(500);
-  const ivo = randomUnit(600);
   const ids: Record<string, number> = {};
   const dets: Record<string, number[]> = {};
 
@@ -440,16 +439,23 @@ describe('characters tab API', () => {
     for (let i = 0; i < 3; i++) tagMedia(ids[`zed${i}`], 'solo', 'general', 'ai');
     tagMedia(ids.zed0, 'zed_(game)', 'character', 'ai');
     tagMedia(ids.zed1, 'zed_(game)', 'character', 'ai');
+    refreshUsageCounts([upsertTag('zed_(game)', 'character')]);
     let list = await json(fetch(`${BASE}/api/characters`));
     expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
       [ids.zedChar, { tag: 'zed_(game)', displayName: null, mediaCount: 2, soloCount: 3 }],
     ]);
+    expect(list.tagOnly.map((t: any) => t.name)).toEqual(['wd_only_(series)']);
 
     const dismissed = await json(post(`/api/characters/${ids.zedChar}/dismiss-suggestion`));
     expect(dismissed).toMatchObject({ id: ids.zedChar, name: null, suggestion: null });
     list = await json(fetch(`${BASE}/api/characters`));
     expect(list.suggested).toEqual([]);
     expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.zedChar]);
+    // No longer on offer as the question, so it is listed with the other unclaimed character tags.
+    expect(list.tagOnly.map((t: any) => [t.name, t.count])).toEqual([
+      ['zed_(game)', 2],
+      ['wd_only_(series)', 1],
+    ]);
     expect((await post(`/api/characters/${ids.zedChar}/accept-suggestion`)).status).toBe(409);
     expect((await post(`/api/characters/${ids.zedChar}/dismiss-suggestion`)).status).toBe(409);
   });
