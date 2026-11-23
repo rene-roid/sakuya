@@ -229,7 +229,8 @@ CREATE TABLE IF NOT EXISTS characters (
   tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
   cover_detection_id INTEGER REFERENCES character_detections(id) ON DELETE SET NULL,
   hidden INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  dismissed_suggestion TEXT
 );
 CREATE INDEX IF NOT EXISTS characters_tag_idx ON characters(tag_id);
 CREATE TABLE IF NOT EXISTS character_detections (
@@ -336,6 +337,8 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   // rescan only re-reads a sidecar that changed.
   { version: 41, sql: 'ALTER TABLE media ADD COLUMN source_url TEXT' },
   { version: 42, sql: 'ALTER TABLE media ADD COLUMN sidecar_mtime INTEGER' },
+  // The WD tag a user said an unnamed character is not, so it stops being suggested.
+  { version: 45, sql: 'ALTER TABLE characters ADD COLUMN dismissed_suggestion TEXT' },
   // The hover-scrub sprite: how many frames it holds (0 when generation failed) and when it was written.
   { version: 47, sql: 'ALTER TABLE media ADD COLUMN sprite_frames INTEGER' },
   { version: 48, sql: 'ALTER TABLE media ADD COLUMN sprite_at INTEGER' },

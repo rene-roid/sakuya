@@ -16,7 +16,7 @@ const { DEFAULT_CCIP_PARAMS } = await import('./services/characterModels');
 const { clusterDetections, clusterParams, saveDetections, enqueueCharacterJob, characterCropDirFor } =
   await import('./services/characters');
 const { removeMediaRows } = await import('./services/mediaRemoval');
-const { upsertTag } = await import('./services/tagger');
+const { upsertTag, refreshUsageCounts } = await import('./services/tagger');
 
 const DIMS = 768;
 const params = clusterParams(DEFAULT_CCIP_PARAMS);
@@ -231,7 +231,7 @@ describe('characters API', () => {
     tagMedia(ids.p2, 'pepper_(pepper&carrot)', 'character', 'ai');
     const list = await json(fetch(`${BASE}/api/characters`));
     expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
-      [ids.pepperChar, { tag: 'pepper_(pepper&carrot)', mediaCount: 2, soloCount: 3 }],
+      [ids.pepperChar, { tag: 'pepper_(pepper&carrot)', displayName: null, mediaCount: 2, soloCount: 3 }],
     ]);
     expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.carrotChar]);
   });
@@ -420,5 +420,117 @@ describe('characters and tag implications', () => {
     await json(post(`/api/characters/${charId}/name`, { name: 'saffron_the_witch' }));
     expect(linksOf('saffron_(pepper&carrot)')).toEqual([]);
     expect(linksOf('pepper&carrot')).toEqual([]);
+  });
+});
+
+// ML03: what the Characters tab and the viewer overlay need on top of ML02.
+describe('characters tab API', () => {
+  const mira = randomUnit(400);
+  const zed = randomUnit(500);
+  const ids: Record<string, number> = {};
+  const dets: Record<string, number[]> = {};
+
+  async function cluster(key: string, base: Float32Array, n: number, seed: number) {
+    dets[key] = [];
+    for (let i = 0; i < n; i++) {
+      ids[`${key}${i}`] = await addMedia();
+      dets[key].push(...detect(ids[`${key}${i}`], [near(base, randomUnit(seed + i), 0.92)]));
+    }
+    clusterDetections(dets[key], params);
+    return (sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[key][0]) as {
+      character_id: number;
+    }).character_id;
+  }
+
+  const summary = async (id: number) => json(fetch(`${BASE}/api/characters/${id}`));
+  const nameOf = async (detectionId: number, mediaId: number) =>
+    (await json(fetch(`${BASE}/api/media/${mediaId}/detections`))).find((d: any) => d.id === detectionId);
+
+  test('renaming changes the display name, not the tag, and character tags with no cluster are listed', async () => {
+    ids.miraChar = await cluster('mira', mira, 3, 410);
+    expect((await json(post(`/api/characters/${ids.miraChar}/name`, { name: 'Mira' }))).name).toBe('mira');
+    const renamed = await fetch(`${BASE}/api/tags/mira`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: 'Mira Lune' }),
+    });
+    expect(renamed.status).toBe(200);
+    expect(await summary(ids.miraChar)).toMatchObject({ name: 'mira', displayName: 'Mira Lune', mediaCount: 3 });
+    expect((await nameOf(dets.mira[0], ids.mira0)).characterDisplayName).toBe('Mira Lune');
+    expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0, ids.mira1, ids.mira2]);
+
+    tagMedia(ids.mira0, 'wd_only_(series)', 'character', 'ai');
+    refreshUsageCounts([upsertTag('wd_only_(series)', 'character')]);
+    const list = await json(fetch(`${BASE}/api/characters`));
+    expect(list.tagOnly).toEqual([{ name: 'wd_only_(series)', category: 'character', displayName: null, count: 1 }]);
+  });
+
+  test('dismissing a suggestion moves the cluster to unnamed and keeps it there', async () => {
+    ids.zedChar = await cluster('zed', zed, 3, 510);
+    for (let i = 0; i < 3; i++) tagMedia(ids[`zed${i}`], 'solo', 'general', 'ai');
+    tagMedia(ids.zed0, 'zed_(game)', 'character', 'ai');
+    tagMedia(ids.zed1, 'zed_(game)', 'character', 'ai');
+    refreshUsageCounts([upsertTag('zed_(game)', 'character')]);
+    let list = await json(fetch(`${BASE}/api/characters`));
+    expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
+      [ids.zedChar, { tag: 'zed_(game)', displayName: null, mediaCount: 2, soloCount: 3 }],
+    ]);
+    expect(list.tagOnly.map((t: any) => [t.name, t.count])).toEqual([
+      ['zed_(game)', 2],
+      ['wd_only_(series)', 1],
+    ]);
+
+    const dismissed = await json(post(`/api/characters/${ids.zedChar}/dismiss-suggestion`));
+    expect(dismissed).toMatchObject({ id: ids.zedChar, name: null, suggestion: null });
+    list = await json(fetch(`${BASE}/api/characters`));
+    expect(list.suggested).toEqual([]);
+    expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.zedChar]);
+    expect((await post(`/api/characters/${ids.zedChar}/accept-suggestion`)).status).toBe(409);
+    expect((await post(`/api/characters/${ids.zedChar}/dismiss-suggestion`)).status).toBe(409);
+  });
+
+  test('a character’s faces come best first, paged, without rejected ones', async () => {
+    const page = await json(fetch(`${BASE}/api/characters/${ids.miraChar}/detections?limit=2`));
+    expect(page.total).toBe(3);
+    expect(page.items.map((d: any) => [d.id, d.characterName, d.cropUrl])).toEqual([
+      [dets.mira[0], 'mira', `/api/characters/crops/${dets.mira[0]}`],
+      [dets.mira[1], 'mira', `/api/characters/crops/${dets.mira[1]}`],
+    ]);
+    expect(page.nextOffset).toBe(2);
+
+    await post(`/api/character-detections/${dets.mira[2]}/reject`);
+    const after = await json(fetch(`${BASE}/api/characters/${ids.miraChar}/detections`));
+    expect([after.total, after.items.map((d: any) => d.id), after.nextOffset]).toEqual([2, dets.mira.slice(0, 2), null]);
+    expect((await fetch(`${BASE}/api/characters/999999/detections`)).status).toBe(404);
+  });
+
+  test('naming a face in an unnamed cluster names the whole cluster', async () => {
+    const named = await json(post(`/api/character-detections/${dets.zed[1]}/name`, { name: 'Zed' }));
+    expect(named).toMatchObject({ id: dets.zed[1], characterId: ids.zedChar, characterName: 'zed', assignment: 'auto' });
+    expect(await summary(ids.zedChar)).toMatchObject({ name: 'zed', mediaCount: 3 });
+    expect(linksOf('zed').map((l) => l.media_id)).toEqual([ids.zed0, ids.zed1, ids.zed2]);
+  });
+
+  test('naming a face of a named character moves just that face, creating the character when new', async () => {
+    const before = (sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c;
+    const moved = await json(post(`/api/character-detections/${dets.mira[1]}/name`, { name: 'Ivo' }));
+    expect(moved).toMatchObject({ characterName: 'ivo', assignment: 'user' });
+    expect(moved.characterId).not.toBe(ids.miraChar);
+    expect((sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c).toBe(before + 1);
+    expect(linksOf('ivo').map((l) => l.media_id)).toEqual([ids.mira1]);
+    expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0]);
+
+    // A name some character already has joins that character; a rejected face can be named too.
+    const back = await json(post(`/api/character-detections/${dets.mira[2]}/name`, { name: 'mira' }));
+    expect(back).toMatchObject({ characterId: ids.miraChar, characterName: 'mira', assignment: 'user' });
+    expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0, ids.mira2]);
+  });
+
+  test('a face cannot be named after a general tag, and nothing is left behind', async () => {
+    const before = (sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c;
+    const res = await post(`/api/character-detections/${dets.mira[0]}/name`, { name: 'solo' });
+    expect(res.status).toBe(409);
+    expect((sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c).toBe(before);
+    expect((await nameOf(dets.mira[0], ids.mira0)).characterId).toBe(ids.miraChar);
   });
 });

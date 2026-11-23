@@ -4,15 +4,18 @@ import { intParam, wrap } from '../lib/http';
 import {
   acceptSuggestion,
   assignDetection,
+  characterDetections,
   characterMedia,
   characterStatus,
   detectionCropPath,
+  dismissSuggestion,
   enqueueCharacterJob,
   getCharacter,
   listCharacters,
   mediaDetections,
   mergeCharacters,
   nameCharacter,
+  nameDetection,
   rejectDetection,
   setCharacterCover,
   setCharacterHidden,
@@ -84,11 +87,28 @@ charactersRouter.get(
   }),
 );
 
+charactersRouter.get(
+  '/api/characters/:id/detections',
+  wrap(async (req, res) => {
+    const { offset, limit } = pageSchema.parse(req.query);
+    res.json(characterDetections(intParam(req.params.id), offset, limit));
+  }),
+);
+
+const nameSchema = z.object({ name: z.string().min(1).max(200) });
+
 charactersRouter.post(
   '/api/characters/:id/name',
   wrap(async (req, res) => {
-    const { name } = z.object({ name: z.string().min(1).max(200) }).parse(req.body);
+    const { name } = nameSchema.parse(req.body);
     res.json(nameCharacter(intParam(req.params.id), name));
+  }),
+);
+
+charactersRouter.post(
+  '/api/characters/:id/dismiss-suggestion',
+  wrap(async (req, res) => {
+    res.json(dismissSuggestion(intParam(req.params.id)));
   }),
 );
 
@@ -135,6 +155,14 @@ charactersRouter.post(
   wrap(async (req, res) => {
     const { characterId } = z.object({ characterId: z.number().int().positive() }).parse(req.body);
     res.json(assignDetection(intParam(req.params.id), characterId));
+  }),
+);
+
+charactersRouter.post(
+  '/api/character-detections/:id/name',
+  wrap(async (req, res) => {
+    const { name } = nameSchema.parse(req.body);
+    res.json(nameDetection(intParam(req.params.id), name));
   }),
 );
 

@@ -228,6 +228,7 @@ export const characters = sqliteTable('characters', {
   coverDetectionId: integer('cover_detection_id'),
   hidden: integer('hidden').notNull().default(0),
   createdAt: integer('created_at').notNull(),
+  dismissedSuggestion: text('dismissed_suggestion'),
 });
 
 // Which media the character job has already looked at, including the ones with no detections.

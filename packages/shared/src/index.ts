@@ -374,6 +374,7 @@ export interface CharacterDetection {
   characterId: number | null;
   /** The character's tag name, when it is named. */
   characterName: string | null;
+  characterDisplayName: string | null;
   assignment: CharacterAssignment;
   cropUrl: string;
 }
@@ -381,6 +382,7 @@ export interface CharacterDetection {
 export interface CharacterSuggestion {
   /** A WD character tag most of the cluster's `solo` images carry. */
   tag: string;
+  displayName: string | null;
   /** Solo images in the cluster carrying the tag, out of `soloCount`. */
   mediaCount: number;
   soloCount: number;
@@ -391,6 +393,7 @@ export interface CharacterSummary {
   tagId: number | null;
   /** The tag name; null until named. */
   name: string | null;
+  displayName: string | null;
   hidden: boolean;
   createdAt: number;
   mediaCount: number;
@@ -407,6 +410,14 @@ export interface CharactersResponse {
   unnamed: CharacterSummary[];
   /** Detections not (yet) in any character. */
   unassignedCount: number;
+  /** Character tags in use that no character carries yet, like WD tags on images with no detection. */
+  tagOnly: TagCount[];
+}
+
+export interface CharacterDetectionsResponse {
+  items: CharacterDetection[];
+  total: number;
+  nextOffset: number | null;
 }
 
 export interface CharacterMediaResponse {

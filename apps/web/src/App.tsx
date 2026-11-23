@@ -19,6 +19,8 @@ import { Boards, BoardView } from './routes/Boards';
 import { Settings } from './routes/settings';
 import { Duplicates } from './routes/Duplicates';
 import { Trash } from './routes/Trash';
+import { Characters } from './routes/Characters';
+import { Character } from './routes/Character';
 import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
 export function App() {
@@ -63,6 +65,8 @@ export function App() {
             <Route path="/library/:id" element={<LibraryView />} />
             <Route path="/duplicates" element={<Duplicates />} />
             <Route path="/trash" element={<Trash />} />
+            <Route path="/characters" element={<Characters />} />
+            <Route path="/characters/:id" element={<Character />} />
             <Route path="/downloader" element={<DownloaderPage />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
