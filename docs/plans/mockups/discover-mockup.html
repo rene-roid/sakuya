@@ -1,0 +1,120 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  .app { --surface:#111113; --line:#27272a; --line-strong:#3f3f46; --accent:#8b5cf6; --z950:#09090b; --z900:#18181b; --z500:#71717a; --z400:#a1a1aa; --z300:#d4d4d8; --z100:#f4f4f5;
+    background:var(--z950); color:var(--z100); font:13px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
+    border-radius:var(--radius); border:1px solid var(--line); padding:18px 20px 22px; }
+  .top { display:flex; align-items:baseline; gap:10px; }
+  h1 { margin:0; font-size:20px; font-weight:800; }
+  .muted { color:var(--z500); font-size:12.5px; }
+  .bar { display:flex; align-items:center; gap:8px; margin-top:12px; flex-wrap:wrap; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+  .seg span { padding:5px 10px; font-size:12px; font-weight:600; color:var(--z400); cursor:pointer; } .seg span.on { background:#27272a; color:var(--z100); }
+  .btn { border:1px solid var(--line); border-radius:7px; padding:5px 11px; font-size:12px; font-weight:600; color:var(--z400); background:none; cursor:pointer; font-family:inherit; }
+  .btn:hover { color:var(--z100); border-color:var(--line-strong); }
+  .taste { margin-top:14px; background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; }
+  .taste .h { display:flex; justify-content:space-between; font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--z500); margin-bottom:8px; }
+  .taste .h a { text-transform:none; letter-spacing:0; color:var(--z400); cursor:pointer; font-weight:600; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; }
+  .chip { position:relative; display:flex; align-items:center; gap:6px; border:1px solid var(--line); border-radius:7px; padding:4px 9px; font-size:12px; font-weight:600; color:var(--z300); cursor:pointer; overflow:hidden; user-select:none; }
+  .chip i { position:absolute; left:0; bottom:0; height:2px; background:var(--accent); opacity:.8; }
+  .chip.boost { border-color:rgba(139,92,246,.6); } .chip.boost::before { content:'↑'; color:var(--accent); }
+  .chip.mute { color:var(--z500); text-decoration:line-through; } .chip.mute i { display:none; }
+  .chip.rel { border-style:dashed; color:var(--z400); }
+  .hint { font-size:11px; color:var(--z500); margin-top:7px; }
+  .shelf { margin-top:18px; }
+  .sh { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+  .sh b { font-size:14px; } .sh span { color:var(--z500); font-size:12px; margin-left:6px; }
+  .sh a { color:var(--z400); font-size:12px; font-weight:600; cursor:pointer; }
+  .row { display:grid; grid-template-columns:repeat(6, 1fr); gap:8px; }
+  .tile { position:relative; aspect-ratio:3/4; border-radius:10px; overflow:hidden; transition:opacity .25s, transform .25s; }
+  .tile.gone { opacity:0; transform:scale(.92); pointer-events:none; }
+  .why { position:absolute; left:6px; bottom:6px; right:6px; font-size:10.5px; font-weight:600; color:#fff; background:rgba(0,0,0,.55); border-radius:5px; padding:2px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .why.rel { color:#e4e4e7; font-style:italic; }
+  .vid { position:absolute; top:6px; left:6px; font-size:10px; font-weight:700; background:rgba(0,0,0,.6); border-radius:4px; padding:1px 5px; }
+  .more { position:absolute; top:5px; right:5px; width:22px; height:22px; border-radius:6px; background:rgba(0,0,0,.6); display:none; align-items:center; justify-content:center; cursor:pointer; font-weight:700; }
+  .tile:hover .more { display:flex; }
+  .menu { position:absolute; top:30px; right:5px; z-index:5; background:var(--z900); border:1px solid var(--line-strong); border-radius:8px; padding:4px; width:150px; box-shadow:0 8px 24px rgba(0,0,0,.5); }
+  .menu div { padding:6px 8px; border-radius:5px; font-size:12px; cursor:pointer; color:var(--z300); }
+  .menu div:hover { background:#27272a; color:var(--z100); }
+  .toast { position:sticky; bottom:0; margin-top:14px; display:none; justify-content:space-between; align-items:center; background:var(--z900); border:1px solid var(--line-strong); border-radius:8px; padding:8px 12px; font-size:12px; }
+  .toast a { color:var(--accent); font-weight:600; cursor:pointer; }
+</style></head>
+<body>
+<div class="app" id="app">
+  <div class="top"><h1>Discover</h1><span class="muted">picked for you from 34,108 items</span></div>
+  <div class="bar">
+    <div class="seg"><span class="on">All</span><span>Images</span><span>Videos</span></div>
+    <div class="seg" title="Replaces the surprise slider"><span>Familiar</span><span class="on">Balanced</span><span>Adventurous</span></div>
+    <button class="btn" onclick="reshuffle()">Reshuffle</button>
+    <button class="btn">Surprise me</button>
+  </div>
+
+  <div class="taste">
+    <div class="h"><span>Your taste</span><a>Edit</a></div>
+    <div class="chips" id="chips"></div>
+    <div class="hint">Click a tag to boost it, again to mute it. Dashed tags are neighbours of what you like.</div>
+  </div>
+
+  <div id="shelves"></div>
+  <div class="toast" id="toast"><span id="toastText"></span><a onclick="undo()">Undo</a></div>
+</div>
+<script>
+const TASTE = [
+  { name:'Uraraka Ochako', w:1 }, { name:'Night sky', w:.82 }, { name:'Rain', w:.7 }, { name:'School uniform', w:.58 },
+  { name:'Cityscape', w:.5 }, { name:'Umbrella', w:.42 }, { name:'Starry sky', w:.35, rel:true }, { name:'Neon lights', w:.3, rel:true },
+];
+const state = Object.fromEntries(TASTE.map((t) => [t.name, 'on']));
+let seed = 3, hidden = new Set(), lastHidden = null;
+const hue = (i) => ((i * 47 + seed * 31) % 360);
+function tile(id, why, rel, vid) {
+  if (hidden.has(id)) return '';
+  const h = hue(id);
+  return `<div class="tile" id="t${id}" style="background:linear-gradient(160deg,hsl(${h} 22% 26%),hsl(${(h + 40) % 360} 18% 12%))">
+    ${vid ? '<span class="vid">0:42</span>' : ''}
+    <div class="more" onclick="menu(event, ${id}, '${why}')">⋯</div>
+    <div class="why${rel ? ' rel' : ''}">${why}</div></div>`;
+}
+function shelf(title, sub, ids, why, rel) {
+  const tiles = ids.map((id, i) => tile(id, typeof why === 'function' ? why(i) : why, rel, id % 4 === 0)).join('');
+  return `<div class="shelf"><div class="sh"><div><b>${title}</b><span>${sub}</span></div><a>See all</a></div><div class="row">${tiles}</div></div>`;
+}
+const range = (a) => Array.from({ length: 6 }, (_, i) => a + i);
+function render() {
+  document.getElementById('chips').innerHTML = TASTE.map((t) => {
+    const s = state[t.name];
+    return `<div class="chip ${t.rel ? 'rel' : ''} ${s === 'boost' ? 'boost' : s === 'mute' ? 'mute' : ''}" onclick="cycle('${t.name}')">${t.name}<i style="width:${t.w * 100}%"></i></div>`;
+  }).join('');
+  const live = TASTE.filter((t) => state[t.name] !== 'mute' && !t.rel);
+  const top = [...live].sort((a, b) => (state[b.name] === 'boost') - (state[a.name] === 'boost') || b.w - a.w);
+  let html = '';
+  if (top[0]) html += shelf(`Because you like ${top[0].name}`, '128 you haven’t seen', range(10), top[0].name);
+  html += shelf('New since your last visit', 'matching your taste', range(20), (i) => live[i % Math.max(live.length, 1)]?.name ?? 'New');
+  html += shelf('Rediscover', 'liked a while ago, not opened since', range(30), 'Liked in March');
+  html += shelf('Off the beaten path', 'neighbours of your taste', range(40), (i) => TASTE.filter((t) => t.rel && state[t.name] !== 'mute')[i % 2]?.name ?? 'Wildcard', true);
+  document.getElementById('shelves').innerHTML = html;
+}
+function cycle(name) { state[name] = state[name] === 'on' ? 'boost' : state[name] === 'boost' ? 'mute' : 'on'; render(); }
+function reshuffle() { seed++; render(); }
+function closeMenus() { document.querySelectorAll('.menu').forEach((m) => m.remove()); }
+function menu(e, id, why) {
+  e.stopPropagation(); closeMenus();
+  const m = document.createElement('div'); m.className = 'menu';
+  m.innerHTML = `<div onclick="hide(${id})">Not interested</div><div onclick="less('${why}')">Less of “${why}”</div><div>More like this</div>`;
+  document.getElementById('t' + id).appendChild(m);
+}
+function toast(t) { document.getElementById('toastText').textContent = t; document.getElementById('toast').style.display = 'flex'; }
+function hide(id) {
+  closeMenus(); document.getElementById('t' + id).classList.add('gone');
+  setTimeout(() => { hidden.add(id); lastHidden = { id }; render(); toast('Hidden. Discover will show fewer like it.'); }, 250);
+}
+function less(name) { closeMenus(); if (name in state) { lastHidden = { tag:name, prev:state[name] }; state[name] = 'mute'; render(); toast(`Muted “${name}”.`); } }
+function undo() {
+  if (lastHidden?.id !== undefined) hidden.delete(lastHidden.id);
+  if (lastHidden?.tag) state[lastHidden.tag] = lastHidden.prev;
+  lastHidden = null; document.getElementById('toast').style.display = 'none'; render();
+}
+document.addEventListener('click', closeMenus);
+render();
+</script>
+</body></html>

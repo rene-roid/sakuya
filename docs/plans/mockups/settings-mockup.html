@@ -1,0 +1,172 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  .app { --surface:#111113; --line:#27272a; --line-strong:#3f3f46; --accent:#8b5cf6; --z950:#09090b; --z900:#18181b; --z500:#71717a; --z400:#a1a1aa; --z300:#d4d4d8; --z100:#f4f4f5;
+    background:var(--z950); color:var(--z100); font:13px/1.4 Inter, ui-sans-serif, system-ui, sans-serif;
+    border-radius:var(--radius); border:1px solid var(--line); display:flex; height:620px; overflow:hidden; }
+  .side { width:178px; flex:none; border-right:1px solid var(--line); padding:12px 10px; display:flex; flex-direction:column; gap:2px; overflow-y:auto; }
+  .search { position:relative; margin-bottom:10px; }
+  .search input { width:100%; box-sizing:border-box; background:var(--z900); border:1px solid var(--line); border-radius:7px; color:var(--z100); padding:7px 30px 7px 28px; font:inherit; font-size:12.5px; outline:none; }
+  .search input:focus { border-color:var(--line-strong); }
+  .search svg { position:absolute; left:8px; top:8px; color:var(--z500); }
+  .search kbd { position:absolute; right:7px; top:6px; font:10.5px ui-monospace,monospace; color:var(--z500); border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  .grp { font-size:10.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--z500); padding:10px 10px 4px; }
+  .nav { display:flex; justify-content:space-between; align-items:center; padding:7px 10px; border-radius:7px; color:var(--z400); font-weight:600; font-size:13px; cursor:pointer; border:1px solid transparent; }
+  .nav:hover { color:var(--z300); }
+  .nav.on { background:var(--z900); border-color:var(--line); color:var(--z100); }
+  .nav .n { font-size:10.5px; color:var(--z500); font-weight:600; }
+  .nav.dim { opacity:.35; }
+  .main { flex:1; min-width:0; overflow-y:auto; padding:18px 22px 40px; scrollbar-width:none; }
+  h2 { margin:0 0 2px; font-size:18px; }
+  .sub { color:var(--z500); font-size:12.5px; margin-bottom:16px; }
+  .gh { font-size:10.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--z500); margin:16px 0 6px 2px; }
+  .gh .crumb { text-transform:none; letter-spacing:0; font-weight:600; color:var(--z400); cursor:pointer; }
+  .gh .crumb:hover { color:var(--z100); text-decoration:underline; }
+  .panel { background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+  .row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; border-top:1px solid var(--line); }
+  .row:first-child { border-top:0; }
+  .row.flash { animation:flash 1.4s ease-out; }
+  @keyframes flash { 0%,30% { background:rgba(139,92,246,.16); } 100% { background:transparent; } }
+  .lbl { font-weight:600; font-size:13px; }
+  .desc { color:var(--z500); font-size:12px; margin-top:1px; max-width:400px; }
+  .meta { color:var(--z400); font-size:11.5px; margin-top:3px; }
+  mark { background:rgba(139,92,246,.3); color:inherit; border-radius:2px; }
+  .sw { position:relative; width:36px; height:20px; border-radius:99px; background:#3f3f46; flex:none; cursor:pointer; }
+  .sw::after { content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .15s; }
+  .sw.on { background:var(--accent); } .sw.on::after { transform:translateX(16px); }
+  .btn { flex:none; border:1px solid var(--line); border-radius:7px; padding:5px 11px; font-size:12px; font-weight:600; color:var(--z300); background:none; cursor:pointer; font-family:inherit; }
+  .btn:hover { border-color:var(--line-strong); color:var(--z100); }
+  .btn.danger { color:#fb7185; } .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  select { flex:none; background:var(--z900); border:1px solid var(--line); border-radius:7px; color:var(--z100); padding:5px 8px; font:inherit; font-size:12px; }
+  .seg { display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:none; }
+  .seg span { padding:5px 10px; font-size:12px; font-weight:600; color:var(--z400); cursor:pointer; } .seg span.on { background:#27272a; color:var(--z100); }
+  .dots { display:flex; gap:7px; flex:none; } .dots i { width:20px; height:20px; border-radius:6px; border:2px solid transparent; }
+  .dots i.on { border-color:var(--z100); }
+  .slider { display:flex; align-items:center; gap:10px; flex:none; } .slider input { width:120px; accent-color:var(--accent); } .slider b { font-size:12px; color:var(--z300); width:30px; }
+  .stat { font-weight:600; font-size:12.5px; color:var(--z300); flex:none; }
+  .empty { color:var(--z500); text-align:center; padding:60px 0; }
+  .note { font-size:11px; color:var(--z500); margin-top:6px; }
+</style></head>
+<body>
+<div class="app">
+  <div class="side">
+    <div class="search">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" placeholder="Search settings" autocomplete="off">
+      <kbd>/</kbd>
+    </div>
+    <div id="nav"></div>
+  </div>
+  <div class="main" id="main"></div>
+</div>
+<script>
+const SECTIONS = [
+  { group: 'Preferences', id: 'general', label: 'General', sub: 'How Sakuya looks and what it remembers.' },
+  { group: 'Preferences', id: 'playback', label: 'Playback', sub: 'Video and viewer behaviour.' },
+  { group: 'Library', id: 'libraries', label: 'Libraries', sub: 'Folders, scanning and indexing.' },
+  { group: 'Library', id: 'tagging', label: 'AI Tagging', sub: 'The tagger model and what it keeps.' },
+  { group: 'Library', id: 'processing', label: 'Media processing', sub: 'Thumbnails, transcodes and image hashes.' },
+  { group: 'Library', id: 'jobs', label: 'Jobs', sub: 'When background work runs.' },
+  { group: 'System', id: 'storage', label: 'Storage', sub: 'Where data lives and how big it is.' },
+  { group: 'System', id: 'about', label: 'About', sub: 'Version and release notes.' },
+];
+const sw = (on) => `<div class="sw${on ? ' on' : ''}" onclick="this.classList.toggle('on')"></div>`;
+const btn = (t, k = '') => `<button class="btn ${k}">${t}</button>`;
+const SETTINGS = [
+  { s:'general', g:'Appearance', label:'Interface style', desc:'The original look, or the frosted Liquid Glass one.', kw:'theme glass classic ui', c:`<div class="seg"><span class="on">Classic</span><span>Liquid Glass</span></div>` },
+  { s:'general', g:'Appearance', label:'Accent color', desc:'Used for highlights, toggles and primary buttons.', kw:'colour theme purple', c:`<div class="dots"><i class="on" style="background:#8b5cf6"></i><i style="background:#14b8a6"></i><i style="background:#f43f5e"></i></div>` },
+  { s:'general', g:'Appearance', label:'Dashboard banner', desc:'The welcome banner on the dashboard. Liquid Glass only.', kw:'hero header', c:sw(true) },
+  { s:'general', g:'Explore', label:'Remember explore filters', desc:'Restore your last filters when you come back to Explore.', kw:'search tags board', c:sw(true) },
+  { s:'general', g:'Explore', label:'Discover tab', desc:'Recommend media from what you like, watch and linger on.', kw:'recommendations feed taste', c:sw(false) },
+  { s:'playback', g:'Video', label:'Continue where you left off', desc:'Resume videos at the position you last stopped.', kw:'resume progress watching', c:sw(true) },
+  { s:'playback', g:'Video', label:'Remember volume level', desc:'The volume you set carries over to the next video.', kw:'sound audio', c:sw(true) },
+  { s:'playback', g:'Video', label:'Remember mute state', desc:'Muting a video carries over to the next one.', kw:'sound audio silent', c:sw(false) },
+  { s:'libraries', g:'Libraries', label:'Your libraries', desc:'Add folders, rename, reorder and set auto-scan per library.', kw:'folders add path watch auto-scan interval', c:btn('Manage') , meta:'4 libraries · 12 folders' },
+  { s:'libraries', g:'Indexing', label:'Detect GIFs as videos', desc:'Treat .gif files as videos for filters, badges and duration.', kw:'animated gif scan classify', c:sw(false) },
+  { s:'libraries', g:'Indexing', label:'Reclassify existing GIFs', desc:'Apply the GIF setting to files already indexed.', kw:'gif rescan', c:btn('Run now') },
+  { s:'tagging', g:'Model', label:'Tagger model', desc:'Switching models needs a new download.', kw:'onnx wd swinv2 eva02 vit convnext download', c:`<select><option>WD SwinV2 v3 (default)</option><option>WD EVA02 Large v3</option></select>`, meta:'Ready · 447 MB · 10,861 labels' },
+  { s:'tagging', g:'Model', label:'Auto-tag on import', desc:'Tag new files after each scan or upload.', kw:'automatic ai tagging enable', c:sw(true) },
+  { s:'tagging', g:'Model', label:'Confidence threshold', desc:'Tags scoring below this are discarded.', kw:'accuracy score cutoff precision', c:`<div class="slider"><input type="range" value="35" oninput="this.nextElementSibling.textContent=this.value+'%'"><b>35%</b></div>` },
+  { s:'tagging', g:'Run', label:'Tag untagged files', desc:'Run the tagger on everything without AI tags.', kw:'bulk tag all', c:btn('Tag 214 files','primary') },
+  { s:'processing', g:'Thumbnails', label:'Thumbnail cache', desc:'Serve small webp thumbnails instead of full originals.', kw:'thumbs webp performance', c:sw(true), meta:'1.8 GB on disk' },
+  { s:'processing', g:'Thumbnails', label:'Regenerate thumbnails', desc:'Re-process every file and overwrite its thumbnail.', kw:'rebuild thumbs', c:btn('Regenerate all') },
+  { s:'processing', g:'Thumbnails', label:'Clear thumbnail cache', desc:'Delete every cached thumbnail to free disk space.', kw:'thumbs delete space', c:btn('Clear','danger') },
+  { s:'processing', g:'Video', label:'Video transcoding', desc:'After each scan, re-encode videos the browser cannot play.', kw:'hevc mkv avi wmv mp4 ffmpeg convert', c:sw(false) },
+  { s:'processing', g:'Video', label:'Transcode all videos', desc:'Check every video now instead of waiting for a scan.', kw:'hevc ffmpeg convert', c:btn('Run now') },
+  { s:'processing', g:'Similarity', label:'Image hashes', desc:'Perceptual hashes power duplicate and similar detection.', kw:'duplicates phash similar dhash', c:btn('Hash 38 images'), meta:'38 images without a hash' },
+  { s:'jobs', g:'Schedules', label:'Scan', desc:'Look for new and removed files.', kw:'schedule interval cron rescan', c:`<select><option>After every 60 min</option><option>Off</option></select>` },
+  { s:'jobs', g:'Schedules', label:'AI tagging', desc:'Tag what the last scan found.', kw:'schedule after-scan', c:`<select><option>After scan</option><option>Off</option></select>` },
+  { s:'jobs', g:'Schedules', label:'Cleanup', desc:'Remove orphaned thumbnails and stale job logs.', kw:'schedule maintenance', c:`<select><option>Off</option><option>Daily</option></select>` },
+  { s:'jobs', g:'History', label:'Recent jobs', desc:'Every scan, tag and download with its log.', kw:'history log progress', c:btn('Open history'), meta:'Last: scan · 2 min ago · done' },
+  { s:'storage', g:'Location', label:'Store data in your home folder', desc:'Keep the database and caches in ~/.sakuya so reinstalls leave them alone.', kw:'data dir path move migrate', c:sw(true), meta:'Currently ~/.sakuya' },
+  { s:'storage', g:'Usage', label:'Database', desc:'Media index, tags and settings.', kw:'size sqlite db', c:`<span class="stat">212 MB</span>` },
+  { s:'storage', g:'Usage', label:'Media', desc:'Files across every library.', kw:'size count', c:`<span class="stat">34,108 files · 412 GB</span>` },
+  { s:'storage', g:'Maintenance', label:'Clean up orphan data', desc:'Remove thumbnails and tag counts with no matching media.', kw:'cleanup orphans tidy', c:btn('Clean up','danger') },
+  { s:'about', g:'Version', label:'Sakuya', desc:'The running server version.', kw:'version update', c:`<span class="stat">1.7.0</span>` },
+  { s:'about', g:'Version', label:'Release notes', desc:"What's changed in each version.", kw:'changelog releases whats new', c:btn('View') },
+];
+let current = 'tagging', flashLabel = null;
+const $ = (id) => document.getElementById(id);
+const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+function hl(text, terms) {
+  let out = esc(text);
+  for (const t of terms) out = out.replace(new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'ig'), '<mark>$1</mark>');
+  return out;
+}
+function matches(st, terms) {
+  const hay = `${st.label} ${st.desc} ${st.kw} ${st.g} ${SECTIONS.find((x) => x.id === st.s).label}`.toLowerCase();
+  return terms.every((t) => hay.includes(t));
+}
+function rowHtml(st, terms, i) {
+  const f = flashLabel === st.label ? ' flash' : '';
+  return `<div class="row${f}"><div><div class="lbl">${hl(st.label, terms)}</div><div class="desc">${hl(st.desc, terms)}</div>${st.meta ? `<div class="meta">${st.meta}</div>` : ''}</div>${st.c}</div>`;
+}
+function groups(list) {
+  const m = new Map();
+  for (const st of list) { const k = `${st.s}|${st.g}`; if (!m.has(k)) m.set(k, []); m.get(k).push(st); }
+  return [...m.entries()];
+}
+function render() {
+  const q = $('q').value.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  const hits = terms.length ? SETTINGS.filter((st) => matches(st, terms)) : null;
+  let nav = '', lastGroup = '';
+  for (const sec of SECTIONS) {
+    if (sec.group !== lastGroup) { nav += `<div class="grp">${sec.group}</div>`; lastGroup = sec.group; }
+    const n = hits ? hits.filter((h) => h.s === sec.id).length : null;
+    const cls = !hits && sec.id === current ? ' on' : hits && !n ? ' dim' : '';
+    nav += `<div class="nav${cls}" data-s="${sec.id}"><span>${sec.label}</span>${n ? `<span class="n">${n}</span>` : ''}</div>`;
+  }
+  $('nav').innerHTML = nav;
+  let main = '';
+  if (hits) {
+    main += `<h2>Results</h2><div class="sub">${hits.length} setting${hits.length === 1 ? '' : 's'} matching “${esc(q)}”</div>`;
+    if (!hits.length) main += `<div class="empty">No settings match. Try “thumbnail”, “gif” or “volume”.</div>`;
+    for (const [k, list] of groups(hits)) {
+      const sec = SECTIONS.find((x) => x.id === list[0].s);
+      main += `<div class="gh"><span class="crumb" data-s="${sec.id}" data-l="${esc(list[0].label)}">${sec.label}</span> › ${list[0].g}</div><div class="panel">${list.map((st) => rowHtml(st, terms)).join('')}</div>`;
+    }
+  } else {
+    const sec = SECTIONS.find((x) => x.id === current);
+    main += `<h2>${sec.label}</h2><div class="sub">${sec.sub}</div>`;
+    for (const [k, list] of groups(SETTINGS.filter((st) => st.s === current))) {
+      main += `<div class="gh">${list[0].g}</div><div class="panel">${list.map((st) => rowHtml(st, [])).join('')}</div>`;
+    }
+  }
+  $('main').innerHTML = main;
+  flashLabel = null;
+}
+function go(s, label) { current = s; flashLabel = label ?? null; $('q').value = ''; render(); $('main').scrollTop = 0; }
+document.addEventListener('click', (e) => {
+  const n = e.target.closest('[data-s]'); if (!n) return;
+  go(n.dataset.s, n.dataset.l);
+});
+$('q').addEventListener('input', render);
+$('q').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { $('q').value = ''; render(); }
+  if (e.key === 'Enter') { const t = $('q').value.trim().toLowerCase().split(/\s+/); const h = SETTINGS.find((st) => matches(st, t)); if (h) go(h.s, h.label); }
+});
+document.addEventListener('keydown', (e) => { if (e.key === '/' && document.activeElement !== $('q')) { e.preventDefault(); $('q').focus(); } });
+render();
+</script>
+</body></html>
