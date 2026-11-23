@@ -8,6 +8,7 @@ import { db, schema } from '../db';
 import { IMAGE_EXTS, VIDEO_EXTS } from '../lib/config';
 import { gifsAsVideos } from '../lib/settings';
 import { generateThumbnail } from './thumbnailer';
+import { removeSprite } from './videoSprite';
 import { transcodePathFor } from './transcoder';
 import { removeMediaRows } from './mediaRemoval';
 import { isUnder } from '../lib/paths';
@@ -190,10 +191,13 @@ export async function indexFile(
     // old content, so clear the markers that let the after-scan tag/transcode jobs skip it.
     const contentChanged = existing.contentHash !== contentHash;
     db.update(schema.media)
-      .set(contentChanged ? { ...values, taggedAt: null, transcodedAt: null } : values)
+      .set(contentChanged ? { ...values, taggedAt: null, transcodedAt: null, spriteFrames: null, spriteAt: null } : values)
       .where(eq(schema.media.id, existing.id))
       .run();
-    if (contentChanged) await fs.rm(transcodePathFor(existing.id), { force: true });
+    if (contentChanged) {
+      await fs.rm(transcodePathFor(existing.id), { force: true });
+      removeSprite(existing.id);
+    }
     mediaId = existing.id;
   } else {
     const row = db.insert(schema.media).values({ ...values, createdAt: now }).returning().get();

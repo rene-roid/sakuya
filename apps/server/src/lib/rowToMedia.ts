@@ -29,6 +29,8 @@ export interface MediaSqlRow {
   height: number | null;
   size_bytes: number;
   duration_seconds: number | null;
+  sprite_frames?: number | null;
+  sprite_at?: number | null;
   content_hash: string | null;
   created_at: number;
   indexed_at: number | null;
@@ -61,6 +63,14 @@ export function rowToMedia(row: MediaSqlRow): Media {
     height: row.height,
     sizeBytes: row.size_bytes,
     durationSeconds: row.duration_seconds,
+    sprite:
+      row.sprite_frames != null && row.sprite_at
+        ? {
+            frames: row.sprite_frames,
+            intervalSeconds: row.sprite_frames ? (row.duration_seconds ?? 0) / row.sprite_frames : 0,
+            version: row.sprite_at,
+          }
+        : undefined,
     createdAt: row.created_at,
     indexedAt: row.indexed_at,
     taggedAt: row.tagged_at,

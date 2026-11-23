@@ -6,6 +6,7 @@ import { runTagJob, runHashJob, modelReady, untaggedMediaIds, unhashedImageIds }
 import { enqueueCleanupJob } from './cleanup';
 import { enqueueBackupJob, listBackups } from './backup';
 import { runTranscodeJob } from './transcoder';
+import { enqueueSpriteCatchUp } from './videoSprite';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { aiTaggingEnabled, videoTranscodeEnabled } from '../lib/settings';
 import { mediaIdsWhere } from '../lib/mediaByIds';
@@ -127,6 +128,7 @@ export function dispatchAfterScan(libraryId: number): void {
   if (hashSchedule.mode === 'after-scan') dispatchHashForLibrary(libraryId);
 
   dispatchTranscodeForLibrary(libraryId);
+  enqueueSpriteCatchUp(libraryId);
 }
 
 /**

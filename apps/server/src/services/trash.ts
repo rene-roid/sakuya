@@ -9,6 +9,7 @@ import { removeMediaRows } from './mediaRemoval';
 import { refreshUsageCounts } from './tagger';
 import { thumbPathFor } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
+import { spritePathFor } from './videoSprite';
 
 export const TRASH_DIR = path.join(DATA_DIR, 'trash');
 export const TRASH_RETENTION_DAYS = 30;
@@ -16,10 +17,11 @@ const RETENTION_MS = TRASH_RETENTION_DAYS * 86_400_000;
 const PURGE_INTERVAL_MS = 6 * 3_600_000;
 const MOVE_CONCURRENCY = 8;
 
-// Thumbnail and transcode ride along in a subfolder with no media extension, so they can never
+// Thumbnail, sprite and transcode ride along in a subfolder with no media extension, so they can never
 // collide with the trashed file's own name.
 const DERIVED = '.derived';
 const THUMB = 'thumb.webp';
+const SPRITE = 'sprite.webp';
 const TRANSCODE = 'transcode.mp4';
 
 export class TrashError extends Error {
@@ -154,6 +156,7 @@ export async function trashMedia(rows: MediaRow[], now: number = Date.now()): Pr
       return;
     }
     await moveIfPresent(thumbPathFor(row.id), path.join(abs, DERIVED, THUMB));
+    await moveIfPresent(spritePathFor(row.id), path.join(abs, DERIVED, SPRITE));
     await moveIfPresent(transcodePathFor(row.id), path.join(abs, DERIVED, TRANSCODE));
     moved.push({ row, dir });
   };
@@ -349,11 +352,15 @@ export async function restoreFromTrash(id: number): Promise<TrashRestoreResult> 
   // Derived files are named by media id, so they only fit back when the id was reused.
   const thumbBack = idFree && (await moveIfPresent(path.join(derived, THUMB), thumbPathFor(mediaId)));
   const transcodeBack = idFree && (await moveIfPresent(path.join(derived, TRANSCODE), transcodePathFor(mediaId)));
+  const spriteBack = idFree && (await moveIfPresent(path.join(derived, SPRITE), spritePathFor(mediaId)));
   sqlite
     .query(
-      `UPDATE media SET thumbnail_path = ?, transcoded_at = CASE WHEN ? THEN transcoded_at ELSE NULL END WHERE id = ?`,
+      `UPDATE media SET thumbnail_path = ?, transcoded_at = CASE WHEN ? THEN transcoded_at ELSE NULL END,
+         sprite_frames = CASE WHEN ? THEN sprite_frames ELSE NULL END,
+         sprite_at = CASE WHEN ? THEN sprite_at ELSE NULL END
+       WHERE id = ?`,
     )
-    .run(thumbBack ? thumbPathFor(mediaId) : null, transcodeBack ? 1 : 0, mediaId);
+    .run(thumbBack ? thumbPathFor(mediaId) : null, transcodeBack ? 1 : 0, spriteBack ? 1 : 0, spriteBack ? 1 : 0, mediaId);
   fs.rmSync(path.join(TRASH_DIR, row.trashed_path), { recursive: true, force: true });
   refreshUsageCounts(touchedTags);
   return { ok: true, mediaId, path: target, renamed: target !== row.original_path };

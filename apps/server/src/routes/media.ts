@@ -10,6 +10,13 @@ import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, unlinkTag, clearVeto } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
+import {
+  SPRITE_FRAMES,
+  enqueueSpriteCatchUp,
+  generateSprite,
+  hasCurrentSprite,
+  spritePathFor,
+} from '../services/videoSprite';
 import { trashMedia } from '../services/trash';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds, type MediaRow } from '../lib/mediaByIds';
@@ -613,8 +620,33 @@ mediaRouter.get(
       if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
       await generateThumbnail(row.path, id, row.type, row.durationSeconds);
       db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, id)).run();
+      if (row.type === 'video' && row.spriteFrames === null) enqueueSpriteCatchUp(row.libraryId);
     }
     res.sendFile(thumb, { cacheControl: true, maxAge: '7d', immutable: false });
+  }),
+);
+
+mediaRouter.get(
+  '/api/media/:id/sprite',
+  wrap(async (req, res) => {
+    const row = mediaOr404(req.params.id);
+    // A sprite is part of the thumbnail cache: with the cache off, cards keep their still.
+    if (row.type !== 'video' || !thumbnailCacheEnabled()) return res.status(404).json({ error: 'No preview' });
+    const sprite = spritePathFor(row.id);
+    const sourceThere = fs.existsSync(row.path);
+    let frames = row.spriteFrames;
+    // An offline source keeps serving the sprite it already has, the way its thumbnail does.
+    if (sourceThere ? !hasCurrentSprite(row.id, row.path) : !fs.existsSync(sprite)) {
+      if (!sourceThere) return res.status(404).json({ error: 'Source missing' });
+      if (!(await generateSprite(row))) return res.status(404).json({ error: 'No preview' });
+      frames = SPRITE_FRAMES;
+    }
+    frames ||= SPRITE_FRAMES;
+    res.set('X-Sprite-Frames', String(frames));
+    res.set('X-Sprite-Interval', ((row.durationSeconds ?? 0) / frames).toFixed(3));
+    // Cards ask with ?v=<sprite_at>, which changes whenever the sprite is rewritten.
+    res.set('Cache-Control', req.query.v ? 'private, max-age=31536000, immutable' : 'private, max-age=3600');
+    res.sendFile(sprite, { cacheControl: false });
   }),
 );
 
@@ -625,6 +657,7 @@ mediaRouter.post(
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
     const thumb = await generateThumbnail(row.path, row.id, row.type, row.durationSeconds);
     db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, row.id)).run();
+    if (row.type === 'video' && thumbnailCacheEnabled()) void generateSprite(row);
     res.json({ ok: true });
   }),
 );

@@ -3,12 +3,13 @@ import { sqlite } from '../db';
 import { chunkIds } from '../lib/mediaByIds';
 import { thumbPathFor } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
+import { spritePathFor } from './videoSprite';
 import { refreshUsageCounts } from './tagger';
 
 /**
  * Remove media rows and everything derived from them: tag links, board memberships and tag vetoes
  * (FK cascade), the search index row (trigger), a library cover pointing at them, and the cached
- * thumbnail and transcode on disk. The source file itself is the caller's call — a pruned file is already gone,
+ * thumbnail, sprite and transcode on disk. The source file itself is the caller's call — a pruned file is already gone,
  * and a folder detach must leave it alone.
  *
  * Every delete path used to hand-roll a subset of this, so tag usage counts went stale after any
@@ -40,5 +41,6 @@ export function removeMediaRows(ids: number[]): void {
   for (const id of ids) {
     fs.rm(thumbPathFor(id), { force: true }, () => {});
     fs.rm(transcodePathFor(id), { force: true }, () => {});
+    fs.rm(spritePathFor(id), { force: true }, () => {});
   }
 }
