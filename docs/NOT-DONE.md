@@ -1,0 +1,62 @@
+# What the roadmap branch could not do on this machine
+
+This lists everything from [the roadmap plan](plans/sakuya-roadmap-plan.md) that was skipped, could not be proven here, or still has a known gap. The branch was built and tested on one Linux machine (Intel N95, 4 cores, about 6 GB free memory, no display, no Windows, no Mac), with only safe test images and videos (see [Test data](#test-data)).
+
+## Needs a machine this one is not
+
+| What | Why it was not done | How to do it |
+|---|---|---|
+| Windows installer update (NSIS, differential download through `.blockmap`) | No Windows machine | Install the previous release on Windows, publish a newer `v*` tag, start the app and wait for the update toast. Check that only part of the installer downloads. |
+| A real update from GitHub Releases | Only a local `generic` update feed was used | Tag a pre-release, let CI attach the installers and `latest*.yml`, then run the previous AppImage and `.exe`. |
+| The tray menu items (update item, "Update Automatically") | Xvfb has no system tray | Open the tray menu on a desktop session. |
+| AppImage through FUSE | No `libfuse2` here, so tests ran with `--appimage-extract-and-run` | Run the AppImage normally on a desktop with FUSE. |
+| macOS build and updates | No Mac, and the user does not want a macOS build | Not planned. Squirrel.Mac also needs a signed app. |
+| Windows code signing | The user cannot pay for a certificate now | Azure Trusted Signing is the cheapest option later. Until then Windows shows a SmartScreen warning on first install. |
+| A real phone | Touch was emulated in headless Chrome at 390 px | Open the web UI on a phone and check video cards, the Characters page, Discover shelves and Settings. |
+
+## Plan verification steps that were replaced
+
+The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second review video per PR, and copies of review screenshots in `docs/plans/media/`. None of that tooling exists here. Instead each change has behavior tests through the HTTP API, a walk-through on a seeded demo instance with screenshots, and the perf numbers below. No review videos were recorded.
+
+## Performance targets that were not met or not measured
+
+| PR | Target in the plan | What was measured |
+|---|---|---|
+| ML02 character detection | 2 files per second | 0.07 files per second on this CPU while other work ran. The detector takes about 1 s per image and CCIP about 2.6 s per crop. Detection is off by default for this reason. |
+| V02 video sprites | under 0.5 s added per video | 0.47 to 5 s per video, in its own background job, so scans are not slower. "Regenerate thumbnails" takes longer. |
+| P02 trash | delete-batch within 1.5x of trunk | 85 to 380 ms for 500 items against 37 to 148 ms. Under the 3 s limit, sometimes over 1.5x. |
+| R01 Discover | first page p50 | p50 rose about 35 ms under heavy load; p95 and profile rebuild improved. Not separable from load noise here. |
+| D02 desktop | cold start against trunk | Not measured. |
+| P01 backups | request latency during a backup against trunk | Only the head side was measured. |
+| V02 | 100-video run and scroll frame-time trace | Not run. |
+
+## Quality that the safe test data cannot show
+
+- **Character tag threshold (T02).** The WD tagger has no labels for the Pepper&Carrot characters, so no correct character prediction exists in the test data and character recall cannot be measured. The default stays at 85%.
+- **Character name suggestions (ML02).** Suggestions come from WD character tags on `solo` images. The test data has none, so suggestions are covered by tests only.
+- **Character clustering (ML02).** Pepper, Saffron and Coriander cluster cleanly. The three mentors share one cluster, and Carrot shares one with other animals. This looks like a limit of CCIP on painterly and non-human figures.
+- **Discover "Off the beaten path" shelf (R04).** It never appears on a 163-item library. It is covered by tests and the eval script.
+
+## Known gaps and edge cases
+
+- Creating an implication for a tag that does not exist yet creates it as a general tag, and naming a character with that name is then refused (409). Naming the character first and then adding "Implies..." from its tag menu works.
+- Removing a tag merge leaves the links that were already moved on the target tag.
+- The AI tagger still rewrites an item's search-index row once per tag. Doing it once per item, as the sidecar import does, would speed up tagging.
+- A trashed and restored item loses its character detections. The character job finds them again on its next run.
+- Deleting a whole library deletes its uploads permanently, since nothing could be restored without the library.
+- While a modal is open (style picker, What's new), the update toast's Restart button cannot be clicked until the modal closes.
+- An AppImage with the version in its file name is renamed on update, so a hand-made desktop shortcut to the old file breaks. The autostart entry is re-pointed.
+- If ffprobe reports a longer duration than a video really has, the last frames of a short clip's sprite are black.
+- On phones the Explore sidebar's rename pencil needs hover, so rename from the viewer's tag menu instead.
+- The Discover folder cap cannot hold on a library with fewer than 5 folders.
+- No live gallery-dl run (gallery-dl is not installed here). A fake gallery-dl in the tests writes the sidecar.
+
+## Test data
+
+Only safe content was used. Nothing from the live database (`apps/server/data/`) or its backups was read.
+
+- 102 Pepper&Carrot comic pages by David Revoy (CC-BY 4.0, peppercarrot.com).
+- 61 Lorem Picsum stock photos (picsum.photos).
+- 9 short videos made locally with ffmpeg as pan/zoom slideshows over those images, plus one `testsrc2` clip.
+
+The fixtures and the tools used to test (a seeded demo instance script and a headless screenshot tool) live outside the repo in `/mnt/data/apps/sakuya-tools/`.
