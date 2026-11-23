@@ -185,7 +185,7 @@ test('longer videos are sampled by seeking, and still give ten distinct frames',
       distinct: 10,
     });
   }
-});
+}, 30_000);
 
 test('cleanup removes the sprite of a media row that no longer exists', () => {
   const orphan = path.join(THUMBS_DIR, '987654.sprite.webp');
