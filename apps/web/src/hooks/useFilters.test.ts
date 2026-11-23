@@ -12,6 +12,7 @@ const CASES = [
   'sort=size&dir=asc',
   'q=beach&type=image',
   'q=beach&q=sunset&tags=solo',
+  'describe=a%20witch%20flying%20on%20a%20broom&type=image',
 ];
 
 test('exploreQueryString survives a parse round-trip', () => {
@@ -19,4 +20,12 @@ test('exploreQueryString survives a parse round-trip', () => {
     const saved = exploreQueryString(parseFilters(new URLSearchParams(qs)));
     expect(parseFilters(new URLSearchParams(saved))).toEqual(parseFilters(new URLSearchParams(qs)));
   }
+});
+
+test('a describe search reads back trimmed, and a blank one is no search', () => {
+  expect(parseFilters(new URLSearchParams('describe=%20a%20cat%20')).describe).toBe('a cat');
+  expect(parseFilters(new URLSearchParams('describe=%20')).describe).toBeUndefined();
+  expect(exploreQueryString(parseFilters(new URLSearchParams('describe=a+cat&tags=solo')))).toBe(
+    'tags=solo&describe=a+cat',
+  );
 });

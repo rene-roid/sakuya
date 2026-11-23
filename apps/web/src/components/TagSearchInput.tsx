@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search } from 'lucide-react';
+import { Search, TextSearch } from 'lucide-react';
 import { api } from '../lib/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { TagName } from './TagName';
@@ -16,6 +16,11 @@ interface TagSearchInputProps {
   placeholder?: string;
   /** Render selected tags as chips inside the box. Off when the caller lists them itself. */
   showChips?: boolean;
+  /**
+   * Search by description: a toggle at the end of the box. While it is on, nothing is completed
+   * into a tag and Enter hands the whole text to `onSubmit`.
+   */
+  describe?: { active: boolean; onToggle: () => void; onSubmit: (text: string) => void };
 }
 
 /**
@@ -40,7 +45,9 @@ export function TagSearchInput({
   onFreeText,
   placeholder = 'Search tags…',
   showChips = true,
+  describe,
 }: TagSearchInputProps) {
+  const describing = !!describe?.active;
   const [text, setText] = useState('');
   const [highlight, setHighlight] = useState(-1);
   const [focused, setFocused] = useState(false);
@@ -59,12 +66,13 @@ export function TagSearchInput({
   const { data: suggestions } = useQuery({
     queryKey: ['tags', 'suggest', debounced, libraryId],
     queryFn: () => api.tags({ q: debounced, libraryId, limit: 8 }),
-    enabled: debounced.length > 0,
+    enabled: debounced.length > 0 && !describing,
     staleTime: 30_000,
   });
   const visible = (suggestions ?? []).filter((s) => !tags.includes(s.name));
   // Until the debounce catches up the list belongs to an older segment, and Tab would complete it.
-  const showDropdown = focused && segment.trim().length > 0 && debounced === segment.trim() && visible.length > 0;
+  const showDropdown =
+    !describing && focused && segment.trim().length > 0 && debounced === segment.trim() && visible.length > 0;
 
   // The list is fixed-positioned, so it has to follow the box: the toolbar it sits in is sticky,
   // and both page scroll and a resize move the box out from under a stale measurement.
@@ -98,7 +106,8 @@ export function TagSearchInput({
     // Drop the trailing separator left behind when the last token was completed into a chip.
     const raw = text.replace(/[\s,]+$/, '').trim();
     if (!raw) return;
-    if (onFreeText) onFreeText(raw);
+    if (describing) describe!.onSubmit(raw);
+    else if (onFreeText) onFreeText(raw);
     else onAddTag(raw);
     setText('');
     setHighlight(-1);
@@ -158,9 +167,28 @@ export function TagSearchInput({
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 120)}
-          placeholder={showChips && tags.length > 0 ? '' : placeholder}
+          placeholder={describing ? 'Describe a picture, press Enter…' : showChips && tags.length > 0 ? '' : placeholder}
+          aria-label={describing ? 'Search by description' : undefined}
           className="min-w-[80px] flex-1 bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-500"
         />
+        {describe && (
+          <button
+            type="button"
+            title={describing ? 'Back to tag and filename search' : 'Search by description'}
+            aria-pressed={describing}
+            onClick={(e) => {
+              e.stopPropagation();
+              describe.onToggle();
+              inputRef.current?.focus();
+            }}
+            className={`-my-0.5 flex flex-none cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[11.5px] font-semibold glass:rounded-full ${
+              describing ? 'bg-accent/15 text-accent' : 'text-zinc-500 hover:text-zinc-200'
+            }`}
+          >
+            <TextSearch size={13} />
+            <span className={describing ? '' : 'hidden sm:inline'}>Describe</span>
+          </button>
+        )}
       </div>
       {/* Inside a modal <dialog> the list has to live in the dialog too: a modal sits in the top
           layer and leaves the rest of the page inert. */}

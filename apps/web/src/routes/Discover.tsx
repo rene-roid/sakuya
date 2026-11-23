@@ -284,7 +284,9 @@ function MoreLikeThis({ id }: { id: number }) {
           <div className="text-[12.5px] text-zinc-500">
             {error
               ? (error as Error).message
-              : `${items.length} item${items.length === 1 ? '' : 's'} sharing its tags, rarer tags counting more`}
+              : data?.ranking === 'visual'
+                ? `${items.length} item${items.length === 1 ? '' : 's'} that look like it or share its tags`
+                : `${items.length} item${items.length === 1 ? '' : 's'} sharing its tags, rarer tags counting more`}
           </div>
         </div>
       </div>

@@ -23,6 +23,8 @@ export interface FilterActions {
   setLibrary(id: number | undefined): void;
   addQ(term: string): void;
   removeQ(term: string): void;
+  /** Search by description; empty clears it. */
+  setDescribe(text: string): void;
   toggleLiked(): void;
   clearFilters(): void;
 }
@@ -41,6 +43,7 @@ export function parseFilters(params: URLSearchParams, fixedLibraryId?: number): 
     tags: (params.get('tags') ?? '').split(',').filter(Boolean),
     liked: params.get('liked') === '1',
     q: params.getAll('q').filter(Boolean),
+    describe: params.get('describe')?.trim() || undefined,
     libraryId: fixedLibraryId ?? (libParam ? Number(libParam) : undefined),
   };
 }
@@ -56,6 +59,7 @@ export function exploreQueryString(f: FilterState): string {
   if (f.tags.length) p.set('tags', f.tags.join(','));
   if (f.liked) p.set('liked', '1');
   for (const term of f.q) p.append('q', term);
+  if (f.describe) p.set('describe', f.describe);
   if (f.sort !== 'recent') p.set('sort', f.sort);
   if (f.dir !== defaultDir(f.sort)) p.set('dir', f.dir);
   if (f.sort === 'random') p.set('seed', String(f.seed));
@@ -128,12 +132,18 @@ export function useFilters(fixedLibraryId?: number): [FilterState, FilterActions
           p.delete('q');
           for (const t of rest) p.append('q', t);
         }),
+      setDescribe: (text) =>
+        update((p) => {
+          const clean = text.trim();
+          if (clean) p.set('describe', clean);
+          else p.delete('describe');
+        }),
       toggleLiked: () => update((p) => (p.get('liked') === '1' ? p.delete('liked') : p.set('liked', '1'))),
       // Clears what narrows the results; sort/seed and the current library are how you're
       // viewing them, not filters, so they survive.
       clearFilters: () =>
         update((p) => {
-          for (const key of ['tags', 'q', 'liked', 'type']) p.delete(key);
+          for (const key of ['tags', 'q', 'describe', 'liked', 'type']) p.delete(key);
         }),
     }),
     [update],
