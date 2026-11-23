@@ -25,6 +25,8 @@ export const DEFAULTS: Record<string, string> = {
   ui_style_chosen: '0',
   // The Liquid Glass dashboard banner; its close button turns this off.
   dashboard_hero: '1',
+  // Off until switched on: the job downloads ~195 MB of models and is slow on small CPUs.
+  character_detection_enabled: '0',
 };
 
 export function getSetting(key: string): string {
@@ -70,4 +72,8 @@ export function gifsAsVideos(): boolean {
 
 export function videoTranscodeEnabled(): boolean {
   return getSetting('video_transcode_enabled') === '1';
+}
+
+export function characterDetectionEnabled(): boolean {
+  return getSetting('character_detection_enabled') === '1';
 }

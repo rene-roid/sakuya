@@ -180,6 +180,34 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_name_idx ON saved_searches(name);
+CREATE TABLE IF NOT EXISTS characters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+  cover_detection_id INTEGER REFERENCES character_detections(id) ON DELETE SET NULL,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS characters_tag_idx ON characters(tag_id);
+CREATE TABLE IF NOT EXISTS character_detections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  w REAL NOT NULL,
+  h REAL NOT NULL,
+  score REAL NOT NULL,
+  embedding BLOB NOT NULL,
+  character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+  assignment TEXT NOT NULL DEFAULT 'auto',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS character_detections_media_idx ON character_detections(media_id);
+CREATE INDEX IF NOT EXISTS character_detections_character_idx ON character_detections(character_id);
+CREATE TABLE IF NOT EXISTS character_scans (
+  media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  scanned_at INTEGER NOT NULL,
+  detections INTEGER NOT NULL
+);
 
 -- Free-text search index over filenames/paths and tag names. Replaces a pair of unindexable
 -- LIKE '%term%' scans; see buildMediaFilter in routes/media.ts.
