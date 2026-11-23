@@ -26,6 +26,8 @@ import type {
   TagCategory,
   TagCount,
   TagInfo,
+  TagRelationResult,
+  TagRelations,
   TaggerModel,
   TaggerStatus,
   JobSchedulesPayload,
@@ -217,6 +219,18 @@ export const api = {
     );
     return parts.flat();
   },
+  tagRelations: () => request<TagRelations>('/api/tag-relations'),
+  addTagSibling: (body: { from: string; to: string; category?: TagCategory }) =>
+    request<TagRelationResult>('/api/tag-relations/siblings', { method: 'POST', body: JSON.stringify(body) }),
+  removeTagSibling: (from: string) =>
+    request<TagRelationResult>(`/api/tag-relations/siblings/${encodeURIComponent(from)}`, { method: 'DELETE' }),
+  addTagImplication: (body: { tag: string; implies: string; category?: TagCategory }) =>
+    request<TagRelationResult>('/api/tag-relations/implications', { method: 'POST', body: JSON.stringify(body) }),
+  removeTagImplication: (tag: string, implies: string) =>
+    request<TagRelationResult>(
+      `/api/tag-relations/implications/${encodeURIComponent(tag)}/${encodeURIComponent(implies)}`,
+      { method: 'DELETE' },
+    ),
   renameTag: (name: string, displayName: string | null) =>
     request<TagInfo>(`/api/tags/${encodeURIComponent(name)}`, {
       method: 'PATCH',

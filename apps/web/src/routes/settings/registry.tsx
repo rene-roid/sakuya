@@ -23,6 +23,7 @@ import { LibraryManager } from './LibraryManager';
 import { PerLibrarySchedules } from './JobSchedules';
 import { JobHistory } from './JobHistory';
 import { ReleaseNotes } from './ReleaseNotes';
+import { TagRelations } from './TagRelations';
 
 export type SettingsKey = keyof Settings;
 
@@ -340,6 +341,18 @@ export const SETTINGS: readonly SettingEntry[] = [
     kind: 'custom',
     Control: TagUntaggedControl,
     Meta: TagUntaggedMeta,
+  },
+  {
+    id: 'tag-relations',
+    section: 'tagging',
+    group: 'Tag relations',
+    label: 'Merges and implications',
+    description:
+      'A merged tag lands on the tag it was merged into. An implied tag is added to everything carrying the tag that implies it.',
+    keywords: 'implication implies imply sibling alias merge synonym series character relation booru',
+    kind: 'custom',
+    block: true,
+    Control: TagRelations,
   },
 
   // Media processing
