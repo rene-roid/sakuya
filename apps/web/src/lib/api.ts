@@ -5,6 +5,11 @@ import type {
   BulkFailure,
   BulkRenameItem,
   BulkResult,
+  CharacterDetection,
+  CharacterMediaResponse,
+  CharacterModelStatus,
+  CharactersResponse,
+  CharacterSummary,
   ConsoleSessionStatus,
   DashboardResponse,
   DownloadBatchWithItems,
@@ -277,6 +282,32 @@ export const api = {
   selectTaggerModel: (modelId: string) =>
     request<TaggerStatus>('/api/tagger/select', { method: 'POST', body: JSON.stringify({ modelId }) }),
   taggerHashAll: () => request<{ job: Job }>('/api/tagger/hash-all', { method: 'POST' }),
+  characterStatus: () => request<CharacterModelStatus>('/api/characters/status'),
+  characterDownload: () => request<{ job: Job }>('/api/characters/download', { method: 'POST' }),
+  characterRun: () => request<{ job: Job }>('/api/characters/run', { method: 'POST' }),
+  characters: (includeHidden = false) =>
+    request<CharactersResponse>(`/api/characters${includeHidden ? '?hidden=1' : ''}`),
+  character: (id: number) => request<CharacterSummary>(`/api/characters/${id}`),
+  characterMedia: (id: number, offset = 0, limit = 60) =>
+    request<CharacterMediaResponse>(`/api/characters/${id}/media?offset=${offset}&limit=${limit}`),
+  nameCharacter: (id: number, name: string) =>
+    request<CharacterSummary>(`/api/characters/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
+  acceptCharacterSuggestion: (id: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/accept-suggestion`, { method: 'POST' }),
+  mergeCharacter: (id: number, into: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/merge`, { method: 'POST', body: JSON.stringify({ into }) }),
+  setCharacterHidden: (id: number, hidden: boolean) =>
+    request<CharacterSummary>(`/api/characters/${id}/hidden`, { method: 'POST', body: JSON.stringify({ hidden }) }),
+  setCharacterCover: (id: number, detectionId: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/cover`, { method: 'POST', body: JSON.stringify({ detectionId }) }),
+  rejectDetection: (detectionId: number) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/reject`, { method: 'POST' }),
+  assignDetection: (detectionId: number, characterId: number) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ characterId }),
+    }),
+  mediaDetections: (mediaId: number) => request<CharacterDetection[]>(`/api/media/${mediaId}/detections`),
   uploadLibraryCover: (id: number, file: File) => {
     const form = new FormData();
     form.append('file', file);

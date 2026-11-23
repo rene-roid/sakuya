@@ -12,8 +12,13 @@ export const JOB_TYPES = [
   'reclassify-gifs',
   'transcode',
   'backup',
+  'characters',
 ] as const;
 export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user'] as const;
+/** Who linked a tag to a media item. `character` links come from a named character and survive retagging. */
+export const TAG_SOURCES = ['ai', 'user', 'character'] as const;
+/** How a detection joined its character: clustering, a person's choice, or a person's "not this one". */
+export const CHARACTER_ASSIGNMENTS = ['auto', 'user', 'rejected'] as const;
 export const SCHEDULE_MODES = ['off', 'interval', 'after-scan'] as const;
 export const SCHEDULE_JOB_TYPES = ['scan', 'tag', 'hash', 'cleanup', 'backup'] as const;
 
@@ -74,7 +79,8 @@ type FolderStatus = 'pending' | 'scanning' | 'indexed' | 'error';
 export type JobType = (typeof JOB_TYPES)[number];
 type JobStatus = 'queued' | 'running' | 'done' | 'error';
 export type TagCategory = (typeof TAG_CATEGORIES)[number];
-type TagSource = 'ai' | 'user';
+type TagSource = (typeof TAG_SOURCES)[number];
+export type CharacterAssignment = (typeof CHARACTER_ASSIGNMENTS)[number];
 type ModelStatus = 'absent' | 'downloading' | 'ready' | 'error';
 export type ScheduleMode = (typeof SCHEDULE_MODES)[number];
 export type ScheduleJobType = (typeof SCHEDULE_JOB_TYPES)[number];
@@ -241,6 +247,7 @@ export interface Settings {
   dashboard_hero: string;
   /** How many database backups to keep; older ones are deleted after each backup. */
   backup_keep: string;
+  character_detection_enabled: string;
 }
 
 export type UiStyle = 'glass' | 'classic';
@@ -267,6 +274,76 @@ export interface TaggerStatus {
   tagCount: number | null;
   untaggedCount: number;
   unhashedCount: number;
+}
+
+/** Normalized 0-1 to the displayed image. */
+export interface BoundingBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface CharacterDetection {
+  id: number;
+  mediaId: number;
+  bbox: BoundingBox;
+  score: number;
+  characterId: number | null;
+  /** The character's tag name, when it is named. */
+  characterName: string | null;
+  assignment: CharacterAssignment;
+  cropUrl: string;
+}
+
+export interface CharacterSuggestion {
+  /** A WD character tag most of the cluster's `solo` images carry. */
+  tag: string;
+  /** Solo images in the cluster carrying the tag, out of `soloCount`. */
+  mediaCount: number;
+  soloCount: number;
+}
+
+export interface CharacterSummary {
+  id: number;
+  tagId: number | null;
+  /** The tag name; null until named. */
+  name: string | null;
+  hidden: boolean;
+  createdAt: number;
+  mediaCount: number;
+  detectionCount: number;
+  coverDetectionId: number | null;
+  coverUrl: string | null;
+  suggestion: CharacterSuggestion | null;
+}
+
+export interface CharactersResponse {
+  named: CharacterSummary[];
+  /** Unnamed clusters with a name suggestion. */
+  suggested: CharacterSummary[];
+  unnamed: CharacterSummary[];
+  /** Detections not (yet) in any character. */
+  unassignedCount: number;
+}
+
+export interface CharacterMediaResponse {
+  character: CharacterSummary;
+  items: Media[];
+  /** This character's detections on `items`, rejected ones included. */
+  detections: CharacterDetection[];
+  total: number;
+  nextOffset: number | null;
+}
+
+export interface CharacterModelStatus {
+  status: ModelStatus;
+  enabled: boolean;
+  modelSizeBytes: number | null;
+  /** Images and videos the character job has not looked at yet. */
+  pendingCount: number;
+  detectionCount: number;
+  characterCount: number;
 }
 
 export interface SimilarResponse {

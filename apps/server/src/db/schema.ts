@@ -1,5 +1,14 @@
-import { sqliteTable, text, integer, real } from 'drizzle-orm/sqlite-core';
-import { JOB_TYPES, LIBRARY_TYPES, MEDIA_TYPES, SCHEDULE_JOB_TYPES, SCHEDULE_MODES, TAG_CATEGORIES } from '@sakuya/shared';
+import { sqliteTable, text, integer, real, blob } from 'drizzle-orm/sqlite-core';
+import {
+  CHARACTER_ASSIGNMENTS,
+  JOB_TYPES,
+  LIBRARY_TYPES,
+  MEDIA_TYPES,
+  SCHEDULE_JOB_TYPES,
+  SCHEDULE_MODES,
+  TAG_CATEGORIES,
+  TAG_SOURCES,
+} from '@sakuya/shared';
 
 // Indexes and composite primary keys live in the raw DDL in db/index.ts; nothing here generates SQL.
 
@@ -74,7 +83,7 @@ export const mediaTags = sqliteTable('media_tags', {
   mediaId: integer('media_id').notNull(),
   tagId: integer('tag_id').notNull(),
   confidence: real('confidence'),
-  source: text('source', { enum: ['ai', 'user'] }).notNull().default('user'),
+  source: text('source', { enum: TAG_SOURCES }).notNull().default('user'),
 });
 
 // Cascades on both columns (see db/index.ts).
@@ -188,4 +197,38 @@ export const trash = sqliteTable('trash', {
   trashedPath: text('trashed_path').notNull(),
   trashedAt: integer('trashed_at').notNull(),
   mediaJson: text('media_json').notNull(),
+});
+
+// One row per person the detector found in a media item. Rows cascade with their media, and a
+// character's deletion leaves its detections unassigned (see db/index.ts).
+export const characterDetections = sqliteTable('character_detections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mediaId: integer('media_id').notNull(),
+  // Normalized 0-1 to the displayed (EXIF-rotated) image.
+  x: real('x').notNull(),
+  y: real('y').notNull(),
+  w: real('w').notNull(),
+  h: real('h').notNull(),
+  score: real('score').notNull(),
+  // CCIP feature, 768 little-endian float16 values (lib/vectors.ts).
+  embedding: blob('embedding', { mode: 'buffer' }).notNull(),
+  characterId: integer('character_id'),
+  assignment: text('assignment', { enum: CHARACTER_ASSIGNMENTS }).notNull().default('auto'),
+  createdAt: integer('created_at').notNull(),
+});
+
+export const characters = sqliteTable('characters', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  // Null until named; naming links every member's media to this character-category tag.
+  tagId: integer('tag_id'),
+  coverDetectionId: integer('cover_detection_id'),
+  hidden: integer('hidden').notNull().default(0),
+  createdAt: integer('created_at').notNull(),
+});
+
+// Which media the character job has already looked at, including the ones with no detections.
+export const characterScans = sqliteTable('character_scans', {
+  mediaId: integer('media_id').primaryKey(),
+  scannedAt: integer('scanned_at').notNull(),
+  detections: integer('detections').notNull(),
 });

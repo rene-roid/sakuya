@@ -30,6 +30,8 @@ export const DEFAULTS: Record<string, string> = {
   dashboard_hero: '1',
   // How many database backups <dataDir>/backups keeps; older ones are deleted after each backup.
   backup_keep: '7',
+  // Off until switched on: the job downloads ~195 MB of models and is slow on small CPUs.
+  character_detection_enabled: '0',
 };
 
 export function getSetting(key: string): string {
@@ -94,4 +96,8 @@ export function videoTranscodeEnabled(): boolean {
 export function backupKeep(): number {
   const n = Number(getSetting('backup_keep'));
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 7;
+}
+
+export function characterDetectionEnabled(): boolean {
+  return getSetting('character_detection_enabled') === '1';
 }

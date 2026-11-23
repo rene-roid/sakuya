@@ -4,12 +4,13 @@ import { chunkIds } from '../lib/mediaByIds';
 import { thumbPathFor } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
 import { refreshUsageCounts } from './tagger';
+import { characterCropDirFor } from './characters';
 
 /**
- * Remove media rows and everything derived from them: tag links, board memberships and tag vetoes
- * (FK cascade), the search index row (trigger), a library cover pointing at them, and the cached
- * thumbnail and transcode on disk. The source file itself is the caller's call — a pruned file is already gone,
- * and a folder detach must leave it alone.
+ * Remove media rows and everything derived from them: tag links, board memberships, tag vetoes and
+ * character detections (FK cascade), the search index row (trigger), a library cover pointing at
+ * them, and the cached thumbnail, transcode and character crops on disk. The source file itself is
+ * the caller's call — a pruned file is already gone, and a folder detach must leave it alone.
  *
  * Every delete path used to hand-roll a subset of this, so tag usage counts went stale after any
  * delete (the tag sidebar kept offering tags whose only media was gone) and a scan prune leaked
@@ -40,5 +41,6 @@ export function removeMediaRows(ids: number[]): void {
   for (const id of ids) {
     fs.rm(thumbPathFor(id), { force: true }, () => {});
     fs.rm(transcodePathFor(id), { force: true }, () => {});
+    fs.rm(characterCropDirFor(id), { recursive: true, force: true }, () => {});
   }
 }

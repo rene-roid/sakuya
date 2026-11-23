@@ -4,6 +4,10 @@ import type { Settings } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import {
   AccentColorControl,
+  CharacterModelControl,
+  CharacterModelMeta,
+  FindCharactersControl,
+  FindCharactersMeta,
   HashImagesControl,
   HashImagesMeta,
   HomeFolderControl,
@@ -355,6 +359,38 @@ export const SETTINGS: readonly SettingEntry[] = [
     kind: 'custom',
     Control: TagUntaggedControl,
     Meta: TagUntaggedMeta,
+  },
+  {
+    id: 'character-detection',
+    section: 'tagging',
+    group: 'Characters',
+    label: 'Character detection',
+    description: 'After each scan, find the characters in new files and group each one across your library.',
+    keywords: 'characters people faces recognise recognize identity ccip cluster person detect',
+    kind: 'toggle',
+    key: 'character_detection_enabled',
+  },
+  {
+    id: 'character-models',
+    section: 'tagging',
+    group: 'Characters',
+    label: 'Character models',
+    description: 'A person detector and the CCIP identity model, downloaded once.',
+    keywords: 'characters onnx ccip detector download',
+    kind: 'custom',
+    Control: CharacterModelControl,
+    Meta: CharacterModelMeta,
+  },
+  {
+    id: 'find-characters',
+    section: 'tagging',
+    group: 'Characters',
+    label: 'Find characters in new files',
+    description: 'Look for characters in every file not scanned yet, without waiting for the next scan.',
+    keywords: 'characters scan detect run bulk',
+    kind: 'custom',
+    Control: FindCharactersControl,
+    Meta: FindCharactersMeta,
   },
 
   // Media processing
@@ -710,6 +746,7 @@ export const ALL_SETTINGS_KEYS = Object.keys({
   ui_style_chosen: 1,
   dashboard_hero: 1,
   backup_keep: 1,
+  character_detection_enabled: 1,
 } satisfies Record<SettingsKey, 1>) as SettingsKey[];
 
 export function entryKeys(entry: SettingEntry): SettingsKey[] {

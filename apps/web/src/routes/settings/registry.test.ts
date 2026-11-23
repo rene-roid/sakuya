@@ -18,9 +18,10 @@ test('every Settings key appears in exactly one registry entry, or is named as s
     const elsewhere = key in KEYS_SET_ELSEWHERE;
     expect({ key, count: ids.length + (elsewhere ? 1 : 0) }).toEqual({ key, count: 1 });
   }
-  expect(ALL_SETTINGS_KEYS).toHaveLength(18);
+  expect(ALL_SETTINGS_KEYS).toHaveLength(19);
   expect(owners.get('confidence_threshold')).toEqual(['confidence-threshold']);
   expect(owners.get('confidence_threshold_character')).toEqual(['character-threshold']);
+  expect(owners.get('character_detection_enabled')).toEqual(['character-detection']);
   expect(owners.get('discover_enabled')).toEqual(['discover-enabled']);
   expect(owners.get('backup_keep')).toEqual(['backup-keep']);
   expect(Object.keys(KEYS_SET_ELSEWHERE).sort()).toEqual(['downloader_concurrency', 'ui_style_chosen']);
