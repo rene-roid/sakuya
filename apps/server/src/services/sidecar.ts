@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { sqlite } from '../db';
@@ -137,9 +138,17 @@ export function parseSidecar(data: unknown): SidecarMetadata | null {
  * `.zip` name, and `--write-metadata` with a custom extension format may drop the media extension.
  */
 export function sidecarFor(file: string, jsonFiles: ReadonlySet<string>): string | null {
+  return sidecarNames(file).find((c) => jsonFiles.has(c)) ?? null;
+}
+
+/** sidecarFor, looking on disk instead of in a directory listing. */
+export function sidecarOnDisk(file: string): string | null {
+  return sidecarNames(file).find((c) => existsSync(c)) ?? null;
+}
+
+function sidecarNames(file: string): string[] {
   const stem = file.slice(0, file.length - path.extname(file).length);
-  const candidates = [`${file}.json`, `${stem}.zip.json`, `${stem}.json`];
-  return candidates.find((c) => jsonFiles.has(c)) ?? null;
+  return [`${file}.json`, `${stem}.zip.json`, `${stem}.json`];
 }
 
 const vetoedStmt = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');

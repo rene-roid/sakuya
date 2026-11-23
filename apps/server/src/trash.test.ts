@@ -281,3 +281,24 @@ test('a delete whose database write fails puts the file and its thumbnail and tr
   expect(fs.readFileSync(transcode, 'utf8')).toBe('transcoded');
   expect(fs.readdirSync(TRASH_DIR)).toEqual([]);
 });
+
+test('a gallery-dl sidecar goes to the trash with its file and comes back on restore', async () => {
+  await writeImage('post.png', '#123456');
+  const sidecar = path.join(root, 'post.png.json');
+  fs.writeFileSync(sidecar, JSON.stringify({ category: 'danbooru', id: 7, tag_string_artist: 'david_revoy' }));
+  await scan();
+  const id = idOf('post.png')!;
+  expect((await getJson<MediaDetail>(`/api/media/${id}`)).tags.map((t) => `${t.name}:${t.source}`)).toEqual([
+    'david_revoy:meta',
+  ]);
+
+  expect((await send('DELETE', `/api/media/${id}`)).status).toBe(200);
+  expect(fs.existsSync(sidecar)).toBe(false);
+  const [item] = (await getJson<TrashPayload>('/api/trash')).items;
+  await send('POST', `/api/trash/${item.id}/restore`);
+  expect(JSON.parse(fs.readFileSync(sidecar, 'utf8')).tag_string_artist).toBe('david_revoy');
+  await scan();
+  expect((await getJson<MediaDetail>(`/api/media/${id}`)).tags.map((t) => `${t.name}:${t.source}`)).toEqual([
+    'david_revoy:meta',
+  ]);
+});

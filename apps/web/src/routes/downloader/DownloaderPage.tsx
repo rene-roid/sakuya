@@ -4,6 +4,7 @@ import { ChevronDown, ChevronRight, Download, Pause, Play, RotateCcw, SkipForwar
 import type { DownloadBatchWithItems, DownloadItem, DownloadItemStatus } from '@sakuya/shared';
 import { api } from '../../lib/api';
 import { toast, toastError } from '../../components/Toast';
+import { movedToTrashMessage } from '../../lib/trash';
 import { Modal } from '../../components/Modal';
 import { useDebounce } from '../../hooks/useDebounce';
 import { usePatchSettings, useSettings } from '../../hooks/useSettings';
@@ -326,8 +327,9 @@ function ItemRow({ item }: { item: DownloadItem }) {
   }, [historyLogs, liveLogs]);
 
   const remove = (deleteFiles: boolean) =>
-    api.removeDownloadItem(item.id, deleteFiles).then(() => {
+    api.removeDownloadItem(item.id, deleteFiles).then((res) => {
       setRemoving(false);
+      if (deleteFiles) toast(movedToTrashMessage(res.deleted, res.failed));
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
     }, toastError);
 

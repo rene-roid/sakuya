@@ -6,6 +6,7 @@ import { sqlite } from '../db';
 import { DATA_DIR } from '../lib/config';
 import { chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { removeMediaRows } from './mediaRemoval';
+import { sidecarOnDisk } from './sidecar';
 import { refreshUsageCounts } from './tagger';
 import { thumbPathFor } from './thumbnailer';
 import { transcodePathFor } from './transcoder';
@@ -23,6 +24,7 @@ const DERIVED = '.derived';
 const THUMB = 'thumb.webp';
 const SPRITE = 'sprite.webp';
 const TRANSCODE = 'transcode.mp4';
+const SIDECAR = 'sidecar.json';
 
 export class TrashError extends Error {
   constructor(
@@ -74,6 +76,8 @@ interface Snapshot {
   tags: { name: string; category: string; source: string; confidence: number | null }[];
   vetoes: { name: string; category: string; createdAt: number }[];
   boards: { boardId: number; addedAt: number }[];
+  /** File name of the gallery-dl sidecar that went to the trash with the file. */
+  sidecar?: string;
 }
 
 function snapshot(id: number): Snapshot {
@@ -181,6 +185,10 @@ async function moveToTrash(rows: MediaRow[], now: number, claimed: string[]): Pr
       return;
     }
     for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(live, trashed);
+    const sidecar = sidecarOnDisk(row.path);
+    if (sidecar && (await moveIfPresent(sidecar, path.join(abs, DERIVED, SIDECAR)))) {
+      snapshots.get(row.id)!.sidecar = path.basename(sidecar);
+    }
     moved.push({ row, dir });
   };
   // A few at a time: one by one, a 500-item delete spent most of its time waiting on each rename.
@@ -213,6 +221,8 @@ async function moveToTrash(rows: MediaRow[], now: number, claimed: string[]): Pr
     for (const { row, dir } of moved) {
       await moveFile(path.join(TRASH_DIR, dir, path.basename(row.path)), row.path).catch(() => {});
       for (const [live, trashed] of derivedFiles(row.id, dir)) await moveIfPresent(trashed, live);
+      const sidecar = snapshots.get(row.id)!.sidecar;
+      if (sidecar) await moveIfPresent(path.join(TRASH_DIR, dir, DERIVED, SIDECAR), path.join(path.dirname(row.path), sidecar));
       fs.rmSync(path.join(TRASH_DIR, dir), { recursive: true, force: true });
     }
     throw err;
@@ -292,6 +302,18 @@ function freePath(original: string): string {
     const candidate = `${stem} (restored${n > 1 ? ` ${n}` : ''})${ext}`;
     if (!taken(candidate)) return candidate;
   }
+}
+
+/** `photo.png.json` → `photo (restored).png.json` when `photo.png` came back as `photo (restored).png`. */
+function renamedSidecar(name: string, original: string, target: string): string {
+  const stem = (p: string) => path.basename(p, path.extname(p));
+  for (const [from, to] of [
+    [path.basename(original), path.basename(target)],
+    [stem(original), stem(target)],
+  ]) {
+    if (name.startsWith(from)) return to + name.slice(from.length);
+  }
+  return name;
 }
 
 function tagId(name: string, category: string): number {
@@ -387,6 +409,10 @@ async function restoreEntry(id: number, row: TrashRow): Promise<TrashRestoreResu
   const thumbBack = idFree && (await moveIfPresent(path.join(derived, THUMB), thumbPathFor(mediaId)));
   const transcodeBack = idFree && (await moveIfPresent(path.join(derived, TRANSCODE), transcodePathFor(mediaId)));
   const spriteBack = idFree && (await moveIfPresent(path.join(derived, SPRITE), spritePathFor(mediaId)));
+  if (snap.sidecar) {
+    const sidecar = path.join(path.dirname(target), renamedSidecar(snap.sidecar, row.original_path, target));
+    if (!fs.existsSync(sidecar)) await moveIfPresent(path.join(derived, SIDECAR), sidecar);
+  }
   sqlite
     .query(
       `UPDATE media SET thumbnail_path = ?, transcoded_at = CASE WHEN ? THEN transcoded_at ELSE NULL END,
