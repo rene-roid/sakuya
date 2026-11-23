@@ -76,6 +76,13 @@ export const mediaTags = sqliteTable('media_tags', {
   source: text('source', { enum: ['ai', 'user'] }).notNull().default('user'),
 });
 
+// Cascades on both columns (see db/index.ts).
+export const mediaTagVetoes = sqliteTable('media_tag_vetoes', {
+  mediaId: integer('media_id').notNull(),
+  tagId: integer('tag_id').notNull(),
+  createdAt: integer('created_at').notNull(),
+});
+
 export const boards = sqliteTable('boards', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),

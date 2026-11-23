@@ -98,6 +98,14 @@ CREATE TABLE IF NOT EXISTS media_tags (
   PRIMARY KEY (media_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags(tag_id);
+-- AI tags the user removed from one item, so a retag doesn't put them back.
+CREATE TABLE IF NOT EXISTS media_tag_vetoes (
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS media_tag_vetoes_tag_idx ON media_tag_vetoes(tag_id);
 CREATE TABLE IF NOT EXISTS boards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,

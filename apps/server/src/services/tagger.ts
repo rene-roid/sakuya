@@ -271,6 +271,28 @@ export function refreshUsageCounts(tagIds: number[]): void {
   bumpTasteVersion();
 }
 
+const unlinkReturningSource = sqlite.prepare(
+  'DELETE FROM media_tags WHERE media_id = ? AND tag_id = ? RETURNING source',
+);
+const insertVeto = sqlite.prepare(
+  'INSERT INTO media_tag_vetoes (media_id, tag_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
+);
+const deleteVeto = sqlite.prepare('DELETE FROM media_tag_vetoes WHERE media_id = ? AND tag_id = ?');
+const vetoedNames = sqlite.prepare(
+  'SELECT t.name FROM media_tag_vetoes v JOIN tags t ON t.id = v.tag_id WHERE v.media_id = ?',
+);
+
+/** Take a tag off one item by hand. Removing an AI tag records a veto so the next retag leaves it off. */
+export function unlinkTag(mediaId: number, tagId: number): void {
+  const removed = unlinkReturningSource.get(mediaId, tagId) as { source: string } | null;
+  if (removed?.source === 'ai') insertVeto.run(mediaId, tagId, Date.now());
+}
+
+/** Adding a tag by hand overrides any earlier rejection of it. */
+export function clearVeto(mediaId: number, tagId: number): void {
+  deleteVeto.run(mediaId, tagId);
+}
+
 export async function tagOneMedia(mediaId: number): Promise<number> {
   const row = db.select().from(schema.media).where(eq(schema.media.id, mediaId)).get();
   if (!row) throw new Error(`media ${mediaId} not found`);
@@ -290,7 +312,13 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
       throw err;
     }
   }
+  return applyPredictedTags(mediaId, predicted);
+}
 
+/** Replace an item's AI tags with `predicted`, minus any the user vetoed on it. */
+export function applyPredictedTags(mediaId: number, predicted: PredictedTag[]): number {
+  const vetoed = new Set((vetoedNames.all(mediaId) as { name: string }[]).map((r) => r.name));
+  const kept = vetoed.size ? predicted.filter((t) => !vetoed.has(t.name)) : predicted;
   // One transaction for the swap: the old AI tags and the new ones commit together, so a reader
   // never sees the item momentarily untagged, and the ~30 inserts (each rewriting the item's
   // search-index row via trigger) share one commit instead of paying one each.
@@ -306,7 +334,7 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
       .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
       .run();
 
-    for (const tag of predicted) {
+    for (const tag of kept) {
       const tagId = upsertTag(tag.name, tag.category);
       touched.add(tagId);
       db.insert(schema.mediaTags)
@@ -317,7 +345,7 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
     db.update(schema.media).set({ taggedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
     refreshUsageCounts([...touched]);
   })();
-  return predicted.length;
+  return kept.length;
 }
 
 export function enqueueTagJob(mediaIds: number[], label: string, libraryId: number | null = null) {

@@ -2,9 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import { useTestConfig } from './testConfig';
 
 // The tagger module opens the database on import, so it needs a throwaway data dir.
-useTestConfig('tagger');
+useTestConfig('tagger', { port: 38923 }); // T01
+const BASE = 'http://localhost:38923';
 
-const { parseLabels, selectTags } = await import('./services/tagger');
+const { parseLabels, selectTags, applyPredictedTags } = await import('./services/tagger');
+const { db, sqlite, schema } = await import('./db');
+await import('./index');
 
 const labels = parseLabels(
   [
@@ -57,5 +60,101 @@ describe('selectTags', () => {
   test('an output longer or shorter than the label list is read up to the shorter one', () => {
     expect(names(selectTags(new Float32Array([0.9, 0.1, 0.7]), labels, 0.5))).toEqual(['general', '1girl']);
     expect(names(selectTags(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]), labels, 0.5))).toEqual(['general']);
+  });
+});
+
+describe('AI tag vetoes', () => {
+  const library = db.insert(schema.libraries).values({ name: 'veto', createdAt: Date.now() }).returning().get();
+  let n = 0;
+  const addItem = () =>
+    db
+      .insert(schema.media)
+      .values({
+        libraryId: library.id,
+        source: 'folder',
+        path: `/nowhere/veto-${++n}.png`,
+        filename: `veto-${n}.png`,
+        type: 'image',
+        createdAt: Date.now(),
+      })
+      .returning()
+      .get().id;
+
+  const predicted = [
+    { name: 'solo', category: 'general' as const, confidence: 0.9 },
+    { name: 'simple_background', category: 'general' as const, confidence: 0.7 },
+    { name: 'white_background', category: 'general' as const, confidence: 0.6 },
+    { name: 'general', category: 'rating' as const, confidence: 0.8 },
+  ];
+
+  const detailTags = async (id: number) => {
+    const detail = (await (await fetch(`${BASE}/api/media/${id}`)).json()) as {
+      tags: { name: string; source: string }[];
+    };
+    return detail.tags.map((t) => `${t.name}:${t.source}`).sort();
+  };
+  const patchTags = (id: number, body: unknown) =>
+    fetch(`${BASE}/api/media/${id}/tags`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const vetoCount = (id: number) =>
+    (sqlite.query('SELECT COUNT(*) AS c FROM media_tag_vetoes WHERE media_id = ?').get(id) as { c: number }).c;
+
+  test('a removed AI tag is not re-added by retag', async () => {
+    const id = addItem();
+    applyPredictedTags(id, predicted);
+    expect((await patchTags(id, { remove: ['simple_background', 'white_background'] })).status).toBe(200);
+
+    expect(applyPredictedTags(id, predicted)).toBe(2);
+    expect(await detailTags(id)).toEqual(['general:ai', 'solo:ai']);
+  });
+
+  test('re-adding a vetoed tag clears the veto', async () => {
+    const id = addItem();
+    applyPredictedTags(id, predicted);
+    await patchTags(id, { remove: ['simple_background'] });
+    expect(vetoCount(id)).toBe(1);
+
+    await patchTags(id, { add: ['simple_background'] });
+    expect(vetoCount(id)).toBe(0);
+    applyPredictedTags(id, predicted);
+    expect(await detailTags(id)).toEqual(['general:ai', 'simple_background:user', 'solo:ai', 'white_background:ai']);
+  });
+
+  test('removing a user tag records no veto', async () => {
+    const id = addItem();
+    await patchTags(id, { add: ['my_tag'] });
+    await patchTags(id, { remove: ['my_tag'] });
+    expect(vetoCount(id)).toBe(0);
+  });
+
+  test('bulk removal vetoes the AI tag on every item, and bulk add clears it', async () => {
+    const ids = [addItem(), addItem(), addItem()];
+    for (const id of ids) applyPredictedTags(id, predicted);
+    const batch = (body: unknown) =>
+      fetch(`${BASE}/api/media/tags-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    await batch({ ids, remove: ['solo'] });
+    for (const id of ids) applyPredictedTags(id, predicted);
+    for (const id of ids) {
+      expect(await detailTags(id)).toEqual(['general:ai', 'simple_background:ai', 'white_background:ai']);
+    }
+
+    await batch({ ids: ids.slice(0, 1), add: ['solo'] });
+    expect(ids.map(vetoCount)).toEqual([0, 1, 1]);
+  });
+
+  test('deleting an item drops its vetoes', async () => {
+    const id = addItem();
+    applyPredictedTags(id, predicted);
+    await patchTags(id, { remove: ['solo'] });
+    expect(vetoCount(id)).toBe(1);
+    expect((await fetch(`${BASE}/api/media/${id}`, { method: 'DELETE' })).status).toBe(200);
+    expect(vetoCount(id)).toBe(0);
   });
 });

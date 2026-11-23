@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, sql, inArray } from 'drizzle-orm';
 import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, unlinkTag, clearVeto } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
 import { removeMediaRows } from '../services/mediaRemoval';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
@@ -353,15 +353,17 @@ mediaRouter.post(
     const link = sqlite.prepare(
       `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, NULL, 'user') ON CONFLICT DO NOTHING`,
     );
-    const unlink = sqlite.prepare('DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?');
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
         if (!rows.has(id)) {
           failed.push({ id, error: 'Not found' });
           continue;
         }
-        for (const tagId of addTagIds) link.run(id, tagId);
-        for (const tagId of removeTagIds) unlink.run(id, tagId);
+        for (const tagId of addTagIds) {
+          link.run(id, tagId);
+          clearVeto(id, tagId);
+        }
+        for (const tagId of removeTagIds) unlinkTag(id, tagId);
         updated++;
       }
     });
@@ -654,15 +656,14 @@ mediaRouter.patch(
         .values({ mediaId: id, tagId, confidence: null, source: 'user' })
         .onConflictDoNothing()
         .run();
+      clearVeto(id, tagId);
       touched.push(tagId);
     }
     for (const raw of body.remove) {
       const name = normalizeTagName(raw);
       const tag = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
       if (!tag) continue;
-      db.delete(schema.mediaTags)
-        .where(and(eq(schema.mediaTags.mediaId, id), eq(schema.mediaTags.tagId, tag.id)))
-        .run();
+      unlinkTag(id, tag.id);
       touched.push(tag.id);
     }
     if (body.setCategory) {
