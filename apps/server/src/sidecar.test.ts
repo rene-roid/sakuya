@@ -265,7 +265,7 @@ describe('gallery-dl sidecars', () => {
 
     writeJson('pixiv.png.json', { category: 'pixiv', id: 123456, user: { id: 1, name: 'David Revoy' }, tags: [] });
     await scan();
-    const after = await request('GET', `/api/media/${detail.id}`);
+    const after = await request<MediaDetail>('GET', `/api/media/${detail.id}`);
     expect(after.tags.find((t: Tag) => t.name === 'witch')).toMatchObject({ source: 'ai', confidence: 0.85 });
   });
 });

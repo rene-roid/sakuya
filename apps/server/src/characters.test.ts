@@ -615,7 +615,7 @@ describe('character links and the other tag writers', () => {
     const { id } = await namedCluster('carrot_cat', 1200, media);
     const merged = await post('/api/tag-relations/siblings', { from: 'carrot_cat', to: 'carrot', category: 'character' });
     expect(merged.status).toBe(200);
-    expect((await json(fetch(`${BASE}/api/characters/${id}`))).name).toBe('carrot');
+    expect((await json<CharacterSummary>(fetch(`${BASE}/api/characters/${id}`))).name).toBe('carrot');
 
     const later = await newFace(1200, 1230);
     expect(linksOf('carrot_cat')).toEqual([]);
