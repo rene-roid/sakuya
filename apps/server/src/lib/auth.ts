@@ -66,9 +66,19 @@ export function clearAuthCookie(res: Response): void {
   res.clearCookie(COOKIE_NAME);
 }
 
+/**
+ * The desktop app talks to its own server from the main process (the backup before an update), which
+ * has no login cookie. It passes a random per-launch token in SAKUYA_DESKTOP_TOKEN and sends it back.
+ */
+function desktopTokenMatches(req: Request): boolean {
+  const expected = process.env.SAKUYA_DESKTOP_TOKEN;
+  const sent = req.headers['x-sakuya-desktop-token'];
+  return !!expected && typeof sent === 'string' && timingSafeEqual(sent, expected);
+}
+
 export function isAuthed(req: Request): boolean {
   if (!CONFIG.auth.enabled) return true;
-  return verifyToken(readAuthCookie(req));
+  return verifyToken(readAuthCookie(req)) || desktopTokenMatches(req);
 }
 
 export const requireAuth: RequestHandler = (req, res, next) => {
