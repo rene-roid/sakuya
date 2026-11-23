@@ -141,6 +141,18 @@ const vetoedStmt = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE med
 const rowByPathStmt = sqlite.prepare('SELECT id, sidecar_mtime AS sidecarMtime FROM media WHERE path = ?');
 const setSourceStmt = sqlite.prepare('UPDATE media SET source_url = ?, sidecar_mtime = ? WHERE id = ?');
 const setSidecarMtimeStmt = sqlite.prepare('UPDATE media SET sidecar_mtime = ? WHERE id = ?');
+// Every media_tags insert rewrites the item's whole search-index row through a trigger, and that
+// cost grows with the index: eight links per file made a 5,000-file scan ~25% slower. Inside the
+// transaction the row is dropped first, so those triggers match nothing, and written once at the
+// end in the same form the triggers produce.
+const dropFtsStmt = sqlite.prepare('DELETE FROM media_fts WHERE rowid = ?');
+const writeFtsStmt = sqlite.prepare(
+  `INSERT INTO media_fts (rowid, path, tags)
+   SELECT m.id, m.path || ' ' || m.filename,
+          COALESCE((SELECT group_concat(t.name, ' ') FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+                    WHERE mt.media_id = m.id), '')
+   FROM media m WHERE m.id = ?`,
+);
 const promoteStmt = sqlite.prepare(`UPDATE tags SET category = ? WHERE id = ? AND category = 'general'`);
 
 /**
@@ -151,6 +163,7 @@ const promoteStmt = sqlite.prepare(`UPDATE tags SET category = ? WHERE id = ? AN
 export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: number, touched: Set<number>): void {
   const vetoed = new Set((vetoedStmt.all(mediaId) as { tag_id: number }[]).map((r) => r.tag_id));
   sqlite.transaction(() => {
+    dropFtsStmt.run(mediaId);
     const old = sqlite
       .query(`DELETE FROM media_tags WHERE media_id = ? AND source = 'meta' RETURNING tag_id`)
       .all(mediaId) as { tag_id: number }[];
@@ -164,6 +177,7 @@ export function applySidecar(mediaId: number, meta: SidecarMetadata, mtime: numb
     }
     for (const tagId of recomputeImplied([mediaId])) touched.add(tagId);
     setSourceStmt.run(meta.sourceUrl, mtime, mediaId);
+    writeFtsStmt.run(mediaId);
   })();
 }
 

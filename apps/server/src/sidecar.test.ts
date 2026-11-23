@@ -211,6 +211,16 @@ describe('gallery-dl sidecars', () => {
     ]);
   });
 
+  test('free-text search finds an item by its sidecar tags and still by its filename', async () => {
+    const names = async (q: string) =>
+      (await request('GET', `/api/media?q=${encodeURIComponent(q)}&limit=100`)).items
+        .map((m: { filename: string }) => m.filename)
+        .sort();
+    expect(await names('witch_hat')).toEqual(['danbooru.png']);
+    expect(await names('オリジナル')).toEqual(['pixiv.png']);
+    expect(await names('danbooru')).toEqual(['danbooru.png']);
+  });
+
   test('an AI retag replaces only AI tags and keeps the sidecar ones', async () => {
     const before = await itemByName('danbooru.png');
     applyPredictedTags(before.id, [
