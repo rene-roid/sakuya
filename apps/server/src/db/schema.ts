@@ -50,6 +50,8 @@ export const media = sqliteTable('media', {
   indexedAt: integer('indexed_at'),
   taggedAt: integer('tagged_at'),
   transcodedAt: integer('transcoded_at'),
+  spriteFrames: integer('sprite_frames'),
+  spriteAt: integer('sprite_at'),
   lastViewedAt: integer('last_viewed_at'),
   viewProgress: real('view_progress').notNull().default(0),
   viewCount: integer('view_count').notNull().default(0),

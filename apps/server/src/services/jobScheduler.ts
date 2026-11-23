@@ -6,6 +6,7 @@ import { runTagJob, runHashJob, modelReady, untaggedMediaIds, unhashedImageIds }
 import { enqueueCleanupJob } from './cleanup';
 import { enqueueBackupJob, listBackups } from './backup';
 import { runTranscodeJob } from './transcoder';
+import { enqueueSpriteCatchUp } from './videoSprite';
 import { enqueueJob, type JobHandle } from './jobQueue';
 import { aiTaggingEnabled, characterDetectionEnabled, videoTranscodeEnabled } from '../lib/settings';
 import { runCharacterJob, unscannedMediaIds } from './characters';
@@ -135,6 +136,7 @@ export function dispatchAfterScan(libraryId: number): void {
 
   dispatchTranscodeForLibrary(libraryId);
   dispatchCharactersForLibrary(libraryId);
+  enqueueSpriteCatchUp(libraryId);
 }
 
 /**

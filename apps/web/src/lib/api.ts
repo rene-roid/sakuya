@@ -390,6 +390,8 @@ export const api = {
 export const fileUrl = (id: number) => `/api/media/${id}/file`;
 export const thumbUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/media/${id}/thumbnail?v=${cacheBust}` : `/api/media/${id}/thumbnail`;
+export const spriteUrl = (id: number, version?: number) =>
+  version ? `/api/media/${id}/sprite?v=${version}` : `/api/media/${id}/sprite`;
 export const libraryCoverUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/libraries/${id}/cover?v=${cacheBust}` : `/api/libraries/${id}/cover`;
 

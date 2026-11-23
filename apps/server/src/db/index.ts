@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS media (
   indexed_at INTEGER,
   tagged_at INTEGER,
   transcoded_at INTEGER,
+  sprite_frames INTEGER,
+  sprite_at INTEGER,
   last_viewed_at INTEGER,
   view_progress REAL NOT NULL DEFAULT 0,
   view_count INTEGER NOT NULL DEFAULT 0,
@@ -334,6 +336,9 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   // rescan only re-reads a sidecar that changed.
   { version: 41, sql: 'ALTER TABLE media ADD COLUMN source_url TEXT' },
   { version: 42, sql: 'ALTER TABLE media ADD COLUMN sidecar_mtime INTEGER' },
+  // The hover-scrub sprite: how many frames it holds (0 when generation failed) and when it was written.
+  { version: 47, sql: 'ALTER TABLE media ADD COLUMN sprite_frames INTEGER' },
+  { version: 48, sql: 'ALTER TABLE media ADD COLUMN sprite_at INTEGER' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;

@@ -127,6 +127,8 @@ export interface Media {
   height: number | null;
   sizeBytes: number;
   durationSeconds: number | null;
+  /** A video's hover-scrub sprite, once one has been generated. */
+  sprite?: VideoSprite;
   createdAt: number;
   indexedAt: number | null;
   taggedAt: number | null;
@@ -145,6 +147,17 @@ export interface Media {
   reasonTag?: string;
   /** Discover only: true when reasonTag is a related tag rather than one you engaged with directly. */
   reasonRelated?: boolean;
+}
+
+/**
+ * `frames` evenly spaced stills of a video tiled left to right in one webp, frame i taken at
+ * `(i + 0.5) * intervalSeconds`. `frames` is 0 when generation failed. `version` changes whenever
+ * the sprite is rewritten.
+ */
+export interface VideoSprite {
+  frames: number;
+  intervalSeconds: number;
+  version: number;
 }
 
 export interface MediaTag {

@@ -131,6 +131,8 @@ settingsRouter.post(
       fs.rmSync(path.join(THUMBS_DIR, entry), { force: true });
       removed++;
     }
+    // Sprites live in the same folder; without this the after-scan job would never remake them.
+    sqlite.query('UPDATE media SET sprite_frames = NULL, sprite_at = NULL WHERE sprite_frames IS NOT NULL').run();
     res.json({ removed });
   }),
 );
