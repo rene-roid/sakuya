@@ -3,11 +3,14 @@
  *
  *   bun apps/server/src/scripts/semanticEval.ts --models <dir> --images <dir>[,<dir>...] [--queries "a cat;a dragon"] [--sheet <out.png>]
  *   bun apps/server/src/scripts/semanticEval.ts --bench 30000
+ *   bun apps/server/src/scripts/semanticEval.ts --like <copy of a demo instance's tbge.db>
  *
  * --models holds the four files the download job fetches (vision.onnx, text.onnx, vocab.json,
  * merges.txt). Every image is embedded, each query prints its top five, and --sheet writes one row
  * of thumbnails per query. --bench times describe ranking over that many synthetic vectors through
- * the same index the API uses, filtered and unfiltered.
+ * the same index the API uses, filtered and unfiltered. --like replays More like this over every
+ * Pepper&Carrot page (fixture names EnnPmm) at several image weights and prints how many of the top
+ * ten come from the same episode, the closest thing the fixtures have to ground truth.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -25,9 +28,10 @@ const { values: args } = parseArgs({
     },
     sheet: { type: 'string' },
     bench: { type: 'string' },
+    like: { type: 'string' },
   },
 });
-if (!args.bench && !(args.models && args.images)) {
+if (!args.bench && !args.like && !(args.models && args.images)) {
   console.error('usage: --models <dir> --images <dir>[,<dir>] [--queries "a;b"] [--sheet out.png] | --bench <n>');
   process.exit(1);
 }
@@ -36,6 +40,7 @@ if (!args.bench && !(args.models && args.images)) {
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sakuya-semantic-eval-'));
 fs.mkdirSync(path.join(dataDir, 'models'), { recursive: true });
 if (args.models) fs.symlinkSync(path.resolve(args.models), path.join(dataDir, 'models', 'clip'));
+if (args.like) fs.copyFileSync(args.like, path.join(dataDir, 'tbge.db'));
 fs.writeFileSync(path.join(dataDir, 'sakuya.config.json'), JSON.stringify({ server: { dataDir } }));
 process.env.SAKUYA_CONFIG = path.join(dataDir, 'sakuya.config.json');
 
@@ -158,7 +163,38 @@ async function evaluate() {
   }
 }
 
+async function like() {
+  const { sqlite } = await import('../db');
+  const { setSetting } = await import('../lib/settings');
+  const { discoverTuning, moreLikeThis } = await import('../routes/discover');
+  setSetting('semantic_search_enabled', '1');
+  const pages = sqlite
+    .query(
+      `SELECT m.id, m.filename FROM media m JOIN media_embeddings e ON e.media_id = m.id
+       WHERE m.filename GLOB 'E[0-9][0-9]P[0-9][0-9].*' ORDER BY m.filename`,
+    )
+    .all() as { id: number; filename: string }[];
+  const episode = (name: string) => name.slice(0, 3);
+  const names = new Map(pages.map((p) => [p.id, p.filename]));
+  for (const weight of [0, 0.5, 1, 2, 1000]) {
+    for (const k of weight === 0 || weight === 1000 ? [20] : [5, 20, 60]) {
+      discoverTuning.likeVisualWeight = weight;
+      discoverTuning.likeFuseK = k;
+      let hits = 0;
+      let shown = 0;
+      for (const page of pages) {
+        const items = moreLikeThis(page.id, 10).items;
+        shown += items.length;
+        hits += items.filter((m) => episode(names.get(m.id) ?? '') === episode(page.filename)).length;
+      }
+      const label = weight === 0 ? 'tags only' : weight === 1000 ? 'images only' : `weight ${weight}, k ${k}`;
+      console.log(`${label}: ${((hits / shown) * 100).toFixed(1)}% of ${shown} same-episode (${pages.length} sources)`);
+    }
+  }
+}
+
 if (args.bench) await bench(Number(args.bench));
+else if (args.like) await like();
 else await evaluate();
 fs.rmSync(dataDir, { recursive: true, force: true });
 process.exit(0);

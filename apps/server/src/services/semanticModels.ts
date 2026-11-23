@@ -95,9 +95,6 @@ export function clipModelBytes(): number {
   }, 0);
 }
 
-export const clipTextLoaded = () => text.loaded();
-export const clipVisionLoaded = () => vision.loaded();
-
 export function releaseClipModels(): void {
   vision.release();
   text.release();
