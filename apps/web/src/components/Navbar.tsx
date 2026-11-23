@@ -179,7 +179,9 @@ export function Navbar() {
   const barRef = useRef<HTMLDivElement>(null);
   const lastPathname = useRef(location.pathname);
   const [searchTags, setSearchTags] = useState<string[]>([]);
+  const [describing, setDescribing] = useState(false);
   const settings = useSettings();
+  const describeEnabled = settings?.semantic_search_enabled === '1';
   const discoverEnabled = settings?.discover_enabled === '1';
   const items = NAV_ITEMS.filter((item) => item.to !== '/discover' || discoverEnabled);
 
@@ -276,6 +278,15 @@ export function Navbar() {
             }}
             onFreeText={(q) => navigate(`/explore?q=${encodeURIComponent(q)}`)}
             placeholder="Search tags, filenames, folders..."
+            describe={
+              describeEnabled
+                ? {
+                    active: describing,
+                    onToggle: () => setDescribing((on) => !on),
+                    onSubmit: (text) => navigate(`/explore?describe=${encodeURIComponent(text)}`),
+                  }
+                : undefined
+            }
           />
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2 glass:gap-1 glass:md:ml-0">

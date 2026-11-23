@@ -253,6 +253,14 @@ CREATE TABLE IF NOT EXISTS character_scans (
   scanned_at INTEGER NOT NULL,
   detections INTEGER NOT NULL
 );
+-- Search by description: one CLIP image embedding per media item, 512 float16 values. The model column
+-- names the encoder, so switching models re-embeds instead of mixing two spaces.
+CREATE TABLE IF NOT EXISTS media_embeddings (
+  media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  embedding BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
 -- Discover steering. Keyed by tag name rather than id: a cleanup prunes unused tag rows, and a
 -- mute has to survive the tag coming back on the next tag run.
 CREATE TABLE IF NOT EXISTS tag_preferences (

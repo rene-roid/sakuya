@@ -117,6 +117,7 @@ Query params:
 | `tags` | comma-separated string | AND match on tag names |
 | `liked` | number | `1` filters to liked only |
 | `q` | string | matches filename or tag name (substring) |
+| `describe` | string | search by description: ranks by CLIP image-embedding similarity to the text instead of `sort`; combines with every other filter |
 | `sort` | `'recent'\|'name'\|'random'` | default `recent` |
 | `dir` | `'asc'\|'desc'` | default depends on `sort` |
 | `seed` | number | seed for stable `random` ordering |
@@ -124,6 +125,9 @@ Query params:
 | `limit` | number | 1-200, default 60 |
 
 Response (`MediaListResponse`): `{ items: Media[], nextCursor: string | null, total: number }`.
+With `describe`, the first page also carries `semantic: { status, embeddedCount, pendingCount }`:
+`status` is `disabled` (setting off), `no-model`, `empty` (nothing indexed yet) or `ready`. Only
+indexed files are ranked; `total` counts them.
 
 ### `GET /api/media/ids`
 Every media id matching a filter, in the same order `GET /api/media` would return them. Backs
@@ -372,6 +376,18 @@ Enqueue AI tagging for all untagged media. `409` if the model isn't ready or the
 tag. Response: `{ job: Job }`.
 
 ---
+
+## Search by description
+
+### `GET /api/semantic/status`
+`{ status: 'absent'|'downloading'|'ready', enabled, modelSizeBytes, embeddedCount, pendingCount }`.
+
+### `POST /api/semantic/download`
+Queues a `model-download` job for the CLIP model (~155 MB). `409` when already downloaded or downloading.
+
+### `POST /api/semantic/run`
+Queues an `embeddings` job over every file not indexed yet. `409` without the model or with nothing to do.
+New files are also indexed after each scan while `semantic_search_enabled` is `1`.
 
 ## Uploads
 

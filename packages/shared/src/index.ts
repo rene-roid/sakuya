@@ -14,6 +14,7 @@ export const JOB_TYPES = [
   'backup',
   'characters',
   'tag-relations',
+  'embeddings',
 ] as const;
 export const TAG_CATEGORIES = ['rating', 'general', 'character', 'user', 'artist', 'copyright'] as const;
 /**
@@ -272,6 +273,8 @@ export interface DiscoverLikeResponse {
   source: Media;
   /** Ranked by shared tags, rarest counting most; reasonTag is the rarest one each item shares. */
   items: Media[];
+  /** `visual` when image embeddings were blended into the tag ranking. */
+  ranking: 'tags' | 'visual';
 }
 
 export interface MediaListResponse {
@@ -283,6 +286,27 @@ export interface MediaListResponse {
    * the count — hasn't changed. Clients should keep the first page's value.
    */
   total: number | null;
+  /** Set on a search by description (`describe`): whether it could run, and how much is indexed. */
+  semantic?: SemanticSearchInfo;
+}
+
+export interface SemanticSearchInfo {
+  /**
+   * `disabled`: the setting is off. `no-model`: the model is not downloaded. `empty`: nothing is
+   * embedded yet. `ready`: ranked over the embedded files.
+   */
+  status: 'disabled' | 'no-model' | 'empty' | 'ready';
+  embeddedCount: number;
+  /** Files the embeddings job has not reached yet; they are left out of the ranking. */
+  pendingCount: number;
+}
+
+export interface SemanticStatus {
+  status: ModelStatus;
+  enabled: boolean;
+  modelSizeBytes: number | null;
+  embeddedCount: number;
+  pendingCount: number;
 }
 
 export interface MediaIdsResponse {
@@ -330,6 +354,8 @@ export interface Settings {
   /** How many database backups to keep; older ones are deleted after each backup. */
   backup_keep: string;
   character_detection_enabled: string;
+  /** Search by description: the Describe toggle, and indexing new files after each scan. */
+  semantic_search_enabled: string;
 }
 
 export type UiStyle = 'glass' | 'classic';

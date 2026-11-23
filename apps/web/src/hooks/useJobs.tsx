@@ -44,6 +44,9 @@ export function JobsProvider({ children }: { children: ReactNode }) {
       if (job.type === 'model-download') {
         queryClient.invalidateQueries({ queryKey: ['settings'] });
       }
+      if (job.type === 'model-download' || job.type === 'embeddings') {
+        queryClient.invalidateQueries({ queryKey: ['semantic-status'] });
+      }
     }
     if (prevStatus !== 'error' && job.status === 'error') {
       toast(`${job.label} — failed`);

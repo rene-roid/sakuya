@@ -18,7 +18,7 @@ test('every Settings key appears in exactly one registry entry, or is named as s
     const elsewhere = key in KEYS_SET_ELSEWHERE;
     expect({ key, count: ids.length + (elsewhere ? 1 : 0) }).toEqual({ key, count: 1 });
   }
-  expect(ALL_SETTINGS_KEYS).toHaveLength(19);
+  expect(ALL_SETTINGS_KEYS).toHaveLength(20);
   expect(owners.get('confidence_threshold')).toEqual(['confidence-threshold']);
   expect(owners.get('confidence_threshold_character')).toEqual(['character-threshold']);
   expect(owners.get('character_detection_enabled')).toEqual(['character-detection']);

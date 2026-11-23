@@ -411,6 +411,91 @@ export function FindCharactersControl() {
   );
 }
 
+function useSemanticStatus() {
+  return useQuery({
+    queryKey: ['semantic-status'],
+    queryFn: api.semanticStatus,
+    refetchInterval: (query) => (query.state.data?.status === 'downloading' ? 2000 : false),
+  }).data;
+}
+
+export function SemanticModelMeta() {
+  const status = useSemanticStatus();
+  if (!status) return null;
+  if (status.status === 'ready')
+    return (
+      <>
+        <span className="font-semibold text-emerald-500">Ready</span> · {formatBytes(status.modelSizeBytes ?? 0)}
+      </>
+    );
+  return <>{status.status === 'downloading' ? 'Downloading… (see Jobs)' : 'Not downloaded · about 155 MB'}</>;
+}
+
+export function SemanticModelControl() {
+  const queryClient = useQueryClient();
+  const status = useSemanticStatus();
+  const download = useMutation({
+    mutationFn: api.semanticDownload,
+    onSuccess: () => {
+      toast('Search model download started');
+      queryClient.invalidateQueries({ queryKey: ['semantic-status'] });
+    },
+    onError: (err) => toast(err.message),
+  });
+  if (!status || status.status === 'ready') return null;
+  const downloading = status.status === 'downloading';
+  return (
+    <button
+      type="button"
+      disabled={downloading || download.isPending}
+      onClick={() => download.mutate()}
+      className={buttonClass('primary')}
+    >
+      {downloading ? 'Downloading…' : 'Download'}
+    </button>
+  );
+}
+
+export function IndexForSearchMeta() {
+  const status = useSemanticStatus();
+  const job = useActiveJob('embeddings');
+  const n = status?.pendingCount ?? 0;
+  const done = status ? ` · ${status.embeddedCount} indexed` : '';
+  return (
+    <JobMeta job={job} idle={n > 0 ? `${n} file${n === 1 ? '' : 's'} not indexed yet${done}` : `Every file is indexed${done}`} />
+  );
+}
+
+export function IndexForSearchControl() {
+  const status = useSemanticStatus();
+  const job = useActiveJob('embeddings');
+  const run = useIndexForSearch();
+  const n = status?.pendingCount ?? 0;
+  return (
+    <button
+      type="button"
+      disabled={!!job || status?.status !== 'ready' || n === 0 || run.isPending}
+      onClick={() => run.mutate()}
+      title={status?.status !== 'ready' ? 'Download the search model first' : undefined}
+      className={buttonClass('primary')}
+    >
+      {job ? 'Indexing…' : n > 0 ? `Index ${n} file${n === 1 ? '' : 's'}` : 'Index'}
+    </button>
+  );
+}
+
+function useIndexForSearch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.semanticRun,
+    onSuccess: () => {
+      toast('Indexing files for search…');
+      queryClient.invalidateQueries({ queryKey: ['semantic-status'] });
+    },
+    onError: (err) => toast(err.message),
+  });
+}
+
 export function TagUntaggedMeta() {
   const tagger = useTagger();
   const job = useActiveJob('tag');

@@ -45,13 +45,18 @@ export function packFloat16(values: ArrayLike<number>): Buffer {
 
 let halfTable: Float32Array | null = null;
 
-export function unpackFloat16(buf: Uint8Array): Float32Array {
-  // A lookup per value: clustering decodes every stored embedding on each run.
+/** Every float16 bit pattern's value, for decoding by lookup. */
+export function float16Table(): Float32Array {
   if (!halfTable) {
     halfTable = new Float32Array(65536);
     for (let h = 0; h < 65536; h++) halfTable[h] = fromHalf(h);
   }
-  const table = halfTable;
+  return halfTable;
+}
+
+export function unpackFloat16(buf: Uint8Array): Float32Array {
+  // A lookup per value: clustering decodes every stored embedding on each run.
+  const table = float16Table();
   const out = new Float32Array(buf.byteLength / 2);
   for (let i = 0; i < out.length; i++) out[i] = table[buf[i * 2] | (buf[i * 2 + 1] << 8)];
   return out;
