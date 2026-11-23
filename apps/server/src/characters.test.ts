@@ -2,6 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
+import type {
+  CharacterDetection,
+  CharacterDetectionsResponse,
+  CharacterMediaResponse,
+  CharacterModelStatus,
+  CharactersResponse,
+  CharacterSummary,
+  MediaListResponse,
+} from '@sakuya/shared';
 import { useTestConfig, waitForJob } from './testConfig';
 
 // ML02: synthetic embeddings only, so CI never downloads the real models.
@@ -49,7 +58,7 @@ const post = (url: string, body?: unknown) =>
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-const json = async (res: Response | Promise<Response>): Promise<any> => (await (await res).json()) as any;
+const json = async <T>(res: Response | Promise<Response>): Promise<T> => (await (await res).json()) as T;
 
 const lib = db.insert(schema.libraries).values({ name: 'chars', createdAt: Date.now() }).returning().get();
 let mediaCount = 0;
@@ -186,7 +195,6 @@ describe('characters API', () => {
     for (const k of ['p1', 'p2', 'p3', 'c1', 'c2', 'lone']) ids[k] = await addMedia();
     detect(ids.p1, [near(pepper, randomUnit(11), 0.92)]);
     detect(ids.p2, [near(pepper, randomUnit(12), 0.92)]);
-    // Pepper and Carrot together on one page.
     const group = detect(ids.p3, [near(pepper, randomUnit(13), 0.92), near(carrot, randomUnit(14), 0.92)]);
     detect(ids.c1, [near(carrot, randomUnit(15), 0.92)]);
     detect(ids.c2, []);
@@ -197,10 +205,10 @@ describe('characters API', () => {
     ids.groupCarrot = group[1];
     ids.loneDetection = lone[0];
 
-    const list = await json(fetch(`${BASE}/api/characters`));
+    const list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
     expect(list.named).toEqual([]);
     expect(list.suggested).toEqual([]);
-    expect(list.unnamed.map((c: any) => [c.mediaCount, c.detectionCount, c.name])).toEqual([
+    expect(list.unnamed.map((c) => [c.mediaCount, c.detectionCount, c.name])).toEqual([
       [3, 3, null],
       [2, 2, null],
     ]);
@@ -210,7 +218,7 @@ describe('characters API', () => {
     // The cover is the highest-scoring detection until one is chosen.
     expect(list.unnamed[0].coverUrl).toBe(`/api/characters/crops/${list.unnamed[0].coverDetectionId}`);
 
-    const status = await json(fetch(`${BASE}/api/characters/status`));
+    const status = await json<CharacterModelStatus>(fetch(`${BASE}/api/characters/status`));
     expect(status).toMatchObject({
       status: 'absent',
       enabled: false,
@@ -229,15 +237,15 @@ describe('characters API', () => {
     for (const k of ['p1', 'p2', 'p3']) tagMedia(ids[k], 'solo', 'general', 'ai');
     tagMedia(ids.p1, 'pepper_(pepper&carrot)', 'character', 'ai');
     tagMedia(ids.p2, 'pepper_(pepper&carrot)', 'character', 'ai');
-    const list = await json(fetch(`${BASE}/api/characters`));
-    expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
+    const list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
+    expect(list.suggested.map((c) => [c.id, c.suggestion])).toEqual([
       [ids.pepperChar, { tag: 'pepper_(pepper&carrot)', displayName: null, mediaCount: 2, soloCount: 3 }],
     ]);
-    expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.carrotChar]);
+    expect(list.unnamed.map((c) => c.id)).toEqual([ids.carrotChar]);
   });
 
   test('accepting the suggestion names the character and links every member with source character', async () => {
-    const named = await json(post(`/api/characters/${ids.pepperChar}/accept-suggestion`));
+    const named = await json<CharacterSummary>(post(`/api/characters/${ids.pepperChar}/accept-suggestion`));
     expect(named).toMatchObject({
       id: ids.pepperChar,
       name: 'pepper_(pepper&carrot)',
@@ -265,9 +273,11 @@ describe('characters API', () => {
     upsertTag('carrot', 'general');
     const refused = await post(`/api/characters/${ids.carrotChar}/name`, { name: 'Carrot' });
     expect(refused.status).toBe(409);
-    expect((await json(refused)).error).toContain('carrot_(character)');
+    expect((await json<{ error: string }>(refused)).error).toContain('carrot_(character)');
 
-    const named = await json(post(`/api/characters/${ids.carrotChar}/name`, { name: 'Carrot (cat)' }));
+    const named = await json<CharacterSummary>(
+      post(`/api/characters/${ids.carrotChar}/name`, { name: 'Carrot (cat)' }),
+    );
     expect(named.name).toBe('carrot_(cat)');
     expect(sqlite.query(`SELECT category FROM tags WHERE name = 'carrot_(cat)'`).get()).toEqual({
       category: 'character',
@@ -275,8 +285,8 @@ describe('characters API', () => {
     expect(linksOf('carrot_(cat)').map((l) => l.media_id)).toEqual([ids.p3, ids.c1]);
     expect(linksOf('carrot')).toEqual([]);
 
-    const media = await json(fetch(`${BASE}/api/media?tags=carrot_(cat)`));
-    expect(media.items.map((m: any) => m.id).sort()).toEqual([ids.p3, ids.c1]);
+    const media = await json<MediaListResponse>(fetch(`${BASE}/api/media?tags=carrot_(cat)`));
+    expect(media.items.map((m) => m.id).sort()).toEqual([ids.p3, ids.c1]);
   });
 
   test('a new detection of a named character is assigned and linked', async () => {
@@ -288,21 +298,21 @@ describe('characters API', () => {
   });
 
   test('reject keeps the detection off that character after a re-run', async () => {
-    const rejected = await json(post(`/api/character-detections/${ids.p4Detection}/reject`));
+    const rejected = await json<CharacterDetection>(post(`/api/character-detections/${ids.p4Detection}/reject`));
     expect(rejected).toMatchObject({ assignment: 'rejected', characterId: ids.pepperChar, characterName: null });
     expect(linksOf('pepper_(pepper&carrot)').map((l) => l.media_id)).not.toContain(ids.p4);
 
     ids.p5 = await addMedia();
     const [next] = detect(ids.p5, [near(pepper, randomUnit(17), 0.93)]);
     clusterDetections([next, ids.p4Detection], params);
-    const dets = await json(fetch(`${BASE}/api/media/${ids.p4}/detections`));
-    expect(dets.map((d: any) => [d.assignment, d.characterId])).toEqual([['rejected', ids.pepperChar]]);
+    const dets = await json<CharacterDetection[]>(fetch(`${BASE}/api/media/${ids.p4}/detections`));
+    expect(dets.map((d) => [d.assignment, d.characterId])).toEqual([['rejected', ids.pepperChar]]);
     expect(linksOf('pepper_(pepper&carrot)').map((l) => l.media_id)).toEqual([ids.p1, ids.p2, ids.p3, ids.p5]);
   });
 
   test('detections for one media item carry their box, score and character name', async () => {
-    const dets = await json(fetch(`${BASE}/api/media/${ids.p3}/detections`));
-    expect(dets.map((d: any) => [d.id, d.characterName, d.assignment])).toEqual([
+    const dets = await json<CharacterDetection[]>(fetch(`${BASE}/api/media/${ids.p3}/detections`));
+    expect(dets.map((d) => [d.id, d.characterName, d.assignment])).toEqual([
       [ids.groupPepper, 'pepper_(pepper&carrot)', 'auto'],
       [ids.groupCarrot, 'carrot_(cat)', 'auto'],
     ]);
@@ -312,14 +322,16 @@ describe('characters API', () => {
 
   test('set cover and hide', async () => {
     expect((await post(`/api/characters/${ids.pepperChar}/cover`, { detectionId: ids.groupCarrot })).status).toBe(400);
-    const covered = await json(post(`/api/characters/${ids.pepperChar}/cover`, { detectionId: ids.groupPepper }));
+    const covered = await json<CharacterSummary>(
+      post(`/api/characters/${ids.pepperChar}/cover`, { detectionId: ids.groupPepper }),
+    );
     expect(covered.coverUrl).toBe(`/api/characters/crops/${ids.groupPepper}`);
 
     await post(`/api/characters/${ids.carrotChar}/hidden`, { hidden: true });
-    const list = await json(fetch(`${BASE}/api/characters`));
-    expect(list.named.map((c: any) => c.id)).toEqual([ids.pepperChar]);
-    const all = await json(fetch(`${BASE}/api/characters?hidden=1`));
-    expect(all.named.map((c: any) => [c.id, c.hidden])).toEqual([
+    const list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
+    expect(list.named.map((c) => c.id)).toEqual([ids.pepperChar]);
+    const all = await json<CharactersResponse>(fetch(`${BASE}/api/characters?hidden=1`));
+    expect(all.named.map((c) => [c.id, c.hidden])).toEqual([
       [ids.pepperChar, false],
       [ids.carrotChar, true],
     ]);
@@ -328,11 +340,11 @@ describe('characters API', () => {
   });
 
   test('one character’s media, with its detections', async () => {
-    const page = await json(fetch(`${BASE}/api/characters/${ids.pepperChar}/media?limit=3`));
+    const page = await json<CharacterMediaResponse>(fetch(`${BASE}/api/characters/${ids.pepperChar}/media?limit=3`));
     expect(page.total).toBe(4);
-    expect(page.items.map((m: any) => m.id)).toEqual([ids.p5, ids.p3, ids.p2]);
+    expect(page.items.map((m) => m.id)).toEqual([ids.p5, ids.p3, ids.p2]);
     expect(page.nextOffset).toBe(3);
-    expect(page.detections.map((d: any) => d.mediaId)).toEqual([ids.p2, ids.p3, ids.p5]);
+    expect(page.detections.map((d) => d.mediaId)).toEqual([ids.p2, ids.p3, ids.p5]);
   });
 
   test('the crop endpoint serves a cached webp of the box', async () => {
@@ -345,7 +357,9 @@ describe('characters API', () => {
   });
 
   test('merge moves detections', async () => {
-    const merged = await json(post(`/api/characters/${ids.carrotChar}/merge`, { into: ids.pepperChar }));
+    const merged = await json<CharacterSummary>(
+      post(`/api/characters/${ids.carrotChar}/merge`, { into: ids.pepperChar }),
+    );
     expect(merged).toMatchObject({
       id: ids.pepperChar,
       name: 'pepper_(pepper&carrot)',
@@ -356,12 +370,12 @@ describe('characters API', () => {
     expect(linksOf('carrot_(cat)')).toEqual([]);
     expect(linksOf('pepper_(pepper&carrot)').map((l) => l.media_id)).toEqual([ids.p1, ids.p2, ids.p3, ids.c1, ids.p5]);
     // The rejection moved along and still holds.
-    const p4 = await json(fetch(`${BASE}/api/media/${ids.p4}/detections`));
+    const p4 = await json<CharacterDetection[]>(fetch(`${BASE}/api/media/${ids.p4}/detections`));
     expect(p4[0].assignment).toBe('rejected');
   });
 
   test('a detection can be put in a character by hand', async () => {
-    const assigned = await json(
+    const assigned = await json<CharacterDetection>(
       post(`/api/character-detections/${ids.loneDetection}/assign`, { characterId: ids.pepperChar }),
     );
     expect(assigned).toMatchObject({ assignment: 'user', characterName: 'pepper_(pepper&carrot)' });
@@ -384,7 +398,7 @@ describe('characters API', () => {
 
   test('the job fails naming the download step when the models are absent', async () => {
     const pending = await addMedia();
-    expect((await json(fetch(`${BASE}/api/characters/status`))).pendingCount).toBe(1);
+    expect((await json<CharacterModelStatus>(fetch(`${BASE}/api/characters/status`))).pendingCount).toBe(1);
     expect((await post('/api/characters/run')).status).toBe(409);
     const job = await waitForJob(enqueueCharacterJob([pending], 'test').id);
     expect(job.status).toBe('error');
@@ -398,12 +412,14 @@ describe('characters and tag implications', () => {
     const media = [await addMedia(), await addMedia()];
     const dets = media.flatMap((id, i) => detect(id, [near(saffron, randomUnit(910 + i), 0.93)]));
     expect(clusterDetections(dets, params)).toEqual({ assigned: 0, created: 1 });
-    const charId = (sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[0]) as {
-      character_id: number;
-    }).character_id;
+    const charId = (
+      sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[0]) as {
+        character_id: number;
+      }
+    ).character_id;
 
     const named = await post(`/api/characters/${charId}/name`, { name: 'saffron_(pepper&carrot)' });
-    expect([named.status, (await json(named)).name]).toEqual([200, 'saffron_(pepper&carrot)']);
+    expect([named.status, (await json<CharacterSummary>(named)).name]).toEqual([200, 'saffron_(pepper&carrot)']);
     const implication = await post('/api/tag-relations/implications', {
       tag: 'saffron_(pepper&carrot)',
       implies: 'pepper&carrot',
@@ -417,7 +433,7 @@ describe('characters and tag implications', () => {
     clusterDetections([det], params);
     expect(linksOf('pepper&carrot').map((l) => l.media_id)).toEqual([...media, later]);
 
-    await json(post(`/api/characters/${charId}/name`, { name: 'saffron_the_witch' }));
+    await json<CharacterSummary>(post(`/api/characters/${charId}/name`, { name: 'saffron_the_witch' }));
     expect(linksOf('saffron_(pepper&carrot)')).toEqual([]);
     expect(linksOf('pepper&carrot')).toEqual([]);
   });
@@ -437,18 +453,24 @@ describe('characters tab API', () => {
       dets[key].push(...detect(ids[`${key}${i}`], [near(base, randomUnit(seed + i), 0.92)]));
     }
     clusterDetections(dets[key], params);
-    return (sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[key][0]) as {
-      character_id: number;
-    }).character_id;
+    return (
+      sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[key][0]) as {
+        character_id: number;
+      }
+    ).character_id;
   }
 
-  const summary = async (id: number) => json(fetch(`${BASE}/api/characters/${id}`));
+  const summary = async (id: number) => json<CharacterSummary>(fetch(`${BASE}/api/characters/${id}`));
   const nameOf = async (detectionId: number, mediaId: number) =>
-    (await json(fetch(`${BASE}/api/media/${mediaId}/detections`))).find((d: any) => d.id === detectionId);
+    (await json<CharacterDetection[]>(fetch(`${BASE}/api/media/${mediaId}/detections`))).find(
+      (d) => d.id === detectionId,
+    );
 
   test('renaming changes the display name, not the tag, and character tags with no cluster are listed', async () => {
     ids.miraChar = await cluster('mira', mira, 3, 410);
-    expect((await json(post(`/api/characters/${ids.miraChar}/name`, { name: 'Mira' }))).name).toBe('mira');
+    expect((await json<CharacterSummary>(post(`/api/characters/${ids.miraChar}/name`, { name: 'Mira' }))).name).toBe(
+      'mira',
+    );
     const renamed = await fetch(`${BASE}/api/tags/mira`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -456,12 +478,12 @@ describe('characters tab API', () => {
     });
     expect(renamed.status).toBe(200);
     expect(await summary(ids.miraChar)).toMatchObject({ name: 'mira', displayName: 'Mira Lune', mediaCount: 3 });
-    expect((await nameOf(dets.mira[0], ids.mira0)).characterDisplayName).toBe('Mira Lune');
+    expect((await nameOf(dets.mira[0], ids.mira0))?.characterDisplayName).toBe('Mira Lune');
     expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0, ids.mira1, ids.mira2]);
 
     tagMedia(ids.mira0, 'wd_only_(series)', 'character', 'ai');
     refreshUsageCounts([upsertTag('wd_only_(series)', 'character')]);
-    const list = await json(fetch(`${BASE}/api/characters`));
+    const list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
     expect(list.tagOnly).toEqual([{ name: 'wd_only_(series)', category: 'character', displayName: null, count: 1 }]);
   });
 
@@ -471,49 +493,60 @@ describe('characters tab API', () => {
     tagMedia(ids.zed0, 'zed_(game)', 'character', 'ai');
     tagMedia(ids.zed1, 'zed_(game)', 'character', 'ai');
     refreshUsageCounts([upsertTag('zed_(game)', 'character')]);
-    let list = await json(fetch(`${BASE}/api/characters`));
-    expect(list.suggested.map((c: any) => [c.id, c.suggestion])).toEqual([
+    let list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
+    expect(list.suggested.map((c) => [c.id, c.suggestion])).toEqual([
       [ids.zedChar, { tag: 'zed_(game)', displayName: null, mediaCount: 2, soloCount: 3 }],
     ]);
-    expect(list.tagOnly.map((t: any) => [t.name, t.count])).toEqual([
+    expect(list.tagOnly.map((t) => [t.name, t.count])).toEqual([
       ['zed_(game)', 2],
       ['wd_only_(series)', 1],
     ]);
 
-    const dismissed = await json(post(`/api/characters/${ids.zedChar}/dismiss-suggestion`));
+    const dismissed = await json<CharacterSummary>(post(`/api/characters/${ids.zedChar}/dismiss-suggestion`));
     expect(dismissed).toMatchObject({ id: ids.zedChar, name: null, suggestion: null });
-    list = await json(fetch(`${BASE}/api/characters`));
+    list = await json<CharactersResponse>(fetch(`${BASE}/api/characters`));
     expect(list.suggested).toEqual([]);
-    expect(list.unnamed.map((c: any) => c.id)).toEqual([ids.zedChar]);
+    expect(list.unnamed.map((c) => c.id)).toEqual([ids.zedChar]);
     expect((await post(`/api/characters/${ids.zedChar}/accept-suggestion`)).status).toBe(409);
     expect((await post(`/api/characters/${ids.zedChar}/dismiss-suggestion`)).status).toBe(409);
   });
 
   test('a character’s faces come best first, paged, without rejected ones', async () => {
-    const page = await json(fetch(`${BASE}/api/characters/${ids.miraChar}/detections?limit=2`));
+    const page = await json<CharacterDetectionsResponse>(
+      fetch(`${BASE}/api/characters/${ids.miraChar}/detections?limit=2`),
+    );
     expect(page.total).toBe(3);
-    expect(page.items.map((d: any) => [d.id, d.characterName, d.cropUrl])).toEqual([
+    expect(page.items.map((d) => [d.id, d.characterName, d.cropUrl])).toEqual([
       [dets.mira[0], 'mira', `/api/characters/crops/${dets.mira[0]}`],
       [dets.mira[1], 'mira', `/api/characters/crops/${dets.mira[1]}`],
     ]);
     expect(page.nextOffset).toBe(2);
 
     await post(`/api/character-detections/${dets.mira[2]}/reject`);
-    const after = await json(fetch(`${BASE}/api/characters/${ids.miraChar}/detections`));
-    expect([after.total, after.items.map((d: any) => d.id), after.nextOffset]).toEqual([2, dets.mira.slice(0, 2), null]);
+    const after = await json<CharacterDetectionsResponse>(fetch(`${BASE}/api/characters/${ids.miraChar}/detections`));
+    expect([after.total, after.items.map((d) => d.id), after.nextOffset]).toEqual([2, dets.mira.slice(0, 2), null]);
     expect((await fetch(`${BASE}/api/characters/999999/detections`)).status).toBe(404);
   });
 
   test('naming a face in an unnamed cluster names the whole cluster', async () => {
-    const named = await json(post(`/api/character-detections/${dets.zed[1]}/name`, { name: 'Zed' }));
-    expect(named).toMatchObject({ id: dets.zed[1], characterId: ids.zedChar, characterName: 'zed', assignment: 'auto' });
+    const named = await json<CharacterDetection>(
+      post(`/api/character-detections/${dets.zed[1]}/name`, { name: 'Zed' }),
+    );
+    expect(named).toMatchObject({
+      id: dets.zed[1],
+      characterId: ids.zedChar,
+      characterName: 'zed',
+      assignment: 'auto',
+    });
     expect(await summary(ids.zedChar)).toMatchObject({ name: 'zed', mediaCount: 3 });
     expect(linksOf('zed').map((l) => l.media_id)).toEqual([ids.zed0, ids.zed1, ids.zed2]);
   });
 
   test('naming a face of a named character moves just that face, creating the character when new', async () => {
     const before = (sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c;
-    const moved = await json(post(`/api/character-detections/${dets.mira[1]}/name`, { name: 'Ivo' }));
+    const moved = await json<CharacterDetection>(
+      post(`/api/character-detections/${dets.mira[1]}/name`, { name: 'Ivo' }),
+    );
     expect(moved).toMatchObject({ characterName: 'ivo', assignment: 'user' });
     expect(moved.characterId).not.toBe(ids.miraChar);
     expect((sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c).toBe(before + 1);
@@ -521,7 +554,9 @@ describe('characters tab API', () => {
     expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0]);
 
     // A name some character already has joins that character; a rejected face can be named too.
-    const back = await json(post(`/api/character-detections/${dets.mira[2]}/name`, { name: 'mira' }));
+    const back = await json<CharacterDetection>(
+      post(`/api/character-detections/${dets.mira[2]}/name`, { name: 'mira' }),
+    );
     expect(back).toMatchObject({ characterId: ids.miraChar, characterName: 'mira', assignment: 'user' });
     expect(linksOf('mira').map((l) => l.media_id)).toEqual([ids.mira0, ids.mira2]);
   });
@@ -531,6 +566,6 @@ describe('characters tab API', () => {
     const res = await post(`/api/character-detections/${dets.mira[0]}/name`, { name: 'solo' });
     expect(res.status).toBe(409);
     expect((sqlite.query('SELECT COUNT(*) AS c FROM characters').get() as { c: number }).c).toBe(before);
-    expect((await nameOf(dets.mira[0], ids.mira0)).characterId).toBe(ids.miraChar);
+    expect((await nameOf(dets.mira[0], ids.mira0))?.characterId).toBe(ids.miraChar);
   });
 });

@@ -31,6 +31,7 @@ The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second rev
 | V02 | 100-video run and scroll frame-time trace | Not run. |
 | ML03 Characters | first paint with 500 characters | Not measured. |
 | ML04 describe search | p95 under 400 ms on 30k vectors | 82 to 89 ms at normal load, 862 ms while other builds ran. The first search after the model unloads adds about 1.2 s. |
+| V01 multi-frame video tagging | at most 6x the single-frame time and 4 s per video | A video whose scenes change costs 5 model runs: 20 to 26 s against 3.6 to 4.5 s for one frame at load 4 (5.5 to 6.5x). The old single-frame path alone is already 3.6 s here. A still video costs one run (frames that look alike are skipped), but a slow pan over one photo still costs five. A tag job over a video library takes about 5.5 times as long as before. `VIDEO_TAG_FRAMES` in `apps/server/src/services/tagger.ts` is the lever; it is not a setting. See [video-tagging.md](video-tagging.md). |
 
 ## Quality that the safe test data cannot show
 
@@ -39,6 +40,7 @@ The plan asks for ten live test lanes per PR on cloud VMs, a 30 to 60 second rev
 - **Character clustering (ML02).** Pepper, Saffron and Coriander cluster cleanly. The three mentors share one cluster, and Carrot shares one with other animals. This looks like a limit of CCIP on painterly and non-human figures.
 - **Search by description (ML04).** CLIP ViT-B/32 int8 got 5/5 for "a cat" and "the sea", 4/5 for "a dragon" and "a forest path", but 1/5 to 2/5 for "a book", "a city at night" and "a witch flying on a broom" (the right picture is first). The int8 export drifts a little from fp32 (image cosine 0.93). No Python was available to compare embeddings against the reference implementation, so preprocessing was checked by matching the fp16 export to fp32 (cosine 1.0000 on all fixtures).
 - **Character suggestions in the demo (ML03).** To show a suggestion on screen, AI `solo` and character tags were written straight into the throwaway demo database, because the tagger does not know these characters.
+- **Multi-frame video tags (V01).** On one five-page comic video about 16 of the 26 new tags were right, about 7 wrong (`crown`, `fairy`, `1boy` and others) and 3 unclear, and one `sensitive`-looking frame rates the whole video `sensitive`. Rules that would drop one-frame tags removed more correct tags than wrong ones, so none was adopted. Checked by eye on three of the nine fixture videos only.
 - **Discover "Off the beaten path" shelf (R04).** It never appears on a 163-item library. It is covered by tests and the eval script.
 
 ## Known gaps and edge cases

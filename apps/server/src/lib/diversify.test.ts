@@ -11,7 +11,6 @@ const item = (id: number, folder: string, reason: string | null = null, hash: st
 const ids = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
 test('one folder never fills a window: a batch is spread four per twenty', () => {
-  // Ranked: ten items from one folder, then ten from ten different folders.
   const ranked = [...ids(1, 10).map((id) => item(id, '/batch')), ...ids(11, 20).map((id) => item(id, `/other${id}`))];
   expect(diversify(ranked, opts)).toEqual([1, 2, 3, 4, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 5, 6, 7, 8, 9, 10]);
 });

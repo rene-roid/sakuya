@@ -151,7 +151,6 @@ export interface CustomEntry extends SettingBase {
 export type SettingEntry = ToggleEntry | SelectEntry | SliderEntry | ActionEntry | CustomEntry;
 
 export const SETTINGS: readonly SettingEntry[] = [
-  // General
   {
     id: 'interface-style',
     section: 'general',
@@ -208,7 +207,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     key: 'discover_enabled',
   },
 
-  // Playback
   {
     id: 'continue-watching',
     section: 'playback',
@@ -242,7 +240,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     key: 'remember_mute_state',
   },
 
-  // Libraries
   {
     id: 'library-manager',
     section: 'libraries',
@@ -303,7 +300,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: UploadsLink,
   },
 
-  // AI Tagging
   {
     id: 'tagger-model',
     section: 'tagging',
@@ -443,7 +439,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     Meta: IndexForSearchMeta,
   },
 
-  // Media processing
   {
     id: 'thumbnail-cache',
     section: 'processing',
@@ -544,7 +539,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: DuplicatesLink,
   },
 
-  // Jobs
   {
     id: 'schedule-scan',
     section: 'jobs',
@@ -618,7 +612,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: JobHistory,
   },
 
-  // Storage
   {
     id: 'home-folder',
     section: 'storage',
@@ -745,7 +738,6 @@ export const SETTINGS: readonly SettingEntry[] = [
     },
   },
 
-  // About
   {
     id: 'updates',
     section: 'about',
