@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
 import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY, LIMITS } from '../lib/config';
-import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
+import { confidenceThresholds, getSetting, setSetting, type TagThresholds } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { computeDHash } from './perceptualHash';
@@ -209,14 +209,14 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
     inFlight--;
     scheduleSessionRelease();
   }
-  return selectTags(probs, loadLabels(), confidenceThreshold());
+  return selectTags(probs, loadLabels(), confidenceThresholds());
 }
 
 /**
- * The tags a model output picks: every general and character tag scoring at least `threshold`,
- * plus the single best rating whatever its score, highest confidence first.
+ * The tags a model output picks: every general and character tag scoring at least its category's
+ * threshold, plus the single best rating whatever its score, highest confidence first.
  */
-export function selectTags(scores: Float32Array, allLabels: LabelEntry[], threshold: number): PredictedTag[] {
+export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresholds: TagThresholds): PredictedTag[] {
   // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
   const probs = scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
 
@@ -229,7 +229,7 @@ export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresh
       if (!bestRating || confidence > bestRating.confidence) {
         bestRating = { name: label.name, category: 'rating', confidence };
       }
-    } else if (confidence >= threshold) {
+    } else if (confidence >= (label.category === 'character' ? thresholds.character : thresholds.general)) {
       out.push({ name: label.name, category: label.category, confidence });
     }
   }

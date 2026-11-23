@@ -22,6 +22,7 @@ const labels = parseLabels(
 );
 
 const names = (tags: { name: string }[]) => tags.map((t) => t.name);
+const both = (threshold: number) => ({ general: threshold, character: threshold });
 
 describe('parseLabels', () => {
   test('reads one label per output, skipping the header, with booru categories mapped', () => {
@@ -38,28 +39,38 @@ describe('parseLabels', () => {
 
 describe('selectTags', () => {
   test('keeps tags at or over the threshold and the best rating, highest first', () => {
-    const tags = selectTags(new Float32Array([0.1, 0.8, 0.9, 0.5, 0.6, 0.49]), labels, 0.5);
+    const tags = selectTags(new Float32Array([0.1, 0.8, 0.9, 0.5, 0.6, 0.49]), labels, both(0.5));
     expect(names(tags)).toEqual(['1girl', 'explicit', 'hakurei_reimu', 'solo']);
     expect(tags.find((t) => t.name === 'hakurei_reimu')?.category).toBe('character');
     expect(tags.find((t) => t.name === 'explicit')?.confidence).toBeCloseTo(0.8);
   });
 
   test('always reports one rating, however unsure the model is', () => {
-    const tags = selectTags(new Float32Array([0.02, 0.01, 0, 0, 0, 0]), labels, 0.35);
+    const tags = selectTags(new Float32Array([0.02, 0.01, 0, 0, 0, 0]), labels, both(0.35));
     expect(tags).toHaveLength(1);
     expect(tags[0]).toMatchObject({ name: 'general', category: 'rating' });
   });
 
   test('raw logits are squashed through a sigmoid first', () => {
     // logit 0 is 0.5, logit -5 is ~0.007, logit 5 is ~0.993
-    const tags = selectTags(new Float32Array([-5, 5, 0, -5, -5, -5]), labels, 0.5);
+    const tags = selectTags(new Float32Array([-5, 5, 0, -5, -5, -5]), labels, both(0.5));
     expect(names(tags)).toEqual(['explicit', '1girl']);
     expect(tags[1].confidence).toBeCloseTo(0.5);
   });
 
+  test('selectTags applies the character threshold to character labels', () => {
+    // general rating, explicit rating, 1girl, solo, hakurei_reimu (character), red_bow
+    const scores = new Float32Array([0.7, 0.1, 0.6, 0.3, 0.6, 0.9]);
+    const tags = selectTags(scores, labels, { general: 0.35, character: 0.85 });
+    expect(names(tags)).toEqual(['red_bow', 'general', '1girl']);
+
+    const lenient = selectTags(scores, labels, { general: 0.65, character: 0.5 });
+    expect(names(lenient)).toEqual(['red_bow', 'general', 'hakurei_reimu']);
+  });
+
   test('an output longer or shorter than the label list is read up to the shorter one', () => {
-    expect(names(selectTags(new Float32Array([0.9, 0.1, 0.7]), labels, 0.5))).toEqual(['general', '1girl']);
-    expect(names(selectTags(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]), labels, 0.5))).toEqual(['general']);
+    expect(names(selectTags(new Float32Array([0.9, 0.1, 0.7]), labels, both(0.5)))).toEqual(['general', '1girl']);
+    expect(names(selectTags(new Float32Array([0, 0, 0, 0, 0, 0, 1, 1]), labels, both(0.5)))).toEqual(['general']);
   });
 });
 
@@ -156,5 +167,31 @@ describe('AI tag vetoes', () => {
     expect(vetoCount(id)).toBe(1);
     expect((await fetch(`${BASE}/api/media/${id}`, { method: 'DELETE' })).status).toBe(200);
     expect(vetoCount(id)).toBe(0);
+  });
+});
+
+describe('tag thresholds', () => {
+  const settings = async (body?: Record<string, string>) =>
+    (await (
+      await fetch(`${BASE}/api/settings`, {
+        method: body ? 'PATCH' : 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        body: body && JSON.stringify(body),
+      })
+    ).json()) as Record<string, string>;
+
+  test('general keeps the old key at 35 and character defaults to 85', async () => {
+    const { confidenceThresholds } = await import('./lib/settings');
+    const all = await settings();
+    expect([all.confidence_threshold, all.confidence_threshold_character]).toEqual(['35', '85']);
+    expect(confidenceThresholds()).toEqual({ general: 0.35, character: 0.85 });
+  });
+
+  test('each key is editable through the settings API and clamped to 0-100', async () => {
+    const { confidenceThresholds } = await import('./lib/settings');
+    await settings({ confidence_threshold: '50', confidence_threshold_character: '120' });
+    expect(confidenceThresholds()).toEqual({ general: 0.5, character: 1 });
+    await settings({ confidence_threshold: '35', confidence_threshold_character: 'junk' });
+    expect(confidenceThresholds()).toEqual({ general: 0.35, character: 0.85 });
   });
 });

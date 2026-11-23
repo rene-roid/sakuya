@@ -171,7 +171,10 @@ export interface BulkRenameItem {
 
 export interface Settings {
   ai_tagging_enabled: string;
+  /** Percent; applies to general tags. */
   confidence_threshold: string;
+  /** Percent; applies to character tags. */
+  confidence_threshold_character: string;
   accent_color: string;
   remember_mute_state: string;
   remember_volume_level: string;
