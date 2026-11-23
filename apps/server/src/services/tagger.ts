@@ -5,6 +5,7 @@ import { db, sqlite, schema } from '../db';
 import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY } from '../lib/config';
 import { confidenceThresholds, getSetting, setSetting, type TagThresholds } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
+import { distinctFrames, frameSignature, frameTimes, withVideoFrames } from './videoFrames';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { computeDHash } from './perceptualHash';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -127,16 +128,26 @@ export interface PredictedTag {
   confidence: number;
 }
 
-export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
+/** The model's per-label probabilities for one image, in label order. */
+export async function predictScores(imagePath: string): Promise<Float32Array> {
   if (!modelReady()) throw new Error('Tagger model not downloaded');
   const ort = await import('onnxruntime-node');
-  const probs = await model.use(async (sess) => {
+  const raw = await model.use(async (sess) => {
     const input = await preprocess(imagePath);
     const tensor = new ort.Tensor('float32', input, [1, INPUT_SIZE, INPUT_SIZE, 3]);
     const results = await sess.run({ [sess.inputNames[0]]: tensor });
     return results[sess.outputNames[0]].data as Float32Array;
   });
-  return selectTags(probs, loadLabels(), confidenceThresholds());
+  return toProbabilities(raw);
+}
+
+export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
+  return selectTags(await predictScores(imagePath), loadLabels(), confidenceThresholds());
+}
+
+/** The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits. */
+function toProbabilities(scores: Float32Array): Float32Array {
+  return scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
 }
 
 /**
@@ -144,8 +155,7 @@ export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
  * threshold, plus the single best rating whatever its score, highest confidence first.
  */
 export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresholds: TagThresholds): PredictedTag[] {
-  // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
-  const probs = scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
+  const probs = toProbabilities(scores);
 
   const out: PredictedTag[] = [];
   let bestRating: PredictedTag | null = null;
@@ -162,6 +172,16 @@ export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresh
   }
   if (bestRating) out.push(bestRating);
   out.sort((a, b) => b.confidence - a.confidence);
+  return out;
+}
+
+/** One score per label for a whole video: each label at its highest score in any of its frames. */
+export function combineFrameScores(frames: Float32Array[]): Float32Array {
+  const out = new Float32Array(frames[0]?.length ?? 0);
+  for (const frame of frames) {
+    const probs = toProbabilities(frame);
+    for (let i = 0; i < out.length && i < probs.length; i++) if (probs[i] > out[i]) out[i] = probs[i];
+  }
   return out;
 }
 
@@ -220,10 +240,36 @@ export function clearVeto(mediaId: number, tagId: number): void {
   deleteVeto.run(mediaId, tagId);
 }
 
+/** How many frames a video is tagged from. Measured in docs/video-tagging.md. */
+export const VIDEO_TAG_FRAMES = 5;
+
+/**
+ * A video's tags from frames sampled across it, or null when none could be extracted. The model is
+ * the expensive part (seconds per frame on a small CPU), so it runs at most VIDEO_TAG_FRAMES times
+ * whatever the video's length, and only once per distinct-looking frame.
+ */
+async function predictVideoTags(sourcePath: string, durationSeconds: number | null): Promise<PredictedTag[] | null> {
+  const times = frameTimes(durationSeconds, VIDEO_TAG_FRAMES);
+  if (!times.length || !fs.existsSync(sourcePath)) return null;
+  const scores = await withVideoFrames(sourcePath, times, async (frames) => {
+    const signatures = await Promise.all(frames.map((frame) => frameSignature(frame)));
+    const out: Float32Array[] = [];
+    for (const i of distinctFrames(signatures)) out.push(await predictScores(frames[i]));
+    return out;
+  });
+  if (!scores.length) return null;
+  return selectTags(combineFrameScores(scores), loadLabels(), confidenceThresholds());
+}
+
 export async function tagOneMedia(mediaId: number): Promise<number> {
   const row = db.select().from(schema.media).where(eq(schema.media.id, mediaId)).get();
   if (!row) throw new Error(`media ${mediaId} not found`);
-  // Videos are tagged from their extracted thumbnail frame.
+  if (row.type === 'video') {
+    if (!modelReady()) throw new Error('Tagger model not downloaded');
+    const predicted = await predictVideoTags(row.path, row.durationSeconds ?? null);
+    if (predicted) return applyPredictedTags(mediaId, predicted);
+  }
+  // Images are tagged from the original; a video ffmpeg can't sample falls back to its thumbnail frame.
   const imagePath = row.type === 'video' ? thumbPathFor(row.id) : row.path;
   if (!fs.existsSync(imagePath)) throw new Error(`no taggable image for media ${mediaId}`);
   let predicted: PredictedTag[];

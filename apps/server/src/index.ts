@@ -25,6 +25,7 @@ import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { scheduleAll } from './services/jobScheduler';
 import { startTrashPurge } from './services/trash';
+import { clearStaleFrames } from './services/videoFrames';
 
 // Set once here, before any thumbnail or tagger preprocessing can touch it — sharp is a singleton
 // and this is a runtime setter.
@@ -77,6 +78,9 @@ app.use((err: RouteError, _req: express.Request, res: express.Response, _next: e
   if (status >= 500) console.error(err);
   res.status(status).json({ error: err?.message ?? 'Internal error', issues: err?.issues });
 });
+
+// Before any job can start: a tag job's frames live here only while it runs.
+clearStaleFrames();
 
 const { port, host } = CONFIG.server;
 app.listen(port, host, () => {
