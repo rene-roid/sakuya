@@ -269,6 +269,22 @@ export function addSibling(fromName: string, toName: string, category: TagCatego
         )
         .run(to, from);
       sqlite.query('DELETE FROM media_tags WHERE tag_id = ?').run(from);
+      // A character named after the alias moves to the target, or into the target's character.
+      // Their links already moved above, so neither needs relinking.
+      type Owner = { id: number; cover: number | null };
+      const owners = sqlite.query('SELECT id, cover_detection_id AS cover FROM characters WHERE tag_id = ?');
+      const into = owners.get(to) as Owner | null;
+      if (!into) {
+        sqlite.query('UPDATE characters SET tag_id = ? WHERE tag_id = ?').run(to, from);
+      } else {
+        for (const merged of owners.all(from) as Owner[]) {
+          sqlite.query('UPDATE character_detections SET character_id = ? WHERE character_id = ?').run(into.id, merged.id);
+          sqlite
+            .query('UPDATE characters SET cover_detection_id = COALESCE(cover_detection_id, ?) WHERE id = ?')
+            .run(merged.cover, into.id);
+          sqlite.query('DELETE FROM characters WHERE id = ?').run(merged.id);
+        }
+      }
       sqlite
         .query(
           `INSERT INTO media_tag_vetoes (media_id, tag_id, created_at)

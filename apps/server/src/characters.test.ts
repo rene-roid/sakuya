@@ -574,4 +574,29 @@ describe('character links and the other tag writers', () => {
     const later = await newFace(1100, 1130);
     expect(linksOf('lila').map((l) => l.media_id)).toEqual([media[1], later.media]);
   });
+
+  test('merging a named character’s tag into another tag moves the character onto it', async () => {
+    const media = [await addMedia(), await addMedia()];
+    const { id } = await namedCluster('carrot_cat', 1200, media);
+    const merged = await post('/api/tag-relations/siblings', { from: 'carrot_cat', to: 'carrot', category: 'character' });
+    expect(merged.status).toBe(200);
+    expect((await json(fetch(`${BASE}/api/characters/${id}`))).name).toBe('carrot');
+
+    const later = await newFace(1200, 1230);
+    expect(linksOf('carrot_cat')).toEqual([]);
+    expect(linksOf('carrot')).toEqual([...media, later.media].map((m) => ({ media_id: m, source: 'character' })));
+  });
+
+  test('merging the tags of two named characters merges the characters', async () => {
+    const annMedia = [await addMedia(), await addMedia()];
+    const anneMedia = [await addMedia(), await addMedia()];
+    const ann = await namedCluster('ann', 1300, annMedia);
+    const anne = await namedCluster('anne', 1400, anneMedia);
+    expect((await post('/api/tag-relations/siblings', { from: 'anne', to: 'ann' })).status).toBe(200);
+
+    expect((await fetch(`${BASE}/api/characters/${anne.id}`)).status).toBe(404);
+    expect(await json(fetch(`${BASE}/api/characters/${ann.id}`))).toMatchObject({ name: 'ann', mediaCount: 4 });
+    expect(linksOf('ann').map((l) => l.media_id)).toEqual([...annMedia, ...anneMedia]);
+    expect(linksOf('anne')).toEqual([]);
+  });
 });

@@ -1,4 +1,4 @@
-import { linkTag, recomputeImplied } from './tagRelations';
+import { linkTag, recomputeImplied, resolveSibling } from './tagRelations';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -519,10 +519,13 @@ export function nameCharacter(id: number, rawName: string): CharacterSummary {
   const name = normalizeTagName(rawName);
   if (!name) throw httpError(400, 'Name is required');
   const character = characterRow(id);
-  const existing = sqlite.query('SELECT id, category FROM tags WHERE name = ?').get(name) as {
-    id: number;
-    category: string;
-  } | null;
+  const found = sqlite.query('SELECT id FROM tags WHERE name = ?').get(name) as { id: number } | null;
+  const existing = found
+    ? (sqlite.query('SELECT id, category FROM tags WHERE id = ?').get(resolveSibling(found.id)) as {
+        id: number;
+        category: string;
+      })
+    : null;
   if (existing && existing.category !== 'character' && existing.category !== 'user') {
     throw httpError(
       409,
