@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
+import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2, Sparkles } from 'lucide-react';
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
 import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
@@ -508,8 +508,19 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
             <MetaRow label="Watched" value={formatDuration(item.watchedSeconds) ?? '—'} />
           )}
         </div>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
+        <div className="mb-2 flex items-center gap-3">
+          <div className="mr-auto text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
+          <button
+            className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-zinc-400 hover:text-zinc-100"
+            title="Items that share this one's tags, rarest tags first"
+            onClick={() => {
+              handleClose();
+              navigate(`/discover?like=${item.id}`);
+            }}
+          >
+            <Sparkles size={13} />
+            More like this
+          </button>
           <button
             className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-accent hover:opacity-80"
             onClick={() => api.retag(item.id).then(() => toast('Re-tagging with AI…'), toastError)}
