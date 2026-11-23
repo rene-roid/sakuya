@@ -13,6 +13,9 @@ an image.
 - Frames are extracted one at a time with one ffmpeg thread, as PNGs no wider or taller than 640 px,
   into `<data dir>/video-frames/`. Each video's folder is removed when it is done, and the whole
   folder is cleared at boot in case the server died mid-video.
+- The rating is combined the same way: each rating at its highest score in any frame, then the
+  best one wins. One frame that looks `sensitive` rates the whole video `sensitive` (pepper-pan-720p
+  went from `general` to `sensitive` this way), which errs on the safe side for a content rating.
 - Nothing new is stored.
 
 Measured with `bun apps/server/src/scripts/videoTagEval.ts` over the nine fixture videos (pan and
