@@ -10,7 +10,7 @@ import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, unlinkTag, clearVeto } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
-import { removeMediaRows } from '../services/mediaRemoval';
+import { trashMedia } from '../services/trash';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -274,13 +274,8 @@ mediaRouter.post(
   wrap(async (req, res) => {
     const { ids } = deleteBatchSchema.parse(req.body);
     const rows = mediaRowsByIds(ids);
-    const found = ids.filter((id) => rows.has(id));
-
-    // Rows go first and atomically: a half-applied delete would leave media_tags pointing at
-    // rows that no longer exist. Files are unlinked only once that commit succeeded.
-    removeMediaRows(found);
-    for (const id of found) fs.unlink(rows.get(id)!.path, () => {});
-    res.json({ ok: true, deleted: found.length });
+    const { removed, failed } = await trashMedia(ids.filter((id) => rows.has(id)).map((id) => rows.get(id)!));
+    res.json({ ok: true, deleted: removed.length, failed });
   }),
 );
 
@@ -579,8 +574,8 @@ mediaRouter.delete(
   '/api/media/:id',
   wrap(async (req, res) => {
     const row = mediaOr404(req.params.id);
-    removeMediaRows([row.id]);
-    fs.unlink(row.path, () => {});
+    const { failed } = await trashMedia([row]);
+    if (failed.length) return res.status(500).json({ error: failed[0].error });
     res.json({ ok: true });
   }),
 );

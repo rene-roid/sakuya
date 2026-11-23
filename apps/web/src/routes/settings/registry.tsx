@@ -23,6 +23,16 @@ import { LibraryManager } from './LibraryManager';
 import { PerLibrarySchedules } from './JobSchedules';
 import { JobHistory } from './JobHistory';
 import { ReleaseNotes } from './ReleaseNotes';
+import {
+  BackupList,
+  BackupNowControl,
+  BackupNowMeta,
+  BackupScheduleLink,
+  BackupScheduleMeta,
+  TrashControl,
+  TrashMeta,
+} from './BackupsAndTrash';
+import { UpdatesPanel } from '../../components/UpdatesPanel';
 
 export type SettingsKey = keyof Settings;
 
@@ -48,8 +58,13 @@ export const SECTIONS: readonly SettingsSection[] = [
     subtitle: 'Thumbnails, transcodes and image hashes.',
   },
   { id: 'jobs', label: 'Jobs', group: 'Library', subtitle: 'When background work runs.' },
-  { id: 'storage', label: 'Storage', group: 'System', subtitle: 'Where data lives and how big it is.' },
-  { id: 'about', label: 'About', group: 'System', subtitle: 'Version and release notes.' },
+  {
+    id: 'storage',
+    label: 'Storage',
+    group: 'System',
+    subtitle: 'Where data lives, how big it is, backups and the trash.',
+  },
+  { id: 'about', label: 'About', group: 'System', subtitle: 'Version, updates and release notes.' },
 ];
 
 /** A confirmation shown before an action runs, or before a toggle turns off. */
@@ -485,6 +500,16 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: () => <ScheduleControl jobType="cleanup" />,
   },
   {
+    id: 'schedule-backup',
+    section: 'jobs',
+    group: 'Schedules',
+    label: 'Database backup',
+    description: 'Write a copy of the database to the backups folder. Recommended: daily.',
+    keywords: 'schedule interval backup daily snapshot',
+    kind: 'custom',
+    Control: () => <ScheduleControl jobType="backup" />,
+  },
+  {
     id: 'library-schedules',
     section: 'jobs',
     group: 'Per library',
@@ -551,6 +576,63 @@ export const SETTINGS: readonly SettingEntry[] = [
     Control: () => <StatValue stat="thumbs" />,
   },
   {
+    id: 'trash',
+    section: 'storage',
+    group: 'Trash',
+    label: 'Trash',
+    description: 'Deleted media waits here for 30 days, then it is deleted for good. Open it to restore items.',
+    keywords: 'deleted delete restore undo recycle bin bin empty purge',
+    kind: 'custom',
+    Control: TrashControl,
+    Meta: TrashMeta,
+  },
+  {
+    id: 'backup-now',
+    section: 'storage',
+    group: 'Backups',
+    label: 'Database backup',
+    description: 'A consistent copy of the database: library index, tags, likes, boards and settings.',
+    keywords: 'backup back up now snapshot copy sqlite db restore',
+    kind: 'custom',
+    Control: BackupNowControl,
+    Meta: BackupNowMeta,
+  },
+  {
+    id: 'backup-keep',
+    section: 'storage',
+    group: 'Backups',
+    label: 'Backups to keep',
+    description: 'After each backup, all but this many of the newest are deleted.',
+    keywords: 'backup retention keep prune count',
+    kind: 'slider',
+    key: 'backup_keep',
+    min: 1,
+    max: 30,
+    fallback: 7,
+  },
+  {
+    id: 'backup-schedule',
+    section: 'storage',
+    group: 'Backups',
+    label: 'Backup schedule',
+    description: 'How often a backup runs on its own. Set with the other schedules under Jobs.',
+    keywords: 'backup schedule daily interval automatic',
+    kind: 'custom',
+    Control: BackupScheduleLink,
+    Meta: BackupScheduleMeta,
+  },
+  {
+    id: 'backup-list',
+    section: 'storage',
+    group: 'Backups',
+    label: 'Saved backups',
+    description: 'Every backup on disk, newest first.',
+    keywords: 'backup files list history size date',
+    kind: 'custom',
+    block: true,
+    Control: BackupList,
+  },
+  {
     id: 'cleanup-orphans',
     section: 'storage',
     group: 'Maintenance',
@@ -572,21 +654,22 @@ export const SETTINGS: readonly SettingEntry[] = [
       queryClient.invalidateQueries({ queryKey: ['tags'] });
       return (
         `Removed ${res.removedThumbs} orphan thumbnails and ${res.removedTranscodes} transcodes · reset ${res.resetTagCounts} tag counts · ` +
-        `pruned ${res.prunedJobs} old jobs and ${res.prunedDownloadLogs} log lines`
+        `pruned ${res.prunedJobs} old jobs and ${res.prunedDownloadLogs} log lines · purged ${res.purgedTrash} expired trash items`
       );
     },
   },
 
   // About
   {
-    id: 'version',
+    id: 'updates',
     section: 'about',
     group: 'Version',
-    label: 'Sakuya',
-    description: 'The running server version.',
-    keywords: 'version update',
+    label: 'Updates',
+    description: 'The running version, a check for a newer one, and how this copy updates.',
+    keywords: 'version update upgrade check auto-update automatic restart desktop docker release',
     kind: 'custom',
-    Control: () => <StatValue stat="version" />,
+    block: true,
+    Control: UpdatesPanel,
   },
   {
     id: 'release-notes',
@@ -626,6 +709,7 @@ export const ALL_SETTINGS_KEYS = Object.keys({
   ui_style: 1,
   ui_style_chosen: 1,
   dashboard_hero: 1,
+  backup_keep: 1,
 } satisfies Record<SettingsKey, 1>) as SettingsKey[];
 
 export function entryKeys(entry: SettingEntry): SettingsKey[] {

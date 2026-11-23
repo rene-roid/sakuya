@@ -176,3 +176,16 @@ export const savedSearches = sqliteTable('saved_searches', {
   query: text('query').notNull(),
   createdAt: integer('created_at').notNull(),
 });
+
+export const trash = sqliteTable('trash', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  mediaId: integer('media_id').notNull(),
+  libraryId: integer('library_id').notNull(),
+  filename: text('filename').notNull(),
+  type: text('type', { enum: MEDIA_TYPES }).notNull(),
+  sizeBytes: integer('size_bytes').notNull().default(0),
+  originalPath: text('original_path').notNull(),
+  trashedPath: text('trashed_path').notNull(),
+  trashedAt: integer('trashed_at').notNull(),
+  mediaJson: text('media_json').notNull(),
+});

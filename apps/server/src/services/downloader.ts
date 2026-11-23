@@ -8,7 +8,7 @@ import { db, schema } from '../db';
 import { downloaderConcurrency, getSetting } from '../lib/settings';
 import { detectGalleryDl } from './galleryDl';
 import { enqueueScanJob } from './scanner';
-import { removeMediaRows } from './mediaRemoval';
+import { trashMedia } from './trash';
 import { chunkIds } from '../lib/mediaByIds';
 import { parseShellArgs } from '../lib/shellArgs';
 import { isUnder } from '../lib/paths';
@@ -332,7 +332,7 @@ export function skipItem(id: number): void {
   maybeCompleteBatch(item.batchId);
 }
 
-export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
+export async function removeItem(id: number, opts: { deleteFiles: boolean }): Promise<void> {
   const item = getItemOrThrow(id);
 
   const entry = runningProcs.get(id);
@@ -346,21 +346,22 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
   if (opts.deleteFiles) {
     const batch = db.select().from(schema.downloadBatches).where(eq(schema.downloadBatches.id, item.batchId)).get();
     const files = db.select().from(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).all();
+    // The batch-completion scan already indexed most of these into `media`; those go to the trash
+    // like any other delete. They're found by path rather than by a rescan: a rescan that finds
+    // the folder empty keeps its rows, taking it for an unmounted drive (see pruneMissing), and
+    // deleting a whole batch empties the folder.
+    const indexed: (typeof schema.media.$inferSelect)[] = [];
+    for (const part of chunkIds(files.map((f) => f.path))) {
+      indexed.push(...db.select().from(schema.media).where(inArray(schema.media.path, part)).all());
+    }
+    await trashMedia(indexed);
+    const trashed = new Set(indexed.map((m) => m.path));
     const parentDirs = new Set<string>();
     for (const f of files) {
-      fs.rmSync(f.path, { force: true });
+      if (!trashed.has(f.path)) fs.rmSync(f.path, { force: true });
       parentDirs.add(path.dirname(f.path));
     }
     if (batch) for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
-    // The batch-completion scan already indexed these into `media`. They're dropped here by path
-    // rather than by a rescan: a rescan that finds the folder empty keeps its rows, taking it for
-    // an unmounted drive (see pruneMissing), and deleting a whole batch empties the folder.
-    const ids: number[] = [];
-    for (const part of chunkIds(files.map((f) => f.path))) {
-      const rows = db.select({ id: schema.media.id }).from(schema.media).where(inArray(schema.media.path, part)).all();
-      for (const row of rows) ids.push(row.id);
-    }
-    removeMediaRows(ids);
   }
 
   db.delete(schema.downloadFiles).where(eq(schema.downloadFiles.itemId, id)).run();

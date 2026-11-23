@@ -189,6 +189,21 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_name_idx ON saved_searches(name);
+-- Deleted media waiting out the retention window. trashed_path is relative to <dataDir>/trash so a
+-- data-dir move keeps it valid; media_json is the media row with its tags, vetoes and boards.
+CREATE TABLE IF NOT EXISTS trash (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL,
+  library_id INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  original_path TEXT NOT NULL,
+  trashed_path TEXT NOT NULL,
+  trashed_at INTEGER NOT NULL,
+  media_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trash_trashed_at_idx ON trash(trashed_at);
 
 -- Free-text search index over filenames/paths and tag names. Replaces a pair of unindexable
 -- LIKE '%term%' scans; see buildMediaFilter in routes/media.ts.

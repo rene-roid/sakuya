@@ -497,7 +497,7 @@ export function ScheduleControl({ jobType }: { jobType: ScheduleJobType }) {
         disabled={!schedules || update.isPending}
         onChange={(next) => update.mutate(valueToPatch(next, jobType))}
         showInherit={false}
-        showAfterScan={jobType !== 'scan' && jobType !== 'cleanup'}
+        showAfterScan={jobType !== 'scan' && jobType !== 'cleanup' && jobType !== 'backup'}
       />
       <button type="button" disabled={runNow.isPending} onClick={() => runNow.mutate()} className={buttonClass()}>
         Run now

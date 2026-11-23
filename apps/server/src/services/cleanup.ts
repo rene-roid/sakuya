@@ -3,6 +3,7 @@ import path from 'node:path';
 import { sqlite, db, schema } from '../db';
 import { THUMBS_DIR, TRANSCODES_DIR } from '../lib/config';
 import { enqueueJob, type JobHandle } from './jobQueue';
+import { purgeTrash, TRASH_RETENTION_DAYS } from './trash';
 
 /**
  * How long finished jobs and the logs of finished downloads are kept.
@@ -28,6 +29,7 @@ export interface CleanupResult {
   resetTagCounts: number;
   prunedJobs: number;
   prunedDownloadLogs: number;
+  purgedTrash: number;
 }
 
 export function performCleanup(now: number = Date.now()): CleanupResult {
@@ -83,7 +85,9 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
     )
     .run(cutoff).changes;
 
-  return { removedThumbs, removedTranscodes, resetTagCounts, prunedJobs, prunedDownloadLogs };
+  const purgedTrash = purgeTrash(now).removed;
+
+  return { removedThumbs, removedTranscodes, resetTagCounts, prunedJobs, prunedDownloadLogs, purgedTrash };
 }
 
 export function enqueueCleanupJob() {
@@ -97,7 +101,8 @@ export function enqueueCleanupJob() {
         `Removed ${result.removedThumbs} orphan thumbnails and ${result.removedTranscodes} orphan transcodes, ` +
         `recomputed usage count for ${result.resetTagCounts} tags, ` +
         `pruned ${result.prunedJobs} finished jobs and ${result.prunedDownloadLogs} download log lines ` +
-        `older than ${RETENTION_DAYS} days.`
+        `older than ${RETENTION_DAYS} days, ` +
+        `and purged ${result.purgedTrash} trash items older than ${TRASH_RETENTION_DAYS} days.`
       );
     },
     null,
