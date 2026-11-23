@@ -209,7 +209,8 @@ CREATE TABLE IF NOT EXISTS characters (
   tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
   cover_detection_id INTEGER REFERENCES character_detections(id) ON DELETE SET NULL,
   hidden INTEGER NOT NULL DEFAULT 0,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  dismissed_suggestion TEXT
 );
 CREATE INDEX IF NOT EXISTS characters_tag_idx ON characters(tag_id);
 CREATE TABLE IF NOT EXISTS character_detections (
@@ -299,6 +300,8 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 22, sql: 'DROP INDEX IF EXISTS media_type_idx' },
   // A label shown instead of the canonical name, which URLs, filters and search keep using.
   { version: 23, sql: 'ALTER TABLE tags ADD COLUMN display_name TEXT' },
+  // The WD tag a user said an unnamed character is not, so it stops being suggested.
+  { version: 45, sql: 'ALTER TABLE characters ADD COLUMN dismissed_suggestion TEXT' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;

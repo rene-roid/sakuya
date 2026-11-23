@@ -10,11 +10,13 @@ import { normalizeTagName } from '@sakuya/shared';
 import type {
   CharacterAssignment,
   CharacterDetection,
+  CharacterDetectionsResponse,
   CharacterMediaResponse,
   CharacterModelStatus,
   CharactersResponse,
   CharacterSuggestion,
   CharacterSummary,
+  TagCount,
 } from '@sakuya/shared';
 import { characterDetectionEnabled } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
@@ -280,6 +282,7 @@ interface SummaryRow {
   id: number;
   tag_id: number | null;
   name: string | null;
+  display_name: string | null;
   hidden: number;
   created_at: number;
   cover_detection_id: number | null;
@@ -289,7 +292,7 @@ interface SummaryRow {
 }
 
 const SUMMARY_SELECT = `
-  SELECT c.id, c.tag_id, t.name, c.hidden, c.created_at, c.cover_detection_id,
+  SELECT c.id, c.tag_id, t.name, t.display_name, c.hidden, c.created_at, c.cover_detection_id,
          (SELECT d2.id FROM character_detections d2 WHERE d2.character_id = c.id AND d2.assignment != 'rejected'
           ORDER BY d2.score DESC, d2.id LIMIT 1) AS best_detection_id,
          COUNT(d.id) AS detections, COUNT(DISTINCT d.media_id) AS media
@@ -303,6 +306,7 @@ function toSummary(row: SummaryRow, suggestion: CharacterSuggestion | null): Cha
     id: row.id,
     tagId: row.tag_id,
     name: row.tag_id ? row.name : null,
+    displayName: row.tag_id ? row.display_name : null,
     hidden: row.hidden === 1,
     createdAt: row.created_at,
     mediaCount: row.media,
@@ -332,20 +336,28 @@ export function characterSuggestions(characterIds?: number[]): Map<number, Chara
          JOIN tags st ON st.id = mt.tag_id AND st.name = 'solo'
        ),
        totals AS (SELECT character_id, COUNT(*) AS n FROM solo GROUP BY character_id)
-       SELECT solo.character_id AS character_id, t.name AS tag, COUNT(*) AS c, totals.n AS n
+       SELECT solo.character_id AS character_id, t.name AS tag, t.display_name AS display_name,
+              COUNT(*) AS c, totals.n AS n
        FROM solo
        JOIN totals ON totals.character_id = solo.character_id
+       JOIN characters ch ON ch.id = solo.character_id
        JOIN media_tags mt ON mt.media_id = solo.media_id AND mt.source = 'ai'
-       JOIN tags t ON t.id = mt.tag_id AND t.category = 'character'
+       JOIN tags t ON t.id = mt.tag_id AND t.category = 'character' AND t.name IS NOT ch.dismissed_suggestion
        GROUP BY solo.character_id, t.id
        ORDER BY c DESC, t.name`,
     )
-    .all(...(characterIds ?? [])) as { character_id: number; tag: string; c: number; n: number }[];
+    .all(...(characterIds ?? [])) as {
+    character_id: number;
+    tag: string;
+    display_name: string | null;
+    c: number;
+    n: number;
+  }[];
   const out = new Map<number, CharacterSuggestion>();
   for (const r of rows) {
     if (out.has(r.character_id)) continue;
     if (r.c >= SUGGEST_MIN_MEDIA && r.c / r.n >= SUGGEST_MIN_SHARE) {
-      out.set(r.character_id, { tag: r.tag, mediaCount: r.c, soloCount: r.n });
+      out.set(r.character_id, { tag: r.tag, displayName: r.display_name, mediaCount: r.c, soloCount: r.n });
     }
   }
   return out;
@@ -356,7 +368,7 @@ export function listCharacters(includeHidden = false): CharactersResponse {
     .query(`${SUMMARY_SELECT} ${includeHidden ? '' : 'WHERE c.hidden = 0'} GROUP BY c.id ORDER BY media DESC, c.id`)
     .all() as SummaryRow[];
   const suggestions = characterSuggestions();
-  const out: CharactersResponse = { named: [], suggested: [], unnamed: [], unassignedCount: 0 };
+  const out: CharactersResponse = { named: [], suggested: [], unnamed: [], unassignedCount: 0, tagOnly: [] };
   for (const row of rows) {
     const summary = toSummary(row, suggestions.get(row.id) ?? null);
     if (summary.name !== null) out.named.push(summary);
@@ -367,6 +379,14 @@ export function listCharacters(includeHidden = false): CharactersResponse {
   out.unassignedCount = (
     sqlite.query('SELECT COUNT(*) AS c FROM character_detections WHERE character_id IS NULL').get() as { c: number }
   ).c;
+  out.tagOnly = sqlite
+    .query(
+      `SELECT t.name, t.category, t.display_name AS displayName, t.usage_count AS count FROM tags t
+       WHERE t.category = 'character' AND t.usage_count > 0
+         AND NOT EXISTS (SELECT 1 FROM characters c WHERE c.tag_id = t.id)
+       ORDER BY t.usage_count DESC, t.name`,
+    )
+    .all() as TagCount[];
   return out;
 }
 
@@ -387,10 +407,11 @@ interface DetectionRow {
   character_id: number | null;
   assignment: CharacterAssignment;
   name: string | null;
+  display_name: string | null;
 }
 
 const DETECTION_SELECT = `
-  SELECT d.id, d.media_id, d.x, d.y, d.w, d.h, d.score, d.character_id, d.assignment, t.name
+  SELECT d.id, d.media_id, d.x, d.y, d.w, d.h, d.score, d.character_id, d.assignment, t.name, t.display_name
   FROM character_detections d
   LEFT JOIN characters c ON c.id = d.character_id
   LEFT JOIN tags t ON t.id = c.tag_id`;
@@ -403,6 +424,7 @@ function toDetection(r: DetectionRow): CharacterDetection {
     score: r.score,
     characterId: r.character_id,
     characterName: r.assignment === 'rejected' ? null : r.name,
+    characterDisplayName: r.assignment === 'rejected' ? null : r.display_name,
     assignment: r.assignment,
     cropUrl: cropUrl(r.id),
   };
@@ -441,6 +463,21 @@ export function characterMedia(id: number, offset: number, limit: number): Chara
     total,
     nextOffset: offset + items.length < total ? offset + items.length : null,
   };
+}
+
+/** Every face of one character, best first, for its page's grid. */
+export function characterDetections(id: number, offset: number, limit: number): CharacterDetectionsResponse {
+  characterRow(id);
+  const where = `WHERE d.character_id = ? AND d.assignment != 'rejected'`;
+  const total = (
+    sqlite.query(`SELECT COUNT(*) AS c FROM character_detections d ${where}`).get(id) as { c: number }
+  ).c;
+  const items = (
+    sqlite
+      .query(`${DETECTION_SELECT} ${where} ORDER BY d.score DESC, d.id LIMIT ? OFFSET ?`)
+      .all(id, limit, offset) as DetectionRow[]
+  ).map(toDetection);
+  return { items, total, nextOffset: offset + items.length < total ? offset + items.length : null };
 }
 
 // --- Editing --------------------------------------------------------------------------------
@@ -551,6 +588,44 @@ export function assignDetection(detectionId: number, characterId: number): Chara
     det.character_id && det.character_id !== characterId ? [det.character_id, characterId] : [characterId],
   );
   return mediaDetections(detectionMediaId(detectionId)).find((d) => d.id === detectionId)!;
+}
+
+/**
+ * Name one face, as from the viewer. A face in an unnamed cluster names the whole cluster, the
+ * way naming a person works in Immich; any other face moves to the character with that name,
+ * which is created for it when no character has the name yet.
+ */
+export function nameDetection(detectionId: number, rawName: string): CharacterDetection {
+  const name = normalizeTagName(rawName);
+  if (!name) throw httpError(400, 'Name is required');
+  const det = detectionRow(detectionId);
+  const current = det.character_id === null || det.assignment === 'rejected' ? null : characterRow(det.character_id);
+  if (current && current.tag_id === null) {
+    nameCharacter(current.id, name);
+    return mediaDetections(detectionMediaId(detectionId)).find((d) => d.id === detectionId)!;
+  }
+  const owner = sqlite
+    .query('SELECT c.id FROM characters c JOIN tags t ON t.id = c.tag_id WHERE t.name = ?')
+    .get(name) as { id: number } | null;
+  if (owner) return assignDetection(detectionId, owner.id);
+  // One transaction, so a refused name (a general tag) leaves no empty character behind.
+  return sqlite.transaction(() => {
+    const { id } = sqlite.query('INSERT INTO characters (created_at) VALUES (?) RETURNING id').get(Date.now()) as {
+      id: number;
+    };
+    assignDetection(detectionId, id);
+    nameCharacter(id, name);
+    return mediaDetections(detectionMediaId(detectionId)).find((d) => d.id === detectionId)!;
+  })();
+}
+
+/** "Not X": the suggestion goes away and the character waits in Unnamed for a name. */
+export function dismissSuggestion(id: number): CharacterSummary {
+  characterRow(id);
+  const suggestion = characterSuggestions([id]).get(id);
+  if (!suggestion) throw httpError(409, 'This character has no name suggestion');
+  sqlite.query('UPDATE characters SET dismissed_suggestion = ? WHERE id = ?').run(suggestion.tag, id);
+  return getCharacter(id);
 }
 
 function detectionMediaId(detectionId: number): number {
