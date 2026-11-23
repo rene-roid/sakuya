@@ -15,6 +15,8 @@ const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
 /** Flipping past an image with the arrow keys isn't interest — anything shorter is discarded. */
 const MIN_DWELL_SECONDS = 1;
+/** Matches the server's MIN_VIEW_SECONDS. */
+const VIEW_AFTER_SECONDS = 2;
 /**
  * Watched seconds are batched to this many before a progress write. At 1s, playing a video sent
  * a PATCH (and a database write) every second for as long as it played.
@@ -163,14 +165,19 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
     [item],
   );
 
-  // Mark viewed (updates lastViewedAt + viewCount for both images and videos) when a new item opens.
+  // Mark viewed (updates lastViewedAt + viewCount for both images and videos) once an item has
+  // stayed open VIEW_AFTER_SECONDS; stepping past it sooner is a skip and records nothing.
   useEffect(() => {
     if (!item) return;
     completedRef.current = false;
     lastSavedProgress.current = item.viewProgress ?? 0;
     lastPlayedTime.current = 0;
     pendingWatchedSeconds.current = 0;
-    api.saveProgress(item.id, { view: true }).catch(() => {});
+    const mediaId = item.id;
+    const timer = setTimeout(() => {
+      api.saveProgress(mediaId, { view: true, openSeconds: VIEW_AFTER_SECONDS }).catch(() => {});
+    }, VIEW_AFTER_SECONDS * 1000);
+    return () => clearTimeout(timer);
   }, [item?.id]);
 
   // Dwell time: the still-image counterpart to a video's watched seconds. Counts only while the
