@@ -1,3 +1,4 @@
+import { recomputeImplied } from './tagRelations';
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -199,6 +200,7 @@ function pruneEmptyCharacters(): void {
  */
 function syncCharacterLinks(characterIds: number[]): void {
   const tags: number[] = [];
+  const touchedMedia = new Set<number>();
   sqlite.transaction(() => {
     for (const id of characterIds) {
       const row = sqlite.query('SELECT tag_id FROM characters WHERE id = ?').get(id) as {
@@ -206,12 +208,19 @@ function syncCharacterLinks(characterIds: number[]): void {
       } | null;
       if (!row?.tag_id) continue;
       tags.push(row.tag_id);
+      for (const r of sqlite
+        .query(
+          `SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'
+           UNION SELECT media_id FROM character_detections WHERE character_id = ? AND assignment != 'rejected'`,
+        )
+        .all(row.tag_id, id) as { media_id: number }[])
+        touchedMedia.add(r.media_id);
       sqlite
         .query(
           `INSERT INTO media_tags (media_id, tag_id, confidence, source)
            SELECT DISTINCT media_id, ?, NULL, 'character' FROM character_detections
            WHERE character_id = ? AND assignment != 'rejected'
-           ON CONFLICT (media_id, tag_id) DO UPDATE SET source = 'character' WHERE media_tags.source = 'ai'`,
+           ON CONFLICT (media_id, tag_id) DO UPDATE SET source = 'character' WHERE media_tags.source IN ('ai', 'implied')`,
         )
         .run(row.tag_id, id);
       sqlite
@@ -222,13 +231,16 @@ function syncCharacterLinks(characterIds: number[]): void {
         .run(row.tag_id, id);
     }
   })();
-  refreshUsageCounts(tags);
+  refreshUsageCounts([...tags, ...recomputeImplied(touchedMedia)]);
 }
 
 /** Drop the links a character wrote for a tag it no longer carries. */
 function unlinkCharacterTag(tagId: number): void {
+  const media = sqlite
+    .query(`SELECT media_id FROM media_tags WHERE tag_id = ? AND source = 'character'`)
+    .all(tagId) as { media_id: number }[];
   sqlite.query(`DELETE FROM media_tags WHERE tag_id = ? AND source = 'character'`).run(tagId);
-  refreshUsageCounts([tagId]);
+  refreshUsageCounts([tagId, ...recomputeImplied(media.map((r) => r.media_id))]);
 }
 
 // --- The job --------------------------------------------------------------------------------

@@ -391,3 +391,34 @@ describe('characters API', () => {
     expect(job.log).toContain('Download them in Settings > AI Tagging');
   });
 });
+
+describe('characters and tag implications', () => {
+  test('a named character carries what its tag implies, and drops it when renamed', async () => {
+    const saffron = randomUnit(900);
+    const media = [await addMedia(), await addMedia()];
+    const dets = media.flatMap((id, i) => detect(id, [near(saffron, randomUnit(910 + i), 0.93)]));
+    expect(clusterDetections(dets, params)).toEqual({ assigned: 0, created: 1 });
+    const charId = (sqlite.query('SELECT character_id FROM character_detections WHERE id = ?').get(dets[0]) as {
+      character_id: number;
+    }).character_id;
+
+    const named = await post(`/api/characters/${charId}/name`, { name: 'saffron_(pepper&carrot)' });
+    expect([named.status, (await json(named)).name]).toEqual([200, 'saffron_(pepper&carrot)']);
+    const implication = await post('/api/tag-relations/implications', {
+      tag: 'saffron_(pepper&carrot)',
+      implies: 'pepper&carrot',
+      category: 'copyright',
+    });
+    expect(implication.status).toBe(200);
+    expect(linksOf('pepper&carrot')).toEqual(media.map((id) => ({ media_id: id, source: 'implied' })));
+
+    const later = await addMedia();
+    const [det] = detect(later, [near(saffron, randomUnit(920), 0.93)]);
+    clusterDetections([det], params);
+    expect(linksOf('pepper&carrot').map((l) => l.media_id)).toEqual([...media, later]);
+
+    await json(post(`/api/characters/${charId}/name`, { name: 'saffron_the_witch' }));
+    expect(linksOf('saffron_(pepper&carrot)')).toEqual([]);
+    expect(linksOf('pepper&carrot')).toEqual([]);
+  });
+});
