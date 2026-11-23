@@ -41,6 +41,7 @@ export interface MediaSqlRow {
   liked: number;
   liked_at: number | null;
   perceptual_hash: string | null;
+  source_url?: string | null;
   tag_count?: number;
   library_name?: string | null;
   sort_key?: number | string;

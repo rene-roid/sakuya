@@ -17,6 +17,8 @@ import { tryConvertUgoiraZip } from './ugoira';
 import { computeDHash } from './perceptualHash';
 import { phashColumns } from '../lib/phashBands';
 import { run } from '../lib/run';
+import { sidecarFor, syncSidecar } from './sidecar';
+import { refreshUsageCounts } from './tagger';
 
 const ffprobePath: string = ffprobeStatic.path;
 
@@ -88,7 +90,8 @@ export async function isTransportStream(filePath: string): Promise<boolean> {
   return buf?.length === 189 && buf[0] === 0x47 && buf[188] === 0x47;
 }
 
-async function walk(dir: string, out: string[]): Promise<void> {
+/** Collects media files into `out`, and every .json file into `json` for sidecar lookups. */
+async function walk(dir: string, out: string[], json: Set<string>): Promise<void> {
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -99,11 +102,15 @@ async function walk(dir: string, out: string[]): Promise<void> {
     if (entry.name.startsWith('.')) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      await walk(full, out);
+      await walk(full, out, json);
       continue;
     }
     if (!entry.isFile()) continue;
     const ext = path.extname(entry.name);
+    if (ext.toLowerCase() === '.json') {
+      json.add(full);
+      continue;
+    }
     if (ext.toLowerCase() === '.zip') {
       const gif = await tryConvertUgoiraZip(full);
       if (gif) out.push(gif);
@@ -320,6 +327,8 @@ export function enqueueScanJob(libraryId: number) {
       let indexed = 0;
       let skipped = 0;
       let pruned = 0;
+      let badSidecars = 0;
+      const sidecarTags = new Set<number>();
 
       for (const folder of libFolders) {
         db.update(schema.folders).set({ status: 'scanning' }).where(eq(schema.folders.id, folder.id)).run();
@@ -330,7 +339,8 @@ export function enqueueScanJob(libraryId: number) {
       // Every folder is walked, nested ones too: the outer walk skips dot-directories and symlinks,
       // so it may never reach them. The Set drops the files both walks found.
       const found: string[] = [];
-      for (const folder of libFolders) await walk(folder.path, found);
+      const jsonFiles = new Set<string>();
+      for (const folder of libFolders) await walk(folder.path, found, jsonFiles);
       const files = [...new Set(found)];
       job.update({ total: files.length, log: `Found ${files.length} files, indexing…` });
 
@@ -342,8 +352,12 @@ export function enqueueScanJob(libraryId: number) {
         async (file) => {
           if ((await indexFile(file, libraryId, 'folder')) !== null) indexed++;
           else skipped++;
+          // Also for unchanged files: a sidecar can appear or change next to a file indexed earlier.
+          const sidecar = sidecarFor(file, jsonFiles);
+          if (sidecar && !(await syncSidecar(file, sidecar, sidecarTags))) badSidecars++;
         },
       );
+      refreshUsageCounts([...sidecarTags]);
 
       const unreachable: string[] = [];
       let withheld = 0;
@@ -363,7 +377,9 @@ export function enqueueScanJob(libraryId: number) {
 
       dispatchAfterScan(libraryId);
 
-      const summary = `${indexed} indexed, ${skipped} unchanged, ${pruned} removed${errors ? `, ${errors} errors` : ''}`;
+      const summary =
+        `${indexed} indexed, ${skipped} unchanged, ${pruned} removed${errors ? `, ${errors} errors` : ''}` +
+        (badSidecars ? `, ${badSidecars} unreadable metadata files` : '');
       if (unreachable.length) {
         // Thrown so the job lands as an error and the UI toasts it, rather than a quiet "done".
         throw new Error(

@@ -173,6 +173,8 @@ async function runOne(itemId: number): Promise<void> {
     '-d', batch.folderPath,
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     '--ugoira', 'gif',
+    // A <file>.json sidecar per download: the scan reads the site's tags, artist and post URL from it.
+    '--write-metadata',
     ...extraArgs,
   ];
 
@@ -349,6 +351,7 @@ export function removeItem(id: number, opts: { deleteFiles: boolean }): void {
     const parentDirs = new Set<string>();
     for (const f of files) {
       fs.rmSync(f.path, { force: true });
+      fs.rmSync(`${f.path}.json`, { force: true });
       parentDirs.add(path.dirname(f.path));
     }
     if (batch) for (const dir of parentDirs) removeEmptyDirsUpTo(dir, batch.folderPath);
