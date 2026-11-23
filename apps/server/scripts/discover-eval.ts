@@ -1,9 +1,10 @@
 /**
  * Discover evaluation lever. Three modes:
  *
- *   bun apps/server/scripts/discover-eval.ts metrics [--items 8000] [--seeds 3]
+ *   bun apps/server/scripts/discover-eval.ts metrics [--items 8000] [--seeds 3] [--no-sweeps]
  *     Builds synthetic libraries with a known taste in a temp dir and reports ranking quality and
- *     feed variety for a grid of tuning values. Runs the real Discover code in-process.
+ *     feed variety for a grid of tuning values, then what mute / less / boost / Not interested do
+ *     to the first page and what each shelf holds. Runs the real Discover code in-process.
  *
  *   bun apps/server/scripts/discover-eval.ts seed <dir> [--items 30000] [--port 38841]
  *     Writes a sakuya.config.json and a synthetic library into <dir>, for booting a server
@@ -105,6 +106,8 @@ async function metrics() {
   const { sqlite } = await import('../src/db');
   const { seedSyntheticLibrary } = await import('./discover-synth');
   const discover = await import('../src/routes/discover');
+  const shelvesLib = await import('../src/lib/discoverShelves');
+  const { bumpTasteVersion } = await import('../src/lib/tasteVersion');
   const { hammingDistance } = await import('../src/services/perceptualHash');
   const items = flag('items', 8000);
   const seeds = flag('seeds', 3);
@@ -198,31 +201,178 @@ async function metrics() {
   };
 
   const off = { folderCap: 0, reasonCap: 0, dupDistance: -1 };
-  const scoring: [string, Row][] = [];
-  for (const topK of [3, 5, 8, 0]) {
-    for (const halfLifeDays of [30, 60, 120, 0]) {
-      scoring.push([
-        `topK ${topK || 'all'} half-life ${halfLifeDays || 'none'}`,
-        measure({ topK, halfLifeDays, ...off }, 0),
-      ]);
-    }
-  }
-  print(`R01 scoring, surprise 0, variety off (${seeds} libraries x ${items} items)`, scoring);
-
-  const variety: [string, Row][] = [[`off`, measure(off, 0.25)]];
-  for (const folderCap of [3, 4, 6]) {
-    for (const reasonCap of [4, 5, 8]) {
-      for (const dupDistance of [4, 6, 8]) {
-        variety.push([
-          `folder ${folderCap} reason ${reasonCap} dhash ${dupDistance}`,
-          measure({ folderCap, reasonCap, dupDistance }, 0.25),
+  // --no-sweeps skips the R01/R02 grids and runs only the steering and shelf sections.
+  if (!args.includes('--no-sweeps')) {
+    const scoring: [string, Row][] = [];
+    for (const topK of [3, 5, 8, 0]) {
+      for (const halfLifeDays of [30, 60, 120, 0]) {
+        scoring.push([
+          `topK ${topK || 'all'} half-life ${halfLifeDays || 'none'}`,
+          measure({ topK, halfLifeDays, ...off }, 0),
         ]);
       }
     }
+    print(`R01 scoring, surprise 0, variety off (${seeds} libraries x ${items} items)`, scoring);
+
+    const variety: [string, Row][] = [[`off`, measure(off, 0.25)]];
+    for (const folderCap of [3, 4, 6]) {
+      for (const reasonCap of [4, 5, 8]) {
+        for (const dupDistance of [4, 6, 8]) {
+          variety.push([
+            `folder ${folderCap} reason ${reasonCap} dhash ${dupDistance}`,
+            measure({ folderCap, reasonCap, dupDistance }, 0.25),
+          ]);
+        }
+      }
+    }
+    print(
+      `R02 variety, surprise 0.25, scoring at defaults (topK ${defaults.topK}, half-life ${defaults.halfLifeDays})`,
+      variety,
+    );
   }
+
+  // R03: what each kind of feedback does to the first page, at the Balanced preset.
+  const tagsOf = (id: number) =>
+    (
+      sqlite
+        .query(`SELECT t.name FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE mt.media_id = ?`)
+        .all(id) as {
+        name: string;
+      }[]
+    ).map((r) => r.name);
+  const clearFeedback = () => {
+    sqlite.exec(`DELETE FROM tag_preferences; DELETE FROM media_feedback;`);
+    bumpTasteVersion();
+  };
+  const feedIds = (limit: number) => discover.discoverFeed({ surprise: 0.3, seed: 1, limit }).items.map((m) => m.id);
+  const share = (ids: number[], tag: string) => ids.filter((id) => tagsOf(id).includes(tag)).length / ids.length;
+  const setMode = (tag: string, mode: string) => {
+    sqlite.query(`INSERT OR REPLACE INTO tag_preferences (tag, mode, updated_at) VALUES (?, ?, 0)`).run(tag, mode);
+    bumpTasteVersion();
+  };
+  function steer(tuning: Partial<typeof defaults>): Row {
+    const sum: Row = {};
+    const add = (k: string, v: number) => (sum[k] = (sum[k] ?? 0) + v / libraries.length);
+    libraries.forEach((_, s) => {
+      load(s);
+      Object.assign(discover.discoverTuning, defaults, tuning);
+      discover.resetDiscoverCache();
+      clearFeedback();
+      const before = discover.discoverFeed({ surprise: 0.3, seed: 1, limit: 60 }).items;
+      // The tag credited most often on the first page, and one credited only a little.
+      const counts = new Map<string, number>();
+      for (const m of before) if (m.reasonTag) counts.set(m.reasonTag, (counts.get(m.reasonTag) ?? 0) + 1);
+      const ranked = [...counts].sort((a, b) => b[1] - a[1]);
+      const top = ranked[0][0];
+      const mid = ranked[Math.min(ranked.length - 1, Math.floor(ranked.length / 2))][0];
+      const ids60 = before.map((m) => m.id);
+      add('top', share(ids60, top));
+      setMode(top, 'mute');
+      add('muted@200', share(feedIds(200), top));
+      clearFeedback();
+      setMode(top, 'less');
+      add('top less', share(feedIds(60), top));
+      clearFeedback();
+      add('mid', share(ids60, mid));
+      setMode(mid, 'boost');
+      add('mid boost', share(feedIds(60), mid));
+      clearFeedback();
+      setMode(mid, 'less');
+      add('mid less', share(feedIds(60), mid));
+      clearFeedback();
+      // Not interested on the first ten cards.
+      const hidden = ids60.slice(0, 10);
+      for (const id of hidden)
+        sqlite.query(`INSERT INTO media_feedback (media_id, kind, at) VALUES (?, 'hidden', ?)`).run(id, Date.now());
+      bumpTasteVersion();
+      const after = feedIds(200);
+      add('hidden back', after.filter((id) => hidden.includes(id)).length);
+      add('top, 10 hid', share(after.slice(0, 60), top));
+      clearFeedback();
+    });
+    return sum;
+  }
+  const steering: [string, Row][] = [];
+  for (const [boostFactor, lessFactor, boostedReasonCap] of [
+    [2, 0.5, 5],
+    [2, 0.5, 10],
+    [2, 0.25, 10],
+    [3, 0.25, 10],
+    [2, 0.1, 10],
+    [3, 0.1, 15],
+  ]) {
+    steering.push([
+      `boost x${boostFactor} cap ${boostedReasonCap} less x${lessFactor}`,
+      steer({ boostFactor, lessFactor, boostedReasonCap }),
+    ]);
+  }
+  print('R03 steering, surprise 0.3: share of the first 60 carrying the tag (top / mid credited tag)', steering);
+
+  // R04: what the rediscover thresholds catch. Past themes are the old taste a rediscover shelf
+  // should bring back; current ones are already in the feed.
+  const DAY = 86_400_000;
+  const rediscover: [string, Row][] = [];
+  for (const [likedDays, unopenedDays] of [
+    [30, 14],
+    [60, 30],
+    [90, 30],
+    [120, 60],
+    [180, 60],
+  ]) {
+    const sum: Row = {};
+    libraries.forEach(({ truth }, s) => {
+      load(s);
+      const now = truth.now;
+      const pool = (
+        sqlite
+          .query(
+            `SELECT id FROM media WHERE liked = 1 AND COALESCE(liked_at, 0) < ? AND COALESCE(last_viewed_at, 0) < ?`,
+          )
+          .all(now - likedDays * DAY, now - unopenedDays * DAY) as { id: number }[]
+      ).map((r) => r.id);
+      const liked = (sqlite.query(`SELECT COUNT(*) AS c FROM media WHERE liked = 1`).get() as { c: number }).c;
+      const row: Row = {
+        pool: pool.length,
+        'of liked': pool.length / liked,
+        'past theme':
+          pool.filter((id) => truth.pastThemes.includes(truth.theme.get(id)!)).length / Math.max(pool.length, 1),
+        'current theme':
+          pool.filter((id) => truth.currentThemes.includes(truth.theme.get(id)!)).length / Math.max(pool.length, 1),
+      };
+      for (const [k, v] of Object.entries(row)) sum[k] = (sum[k] ?? 0) + v / libraries.length;
+    });
+    rediscover.push([`liked >${likedDays}d, unopened >${unopenedDays}d`, sum]);
+  }
+  print('R04 rediscover pool', rediscover);
+
+  // R04: the shelves themselves at the defaults.
+  const shelfRows = new Map<string, Row>();
+  libraries.forEach(({ truth }, s) => {
+    load(s);
+    Object.assign(discover.discoverTuning, defaults);
+    discover.resetDiscoverCache();
+    clearFeedback();
+    sqlite.exec(`DELETE FROM settings WHERE key LIKE 'discover_%'`);
+    // A last visit 14 days back, so "new" has the items the synthetic library added since.
+    sqlite
+      .query(`INSERT INTO settings (key, value) VALUES ('discover_last_visit', ?)`)
+      .run(String(truth.now - 14 * DAY));
+    for (const shelf of discover.discoverShelves({ surprise: 0.3, seed: 1 }).shelves) {
+      const kind = shelf.id.startsWith('like:') ? 'because you like' : shelf.id;
+      const ids = shelf.items.map((m) => m.id);
+      const row = shelfRows.get(kind) ?? {};
+      const inc = (k: string, v: number) => (row[k] = (row[k] ?? 0) + v);
+      inc('shown', 1);
+      inc('items', ids.length);
+      inc('current', ids.filter((id) => truth.currentThemes.includes(truth.theme.get(id)!)).length);
+      inc('past', ids.filter((id) => truth.pastThemes.includes(truth.theme.get(id)!)).length);
+      inc('engaged', ids.filter((id) => truth.engaged.has(id)).length);
+      shelfRows.set(kind, row);
+    }
+  });
   print(
-    `R02 variety, surprise 0.25, scoring at defaults (topK ${defaults.topK}, half-life ${defaults.halfLifeDays})`,
-    variety,
+    `R04 shelves (rediscover ${shelvesLib.shelfTuning.rediscoverLikedDays}/${shelvesLib.shelfTuning.rediscoverUnopenedDays} d), totals over ${libraries.length} libraries`,
+    [...shelfRows].map(([k, r]) => [k, r]),
   );
   fs.rmSync(root, { recursive: true, force: true });
 }

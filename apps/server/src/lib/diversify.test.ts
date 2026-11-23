@@ -33,6 +33,14 @@ test('no more than five cards credit the same reason tag in any twenty', () => {
   expect(diversify(ranked, opts)).toEqual([1, 2, 3, 4, 5, 9, 10, 11, 12, 6, 7, 8]);
 });
 
+test('an item can carry its own reason cap, so a boosted tag gets more of the window', () => {
+  const ranked = [
+    ...ids(1, 8).map((id) => ({ ...item(id, `/a${id}`, 'sunset'), reasonCap: 7 })),
+    ...ids(9, 12).map((id) => item(id, `/b${id}`, `t${id}`)),
+  ];
+  expect(diversify(ranked, opts)).toEqual([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 8]);
+});
+
 test('near-duplicates collapse to one per sixty, wherever they were saved', () => {
   const base = 'ffff0000ffff0000';
   const near = ['ffff0000ffff0001', 'ffff0000ffff0003', 'fffe0000ffff0007'];

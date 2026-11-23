@@ -1,19 +1,33 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { sqlite } from '../db';
-import { wrap, encodeCursor, decodeCursor } from '../lib/http';
+import { wrap, encodeCursor, decodeCursor, intParam } from '../lib/http';
 import type { SQLQueryBindings } from 'bun:sqlite';
-import { rowToMedia, countMedia, type MediaSqlRow } from '../lib/rowToMedia';
-import { tasteVersion } from '../lib/tasteVersion';
-import { Diversifier, folderOf } from '../lib/diversify';
-import { MEDIA_TYPES, type MediaListResponse } from '@sakuya/shared';
+import { rowToMedia, type MediaSqlRow } from '../lib/rowToMedia';
+import { bumpTasteVersion, tasteVersion } from '../lib/tasteVersion';
+import { Diversifier, diversify, folderOf } from '../lib/diversify';
+import { shelfById, shelfDefs, recordVisit, type ShelfDef } from '../lib/discoverShelves';
+import {
+  DISCOVER_TAG_MODES,
+  MEDIA_TYPES,
+  type DiscoverLikeResponse,
+  type DiscoverProfileResponse,
+  type DiscoverShelvesResponse,
+  type DiscoverTagMode,
+  type Media,
+  type MediaListResponse,
+  type TagCategory,
+} from '@sakuya/shared';
 
 export const discoverRouter = Router();
 
 const discoverQuerySchema = z.object({
   type: z.enum(MEDIA_TYPES).optional(),
-  // 0 = pure taste match, 1 = pure random. "I'm feeling lucky" is 1 with limit=1.
-  surprise: z.coerce.number().min(0).max(1).default(0.25),
+  // 0 = pure taste match, 1 = pure random. The page offers 0.1 / 0.3 / 0.6 as presets; any value
+  // still works so old links keep their order.
+  surprise: z.coerce.number().min(0).max(1).default(0.3),
+  /** Narrows the feed to one shelf (lib/discoverShelves.ts): a shelf's "See all". */
+  shelf: z.string().optional(),
   seed: z.coerce.number().int().default(1),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(60),
@@ -35,6 +49,12 @@ const MAX_PROFILE_TAGS = 120;
 const TAG_SMOOTHING = 8;
 /** Already-seen media keeps its score but at this fraction, so it sinks without disappearing. */
 const SEEN_FACTOR = 0.4;
+/**
+ * Engagement a "Not interested" takes away from each of the item's tags, against 5 for a like.
+ * Small on purpose: hiding one picture says little about every tag on it, and a tag the user
+ * also likes elsewhere should barely move.
+ */
+const HIDE_PENALTY = 1.5;
 
 /**
  * Knobs measured by apps/server/scripts/discover-eval.ts, which reports the numbers each value
@@ -58,14 +78,38 @@ export const discoverTuning = {
   /** Near-duplicates are kept at least this many items apart: one per page of 60. */
   dupWindow: 60,
   lookahead: 200,
+  /**
+   * Weight multipliers for "boost" and "Less of X"; a muted tag leaves the profile entirely. Half
+   * was too gentle for "less": a tag that was already at the reason cap stopped being the credited
+   * reason, escaped the cap, and showed up more often than before.
+   */
+  boostFactor: 2,
+  lessFactor: 0.25,
+  /**
+   * Reason cap for items credited to a boosted tag. Boosting makes the tag the credited reason on
+   * more cards, and at the plain cap that held its share flat or even lowered it.
+   */
+  boostedReasonCap: 10,
 };
+
+const modeFactor = (mode: DiscoverTagMode | null) =>
+  mode === 'boost' ? discoverTuning.boostFactor : mode === 'less' ? discoverTuning.lessFactor : mode === 'mute' ? 0 : 1;
 
 interface ProfileTag {
   tagId: number;
   name: string;
+  /** Weight after the user's tag preferences; 0 for a muted tag. */
   weight: number;
+  /** Weight from engagement alone, what the taste panel's bars show. */
+  base: number;
   /** True for tags reached through co-occurrence rather than direct engagement. */
   related: boolean;
+  mode: DiscoverTagMode | null;
+}
+
+function tagModes(): Map<string, DiscoverTagMode> {
+  const rows = sqlite.query(`SELECT tag, mode FROM tag_preferences`).all() as { tag: string; mode: DiscoverTagMode }[];
+  return new Map(rows.map((r) => [r.tag, r.mode]));
 }
 
 /**
@@ -74,10 +118,18 @@ interface ProfileTag {
  * outranks what's merely common. Co-occurring tags are folded in at a discount so adjacent
  * content can surface.
  *
+ * Hidden items ("Not interested") count against their tags instead of for them, and the user's
+ * tag preferences scale the result: boost doubles a tag, "less" halves it, mute zeroes it.
+ *
  * Expensive: two aggregates over the whole media_tags table. Go through currentSnapshot() rather
  * than calling this directly, so the result is cached between requests.
  */
 function buildProfile(): ProfileTag[] {
+  const modes = tagModes();
+  const withMode = (t: Omit<ProfileTag, 'weight' | 'mode'>): ProfileTag => {
+    const mode = modes.get(t.name) ?? null;
+    return { ...t, mode, weight: t.base * modeFactor(mode) };
+  };
   const now = Date.now();
   const halfLife = discoverTuning.halfLifeDays * 86_400_000;
   // Each signal ages from its own timestamp: the like from when it was given, views, watch time
@@ -91,28 +143,31 @@ function buildProfile(): ProfileTag[] {
     .query(
       `SELECT mt.tag_id AS tagId, t.name AS name,
               (SELECT COUNT(*) FROM media_tags x WHERE x.tag_id = mt.tag_id) AS usage,
-              SUM(m.liked * 5.0 * ${decay('m.liked_at')}
-                  + (MIN(m.view_count, 8) * 0.6
-                     + MIN(m.watched_seconds / 60.0, 10) * 0.5
-                     + MIN(m.dwell_seconds / 20.0, 10) * 0.5) * ${decay('m.last_viewed_at')}) AS engagement
+              SUM(CASE WHEN f.media_id IS NOT NULL THEN -${HIDE_PENALTY} * ${decay('f.at')}
+                  ELSE m.liked * 5.0 * ${decay('m.liked_at')}
+                     + (MIN(m.view_count, 8) * 0.6
+                        + MIN(m.watched_seconds / 60.0, 10) * 0.5
+                        + MIN(m.dwell_seconds / 20.0, 10) * 0.5) * ${decay('m.last_viewed_at')} END) AS engagement
        FROM media m
        CROSS JOIN media_tags mt ON mt.media_id = m.id
        JOIN tags t ON t.id = mt.tag_id
-       WHERE m.liked = 1 OR m.view_count > 0 OR m.watched_seconds > 0 OR m.dwell_seconds > 0
+       LEFT JOIN media_feedback f ON f.media_id = m.id AND f.kind = 'hidden'
+       WHERE m.liked = 1 OR m.view_count > 0 OR m.watched_seconds > 0 OR m.dwell_seconds > 0 OR f.media_id IS NOT NULL
        GROUP BY mt.tag_id`,
     )
     .all() as { tagId: number; name: string; usage: number; engagement: number }[];
 
   const profile = rows
-    .map((r) => ({ tagId: r.tagId, name: r.name, weight: r.engagement / (r.usage + TAG_SMOOTHING), related: false }))
-    .filter((t) => t.weight > 0)
-    .sort((a, b) => b.weight - a.weight)
+    .map((r) => withMode({ tagId: r.tagId, name: r.name, base: r.engagement / (r.usage + TAG_SMOOTHING), related: false }))
+    .filter((t) => t.base > 0)
+    .sort((a, b) => b.weight - a.weight || b.base - a.base)
     .slice(0, MAX_PROFILE_TAGS);
-  if (!profile.length) return profile;
+  // Muted tags stay in the list so the taste panel can show them, but seed nothing.
+  const seeds = profile.filter((t) => t.weight > 0).slice(0, SEED_TAGS);
+  if (!seeds.length) return profile;
 
   // Adjacent tags: what else shows up on media carrying the top tags. Keeps the feed from
   // collapsing into one tag repeated 60 times.
-  const seeds = profile.slice(0, SEED_TAGS);
   const known = new Set(profile.map((t) => t.tagId));
   const coRows = sqlite
     .query(
@@ -136,13 +191,15 @@ function buildProfile(): ProfileTag[] {
   const anchorWeight = seeds[seeds.length - 1].weight;
   const neighbours = coRows
     .filter((row) => !known.has(row.tagId))
-    .map((row) => ({
-      tagId: row.tagId,
-      name: row.name,
-      weight: (row.co / Math.max(row.usage, 1)) * anchorWeight * ADJACENT_SHARE,
-      related: true,
-    }))
-    .sort((a, b) => b.weight - a.weight)
+    .map((row) =>
+      withMode({
+        tagId: row.tagId,
+        name: row.name,
+        base: (row.co / Math.max(row.usage, 1)) * anchorWeight * ADJACENT_SHARE,
+        related: true,
+      }),
+    )
+    .sort((a, b) => b.weight - a.weight || b.base - a.base)
     .slice(0, MAX_PROFILE_TAGS);
   profile.push(...neighbours);
   return profile;
@@ -168,6 +225,7 @@ const KEPT_SNAPSHOTS = 8;
 
 interface ProfileSnapshot {
   id: number;
+  profile: ProfileTag[];
   /** Best raw score any item reaches under this profile; normalises taste into 0..1. */
   maxScore: number;
   builtAt: number;
@@ -196,13 +254,20 @@ sqlite.exec(`CREATE TEMP TABLE IF NOT EXISTS discover_scores (
   related INTEGER,
   PRIMARY KEY (snapshot, media_id)
 )`);
+/** Media no Discover list may show under a snapshot: hidden items and everything carrying a muted tag. */
+sqlite.exec(`CREATE TEMP TABLE IF NOT EXISTS discover_blocked (
+  snapshot INTEGER NOT NULL,
+  media_id INTEGER NOT NULL,
+  PRIMARY KEY (snapshot, media_id)
+)`);
 
 function buildSnapshot(): ProfileSnapshot {
   const profile = buildProfile();
   const id = nextSnapshotId++;
+  const scoring = profile.filter((t) => t.weight > 0);
   // The placeholder keeps one SQL path when nothing has been liked or viewed yet: no item scores,
   // so the feed is pure random, which is the right cold start anyway.
-  const rows = profile.length ? profile : [{ tagId: -1, name: '', weight: 0, related: false }];
+  const rows = scoring.length ? scoring : [{ tagId: -1, name: '', weight: 0, related: false }];
   // Ranked per item so only its topK strongest tags count; the strongest one is the tag the card
   // credits, ties going to the lower tag id so the credit can't flip between rebuilds.
   const topK = discoverTuning.topK > 0 ? discoverTuning.topK : 1_000_000;
@@ -228,7 +293,18 @@ function buildSnapshot(): ProfileSnapshot {
   const best = (
     sqlite.query(`SELECT MAX(raw) AS best FROM discover_scores WHERE snapshot = ?`).get(id) as { best: number | null }
   ).best;
-  return { id, maxScore: best || 1, builtAt: Date.now(), version: tasteVersion() };
+  sqlite
+    .query(
+      `INSERT OR IGNORE INTO discover_blocked (snapshot, media_id)
+       SELECT ?, media_id FROM media_feedback WHERE kind = 'hidden'
+       UNION
+       SELECT ?, mt.media_id FROM tag_preferences p
+       JOIN tags t ON t.name = p.tag
+       JOIN media_tags mt ON mt.tag_id = t.id
+       WHERE p.mode = 'mute'`,
+    )
+    .run(id, id);
+  return { id, profile, maxScore: best || 1, builtAt: Date.now(), version: tasteVersion() };
 }
 
 function currentSnapshot(): ProfileSnapshot {
@@ -240,6 +316,7 @@ function currentSnapshot(): ProfileSnapshot {
     const oldest = snapshots.keys().next().value!;
     snapshots.delete(oldest);
     sqlite.query(`DELETE FROM discover_scores WHERE snapshot = ?`).run(oldest);
+    sqlite.query(`DELETE FROM discover_blocked WHERE snapshot = ?`).run(oldest);
   }
   return latest;
 }
@@ -272,7 +349,7 @@ export function resetDiscoverCache(): void {
   snapshots.clear();
   streams.clear();
   latest = null;
-  sqlite.exec(`DELETE FROM discover_scores`);
+  sqlite.exec(`DELETE FROM discover_scores; DELETE FROM discover_blocked;`);
 }
 
 function newStream(snapshot: number): FeedStream {
@@ -288,6 +365,59 @@ function newStream(snapshot: number): FeedStream {
 }
 
 const invalidCursor = () => Object.assign(new Error('Invalid cursor'), { status: 400 });
+const notFound = (what: string) => Object.assign(new Error(`${what} not found`), { status: 404 });
+
+/**
+ * The feed's sort key and the joins it needs, under one snapshot. One deterministic key blends
+ * taste score with a seeded per-item random value, so the surprise setting is just a mix ratio
+ * and the ranked order is reproducible chunk after chunk. Shelves rank with the same key, so a
+ * shelf row and its "See all" page agree.
+ */
+function ranking(snap: ProfileSnapshot, surprise: number, seed: number) {
+  // "Seen" is judged as of the snapshot too. Read live, opening a feed item in the viewer sank
+  // it below the stream's tail and the same scroll served it a second time. Items viewed since
+  // only ever score higher under this rule, and those were opened from pages already served.
+  const seen = `(m.last_viewed_at <= ${snap.builtAt} OR (m.last_viewed_at IS NULL AND m.view_count > 0))`;
+  const taste = `MIN(COALESCE(s.raw, 0) / ${snap.maxScore}, 1.0) * (CASE WHEN ${seen} THEN ${SEEN_FACTOR} ELSE 1.0 END)`;
+  const random = `((((m.id + ${seed % 2147483647}) * 2654435761) % 2147483647) / 2147483647.0)`;
+  return {
+    key: `(${1 - surprise} * ${taste} + ${surprise} * ${random})`,
+    joins: `LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
+            LEFT JOIN discover_blocked b ON b.snapshot = ${snap.id} AND b.media_id = m.id`,
+    unblocked: 'b.media_id IS NULL',
+  };
+}
+
+/** Full media rows for `ids`, in that order, with the credited reason tag on each. */
+function mediaInOrder(ids: number[], reasons: Map<number, { tag: string | null; related: number | null }>): Media[] {
+  const rows = ids.length
+    ? (sqlite
+        .query(
+          `SELECT m.*, l.name AS library_name,
+                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
+           FROM media m
+           LEFT JOIN libraries l ON l.id = m.library_id
+           WHERE m.id IN (${ids.map(() => '?').join(',')})`,
+        )
+        .all(...ids) as MediaSqlRow[])
+    : [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    if (!row) return [];
+    const reason = reasons.get(id);
+    return [rowToMedia({ ...row, reason_tag: reason?.tag ?? null, reason_related: reason?.related ?? null })];
+  });
+}
+
+interface RankedRow {
+  id: number;
+  sort_key: number;
+  path: string;
+  hash: string | null;
+  reason: string | null;
+  related: number | null;
+}
 
 export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaListResponse {
   const query = discoverQuerySchema.parse(input);
@@ -300,30 +430,28 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
     }
     cursor = { offset, snapshot };
   }
+  let shelf: ShelfDef | null = null;
+  if (query.shelf) {
+    shelf = shelfById(query.shelf);
+    if (!shelf) throw notFound('Shelf');
+  }
   // A cursor whose snapshot has aged out falls back to the current one: the rest of that scroll
   // may repeat or miss a few items, which is the old behaviour, but only after 8 rebuilds.
   const snap = (cursor && snapshots.get(cursor.snapshot)) || currentSnapshot();
-  const { maxScore } = snap;
+  const rank = ranking(snap, query.surprise, query.seed);
 
-  const conds: string[] = [];
+  const conds: string[] = [rank.unblocked];
   const params: SQLQueryBindings[] = [];
   if (query.type) {
     conds.push('m.type = ?');
     params.push(query.type);
   }
+  if (shelf) {
+    conds.push(`(${shelf.where})`);
+    params.push(...shelf.params);
+  }
 
-  // One deterministic sort key blends taste score with a seeded per-item random value, so the
-  // surprise slider is just a mix ratio and the ranked order is reproducible chunk after chunk.
-  const seed = query.seed % 2147483647;
-  // "Seen" is judged as of the snapshot too. Read live, opening a feed item in the viewer sank
-  // it below the stream's tail and the same scroll served it a second time. Items viewed since
-  // only ever score higher under this rule, and those were opened from pages already served.
-  const seen = `(m.last_viewed_at <= ${snap.builtAt} OR (m.last_viewed_at IS NULL AND m.view_count > 0))`;
-  const taste = `MIN(COALESCE(s.raw, 0) / ${maxScore}, 1.0) * (CASE WHEN ${seen} THEN ${SEEN_FACTOR} ELSE 1.0 END)`;
-  const random = `((((m.id + ${seed}) * 2654435761) % 2147483647) / 2147483647.0)`;
-  const keyExpr = `(${1 - query.surprise} * ${taste} + ${query.surprise} * ${random})`;
-
-  const streamKey = `${snap.id}|${query.type ?? ''}|${query.surprise}|${seed}`;
+  const streamKey = `${snap.id}|${query.type ?? ''}|${query.surprise}|${query.seed % 2147483647}|${query.shelf ?? ''}`;
   // A first page always starts a new stream, so media added since (a scan, an upload) shows up
   // the way it did when every page re-ranked live; only a scroll in progress reuses one.
   const stream = (cursor && streams.get(streamKey)) || newStream(snap.id);
@@ -333,6 +461,7 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
   while (streams.size > KEPT_STREAMS) streams.delete(streams.keys().next().value!);
   for (const [key, s] of streams) if (!snapshots.has(s.snapshot)) streams.delete(key);
 
+  const boosted = new Set(snap.profile.filter((t) => t.mode === 'boost').map((t) => t.name));
   // Enough to fill a page and leave a full lookahead behind it, so the next page usually needs
   // no ranked query of its own.
   const chunk = discoverTuning.lookahead + query.limit + 1;
@@ -340,7 +469,7 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
     const chunkConds = [...conds];
     const chunkParams = [...params];
     if (st.after) {
-      chunkConds.push(`(${keyExpr}, m.id) < (?, ?)`);
+      chunkConds.push(`(${rank.key}, m.id) < (?, ?)`);
       chunkParams.push(st.after.key, st.after.id);
     }
     // Ranked on narrow rows; full rows are fetched for the served page only. Every row is ranked,
@@ -348,28 +477,29 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
     // instead and fetched each row out of rowid order: 63ms against 22ms on a 34k-item library.
     const rows = sqlite
       .query(
-        `SELECT m.id AS id, ${keyExpr} AS sort_key, m.path AS path, m.perceptual_hash AS hash,
+        `SELECT m.id AS id, ${rank.key} AS sort_key, m.path AS path, m.perceptual_hash AS hash,
                 CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason,
                 CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS related
          FROM media m NOT INDEXED
-         LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
-         ${chunkConds.length ? 'WHERE ' + chunkConds.join(' AND ') : ''}
+         ${rank.joins}
+         WHERE ${chunkConds.join(' AND ')}
          ORDER BY sort_key DESC, m.id DESC
          LIMIT ?`,
       )
-      .all(...chunkParams, chunk) as {
-      id: number;
-      sort_key: number;
-      path: string;
-      hash: string | null;
-      reason: string | null;
-      related: number | null;
-    }[];
+      .all(...chunkParams, chunk) as RankedRow[];
     if (rows.length < chunk) st.exhausted = true;
     if (rows.length) st.after = { key: rows[rows.length - 1].sort_key, id: rows[rows.length - 1].id };
     const fresh = rows.filter((r) => !st.reasons.has(r.id));
     for (const r of fresh) st.reasons.set(r.id, { tag: r.reason, related: r.related });
-    st.diversifier.push(fresh.map((r) => ({ id: r.id, folder: folderOf(r.path), reason: r.reason, hash: r.hash })));
+    st.diversifier.push(
+      fresh.map((r) => ({
+        id: r.id,
+        folder: folderOf(r.path),
+        reason: r.reason,
+        hash: r.hash,
+        ...(r.reason !== null && boosted.has(r.reason) ? { reasonCap: discoverTuning.boostedReasonCap } : {}),
+      })),
+    );
   };
 
   const offset = cursor?.offset ?? 0;
@@ -383,29 +513,16 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
     stream.served.push(next.id);
   }
 
-  const pageIds = stream.served.slice(offset, offset + query.limit);
-  const rows = pageIds.length
-    ? (sqlite
-        .query(
-          `SELECT m.*, l.name AS library_name,
-                  (SELECT COUNT(*) FROM media_tags mt WHERE mt.media_id = m.id) AS tag_count
-           FROM media m
-           LEFT JOIN libraries l ON l.id = m.library_id
-           WHERE m.id IN (${pageIds.map(() => '?').join(',')})`,
-        )
-        .all(...pageIds) as MediaSqlRow[])
-    : [];
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const items = pageIds.flatMap((id) => {
-    const row = byId.get(id);
-    if (!row) return [];
-    const reason = stream.reasons.get(id);
-    return [rowToMedia({ ...row, reason_tag: reason?.tag ?? null, reason_related: reason?.related ?? null })];
-  });
-
+  const items = mediaInOrder(stream.served.slice(offset, offset + query.limit), stream.reasons);
   // Only the first page pays for the count; the client keeps the total from page one, the same
   // as /api/media.
-  const total = cursor ? null : countMedia(conds, params);
+  const total = cursor
+    ? null
+    : (
+        sqlite.query(`SELECT COUNT(*) AS c FROM media m ${rank.joins} WHERE ${conds.join(' AND ')}`).get(...params) as {
+          c: number;
+        }
+      ).c;
   const nextCursor = stream.served.length > offset + query.limit ? encodeCursor([offset + query.limit, snap.id]) : null;
   return { items, nextCursor, total };
 }
@@ -414,5 +531,252 @@ discoverRouter.get(
   '/api/discover',
   wrap(async (req, res) => {
     res.json(discoverFeed(req.query as z.input<typeof discoverQuerySchema>));
+  }),
+);
+
+/** Taste tags strong enough to name a "because you like" shelf: your own, unmuted, not ratings. */
+function topTasteTags(snap: ProfileSnapshot): string[] {
+  const ratings = new Set(
+    (sqlite.query(`SELECT name FROM tags WHERE category = 'rating'`).all() as { name: string }[]).map((r) => r.name),
+  );
+  return snap.profile
+    .filter((t) => !t.related && t.weight > 0 && !ratings.has(t.name))
+    .sort((a, b) => b.weight - a.weight)
+    .map((t) => t.name);
+}
+
+const SHELF_SIZE = 12;
+/** A shelf with fewer than this many items is left off rather than shown half empty. */
+const MIN_SHELF = 3;
+/** Ranked candidates per shelf; the variety pass picks its row from these. */
+const SHELF_CANDIDATES = 60;
+
+const shelvesQuerySchema = z.object({
+  type: z.enum(MEDIA_TYPES).optional(),
+  surprise: z.coerce.number().min(0).max(1).default(0.3),
+  seed: z.coerce.number().int().default(1),
+  /** Set by the page on open, so "new since your last visit" knows when that was. */
+  visit: z.enum(['0', '1']).optional(),
+});
+
+export function discoverShelves(input: z.input<typeof shelvesQuerySchema>): DiscoverShelvesResponse {
+  const query = shelvesQuerySchema.parse(input);
+  const snap = currentSnapshot();
+  const rank = ranking(snap, query.surprise, query.seed);
+  // Each item fills one slot on the page: a picture under "because you like rain" isn't repeated
+  // under "new since your last visit".
+  const used = new Set<number>();
+  const shelves = [];
+  for (const def of shelfDefs(topTasteTags(snap))) {
+    const conds = [rank.unblocked, `(${def.where})`];
+    const params = [...def.params];
+    if (query.type) {
+      conds.push('m.type = ?');
+      params.push(query.type);
+    }
+    const rows = sqlite
+      .query(
+        `SELECT m.id AS id, ${rank.key} AS sort_key, m.path AS path, m.perceptual_hash AS hash,
+                CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.reason END AS reason,
+                CASE WHEN COALESCE(s.raw, 0) > 0 THEN s.related END AS related
+         FROM media m
+         ${rank.joins}
+         WHERE ${conds.join(' AND ')}
+         ORDER BY sort_key DESC, m.id DESC
+         LIMIT ?`,
+      )
+      .all(...params, SHELF_CANDIDATES + used.size) as RankedRow[];
+    const fresh = rows.filter((r) => !used.has(r.id));
+    const order = diversify(
+      fresh.map((r) => ({ id: r.id, folder: folderOf(r.path), reason: r.reason, hash: r.hash })),
+      {
+        window: SHELF_SIZE,
+        folderCap: 3,
+        reasonCap: 0,
+        dupDistance: discoverTuning.dupDistance,
+        dupWindow: SHELF_SIZE,
+        lookahead: SHELF_CANDIDATES,
+      },
+    ).slice(0, SHELF_SIZE);
+    if (order.length < MIN_SHELF) continue;
+    for (const id of order) used.add(id);
+    const reasons = new Map(fresh.map((r) => [r.id, { tag: r.reason, related: r.related }]));
+    shelves.push({
+      id: def.id,
+      title: def.title,
+      subtitle: def.subtitle,
+      ...(def.tag ? { tag: def.tag } : {}),
+      items: mediaInOrder(order, reasons),
+    });
+  }
+  // After building, so the first open of a new visit still compares against the previous one.
+  if (query.visit === '1') recordVisit();
+  return { shelves };
+}
+
+discoverRouter.get(
+  '/api/discover/shelves',
+  wrap(async (req, res) => {
+    res.json(discoverShelves(req.query as z.input<typeof shelvesQuerySchema>));
+  }),
+);
+
+/** How many taste tags the panel lists, of your own and of their neighbours. */
+const PANEL_TAGS = 14;
+const PANEL_RELATED = 6;
+
+discoverRouter.get(
+  '/api/discover/profile',
+  wrap(async (_req, res) => {
+    const snap = currentSnapshot();
+    const direct = snap.profile.filter((t) => !t.related);
+    const related = snap.profile.filter((t) => t.related);
+    const top = Math.max(...direct.map((t) => t.base), 0) || 1;
+    const shown = [...direct.slice(0, PANEL_TAGS), ...related.slice(0, PANEL_RELATED)];
+    // A tag the user set a preference on stays listed even once it falls out of the top, so the
+    // preference can always be taken back.
+    const listed = new Set(shown.map((t) => t.name));
+    const byName = new Map(snap.profile.map((t) => [t.name, t]));
+    const extra = [...tagModes().keys()].filter((name) => !listed.has(name));
+    const names = [...shown.map((t) => t.name), ...extra];
+    const info = new Map(
+      names.length
+        ? (
+            sqlite
+              .query(
+                `SELECT name, category, display_name AS displayName FROM tags WHERE name IN (${names.map(() => '?').join(',')})`,
+              )
+              .all(...names) as { name: string; category: TagCategory; displayName: string | null }[]
+          ).map((r) => [r.name, r])
+        : [],
+    );
+    const modes = tagModes();
+    const body: DiscoverProfileResponse = {
+      tags: names.map((name) => {
+        const t = byName.get(name);
+        return {
+          name,
+          category: info.get(name)?.category ?? 'general',
+          displayName: info.get(name)?.displayName ?? null,
+          weight: t ? Math.min(t.base / top, 1) : 0,
+          related: t?.related ?? false,
+          mode: modes.get(name) ?? null,
+        };
+      }),
+      activeTags: direct.filter((t) => t.weight > 0).length,
+      hiddenCount: (sqlite.query(`SELECT COUNT(*) AS c FROM media_feedback WHERE kind = 'hidden'`).get() as { c: number })
+        .c,
+    };
+    res.json(body);
+  }),
+);
+
+discoverRouter.put(
+  '/api/discover/tags/:name',
+  wrap(async (req, res) => {
+    const { mode } = z.object({ mode: z.enum(DISCOVER_TAG_MODES).nullable() }).parse(req.body);
+    const name = String(req.params.name);
+    if (mode) {
+      sqlite
+        .query(
+          `INSERT INTO tag_preferences (tag, mode, updated_at) VALUES (?, ?, ?)
+           ON CONFLICT(tag) DO UPDATE SET mode = excluded.mode, updated_at = excluded.updated_at`,
+        )
+        .run(name, mode, Date.now());
+    } else {
+      sqlite.query(`DELETE FROM tag_preferences WHERE tag = ?`).run(name);
+    }
+    bumpTasteVersion();
+    res.json({ name, mode });
+  }),
+);
+
+const feedbackBody = z.object({
+  mediaId: z.number().int().positive(),
+  hidden: z.boolean(),
+});
+
+discoverRouter.post(
+  '/api/discover/feedback',
+  wrap(async (req, res) => {
+    const { mediaId, hidden } = feedbackBody.parse(req.body);
+    if (!sqlite.query(`SELECT 1 FROM media WHERE id = ?`).get(mediaId)) throw notFound('Media');
+    if (hidden) {
+      sqlite
+        .query(`INSERT OR REPLACE INTO media_feedback (media_id, kind, at) VALUES (?, 'hidden', ?)`)
+        .run(mediaId, Date.now());
+    } else {
+      sqlite.query(`DELETE FROM media_feedback WHERE media_id = ? AND kind = 'hidden'`).run(mediaId);
+    }
+    bumpTasteVersion();
+    res.json({ mediaId, hidden });
+  }),
+);
+
+/** "Show hidden items again": forgets every Not interested at once. */
+discoverRouter.delete(
+  '/api/discover/feedback',
+  wrap(async (_req, res) => {
+    const { changes } = sqlite.query(`DELETE FROM media_feedback WHERE kind = 'hidden'`).run();
+    bumpTasteVersion();
+    res.json({ cleared: changes });
+  }),
+);
+
+const MORE_LIKE_LIMIT = 60;
+
+/**
+ * Items sharing tags with `id`, each shared tag worth log(N / usage): a tag on three items says far
+ * more about a picture than one on half the library. Rating tags are left out, since sharing
+ * "general" says nothing about content. Hidden items and anything carrying a muted tag are left
+ * out the same as in the feed.
+ */
+export function moreLikeThis(id: number, limit = MORE_LIKE_LIMIT): DiscoverLikeResponse {
+  const [source] = mediaInOrder([id], new Map());
+  if (!source) throw notFound('Media');
+  const total = (sqlite.query(`SELECT COUNT(*) AS c FROM media`).get() as { c: number }).c;
+  const rows = sqlite
+    .query(
+      `WITH shared AS (
+         SELECT mt.tag_id, t.name,
+                ln(${total}.0 / MAX((SELECT COUNT(*) FROM media_tags x WHERE x.tag_id = mt.tag_id), 1)) AS idf
+         FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
+         WHERE mt.media_id = ? AND t.category <> 'rating'
+       ),
+       muted AS (
+         SELECT mt.media_id FROM tag_preferences p
+         JOIN tags t ON t.name = p.tag
+         JOIN media_tags mt ON mt.tag_id = t.id
+         WHERE p.mode = 'mute'
+       ),
+       scored AS (
+         SELECT o.media_id AS id, SUM(sh.idf) AS score,
+                (SELECT sh2.name FROM shared sh2 JOIN media_tags o2 ON o2.tag_id = sh2.tag_id
+                 WHERE o2.media_id = o.media_id ORDER BY sh2.idf DESC, sh2.tag_id LIMIT 1) AS reason
+         FROM shared sh JOIN media_tags o ON o.tag_id = sh.tag_id
+         WHERE o.media_id <> ?
+         GROUP BY o.media_id
+       )
+       SELECT id, reason FROM scored
+       WHERE score > 0
+         AND id NOT IN (SELECT media_id FROM media_feedback WHERE kind = 'hidden')
+         AND id NOT IN (SELECT media_id FROM muted)
+       ORDER BY score DESC, id DESC
+       LIMIT ?`,
+    )
+    .all(id, id, limit) as { id: number; reason: string }[];
+  return {
+    source,
+    items: mediaInOrder(
+      rows.map((r) => r.id),
+      new Map(rows.map((r) => [r.id, { tag: r.reason, related: null }])),
+    ),
+  };
+}
+
+discoverRouter.get(
+  '/api/discover/like/:id',
+  wrap(async (req, res) => {
+    res.json(moreLikeThis(intParam(String(req.params.id))));
   }),
 );
