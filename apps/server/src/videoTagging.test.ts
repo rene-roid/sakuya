@@ -17,7 +17,7 @@ fs.writeFileSync(
   'tag_id,name,category,count\n1,blue_theme,0,10\n2,green_theme,0,10\n3,red_theme,0,10\n',
 );
 
-const { frameTimes } = await import('./services/videoFrames');
+const { distinctFrames, frameSignature, frameTimes } = await import('./services/videoFrames');
 const { combineFrameScores, selectTags, parseLabels } = await import('./services/tagger');
 const { generateThumbnail } = await import('./services/thumbnailer');
 const { probeVideo } = await import('./services/scanner');
@@ -36,10 +36,44 @@ describe('frameTimes', () => {
     expect(frameTimes(0.4, 5)).toEqual([0.2]);
   });
 
+  test('a long video costs the same five frames as a short one', () => {
+    expect(frameTimes(7200, 5)).toEqual([720.8, 2160.4, 3600, 5039.6, 6479.2]);
+  });
+
   test('an unknown or empty duration gives no frames', () => {
     expect(frameTimes(null, 5)).toEqual([]);
     expect(frameTimes(0, 5)).toEqual([]);
     expect(frameTimes(Number.NaN, 5)).toEqual([]);
+  });
+});
+
+describe('distinctFrames', () => {
+  const red = { hash: '0000000000000000', mean: [200, 10, 10] as [number, number, number] };
+
+  test('a frame with the layout and colours of one already kept is not tagged again', () => {
+    const nearRed = { hash: '000000000000000f', mean: [205, 12, 8] as [number, number, number] };
+    const blue = { hash: '0000000000000000', mean: [10, 10, 200] as [number, number, number] };
+    const otherLayout = { hash: 'ffffffff00000000', mean: [200, 10, 10] as [number, number, number] };
+    expect(distinctFrames([red, nearRed, blue, red, otherLayout])).toEqual([0, 2, 4]);
+  });
+
+  test('five frames of a still video come down to one', () => {
+    expect(distinctFrames([red, red, red, red, red])).toEqual([0]);
+  });
+
+  test('signatures of real frames tell colours apart even when the layout matches', async () => {
+    const dir = path.join(dataDir, 'signatures');
+    fs.mkdirSync(dir, { recursive: true });
+    const solid = async (name: string, background: string) => {
+      const file = path.join(dir, name);
+      await sharp({ create: { width: 64, height: 36, channels: 3, background } })
+        .png()
+        .toFile(file);
+      return frameSignature(file);
+    };
+    const frames = [await solid('a.png', '#c81010'), await solid('b.png', '#ca1412'), await solid('c.png', '#1010c8')];
+    expect(frames[0].hash).toBe(frames[2].hash);
+    expect(distinctFrames(frames)).toEqual([0, 2]);
   });
 });
 

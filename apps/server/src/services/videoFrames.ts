@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import sharp from 'sharp';
 import { DATA_DIR } from '../lib/config';
 import { run, FFMPEG_PATH } from '../lib/run';
+import { computeDHash, hammingDistance } from './perceptualHash';
 
 /** Per-process scratch for extracted frames, inside the data dir so a boot can sweep what a crash left. */
 const FRAMES_DIR = path.join(DATA_DIR, 'video-frames');
@@ -23,6 +25,41 @@ export function frameTimes(durationSeconds: number | null, count: number): numbe
   const window = durationSeconds - margin * 2;
   const n = Math.max(1, Math.min(count, Math.floor(window / MIN_SPACING_SECONDS)));
   return Array.from({ length: n }, (_, i) => Math.round((margin + (window * (i + 0.5)) / n) * 100) / 100);
+}
+
+/** dHash distance at or under which two frames have the same layout; the "similar images" cut-off. */
+const SAME_LAYOUT_DISTANCE = 10;
+/** dHash ignores colour, so a red and a blue frame of one layout also need their mean colours this close (0-255). */
+const SAME_COLOUR_DISTANCE = 24;
+
+export interface FrameSignature {
+  hash: string;
+  /** Mean red, green and blue. */
+  mean: [number, number, number];
+}
+
+export async function frameSignature(imagePath: string): Promise<FrameSignature> {
+  const { channels } = await sharp(imagePath).stats();
+  return { hash: await computeDHash(imagePath), mean: [channels[0].mean, channels[1].mean, channels[2].mean] };
+}
+
+function sameFrame(a: FrameSignature, b: FrameSignature): boolean {
+  return (
+    hammingDistance(a.hash, b.hash) <= SAME_LAYOUT_DISTANCE &&
+    a.mean.every((v, i) => Math.abs(v - b.mean[i]) <= SAME_COLOUR_DISTANCE)
+  );
+}
+
+/**
+ * Indexes of the frames worth running the tagger on: each frame unless it looks like one already
+ * kept. A still or single-scene video would otherwise pay five inferences for one picture's tags.
+ */
+export function distinctFrames(signatures: FrameSignature[]): number[] {
+  const kept: number[] = [];
+  for (const [i, signature] of signatures.entries()) {
+    if (!kept.some((k) => sameFrame(signatures[k], signature))) kept.push(i);
+  }
+  return kept;
 }
 
 /** Remove frame folders a killed process left behind. */

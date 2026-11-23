@@ -5,7 +5,7 @@ import { db, sqlite, schema } from '../db';
 import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY } from '../lib/config';
 import { confidenceThresholds, getSetting, setSetting, type TagThresholds } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
-import { frameTimes, withVideoFrames } from './videoFrames';
+import { distinctFrames, frameSignature, frameTimes, withVideoFrames } from './videoFrames';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { computeDHash } from './perceptualHash';
 import { bumpTasteVersion } from '../lib/tasteVersion';
@@ -243,13 +243,18 @@ export function clearVeto(mediaId: number, tagId: number): void {
 /** How many frames a video is tagged from. Measured in docs/video-tagging.md. */
 export const VIDEO_TAG_FRAMES = 5;
 
-/** A video's tags from frames sampled across it, or null when none could be extracted. */
+/**
+ * A video's tags from frames sampled across it, or null when none could be extracted. The model is
+ * the expensive part (seconds per frame on a small CPU), so it runs at most VIDEO_TAG_FRAMES times
+ * whatever the video's length, and only once per distinct-looking frame.
+ */
 async function predictVideoTags(sourcePath: string, durationSeconds: number | null): Promise<PredictedTag[] | null> {
   const times = frameTimes(durationSeconds, VIDEO_TAG_FRAMES);
   if (!times.length || !fs.existsSync(sourcePath)) return null;
   const scores = await withVideoFrames(sourcePath, times, async (frames) => {
+    const signatures = await Promise.all(frames.map((frame) => frameSignature(frame)));
     const out: Float32Array[] = [];
-    for (const frame of frames) out.push(await predictScores(frame));
+    for (const i of distinctFrames(signatures)) out.push(await predictScores(frames[i]));
     return out;
   });
   if (!scores.length) return null;
