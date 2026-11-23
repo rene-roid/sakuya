@@ -76,13 +76,18 @@ export function TastePanel() {
           />
         ))}
       </div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500">
+      {/* The how-to line is left off on phones, where it took two more rows above the shelves. */}
+      <div
+        className={`mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-zinc-500 ${
+          allMuted || data.hiddenCount > 0 ? '' : 'max-sm:hidden'
+        }`}
+      >
         {allMuted ? (
           <span className="text-zinc-400">
             Every taste tag is muted, so picks below are random until you unmute one.
           </span>
         ) : (
-          <span>
+          <span className="max-sm:hidden">
             Click a tag to boost it, again to mute it, a third time to reset. Dashed tags are neighbours of what you
             like.
           </span>

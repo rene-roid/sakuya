@@ -158,7 +158,10 @@ function buildProfile(): ProfileTag[] {
        CROSS JOIN media_tags mt ON mt.media_id = m.id
        JOIN tags t ON t.id = mt.tag_id
        LEFT JOIN media_feedback f ON f.media_id = m.id AND f.kind = 'hidden'
-       WHERE m.liked = 1 OR m.view_count > 0 OR m.watched_seconds > 0 OR m.dwell_seconds > 0 OR f.media_id IS NOT NULL
+       -- On media columns only: a condition on f would hold back the filter until every tag row
+       -- had been joined, which made the rebuild walk all of media_tags again.
+       WHERE m.liked = 1 OR m.view_count > 0 OR m.watched_seconds > 0 OR m.dwell_seconds > 0
+          OR m.id IN (SELECT media_id FROM media_feedback WHERE kind = 'hidden')
        GROUP BY mt.tag_id`,
     )
     .all() as { tagId: number; name: string; usage: number; engagement: number }[];
@@ -234,6 +237,8 @@ interface ProfileSnapshot {
   profile: ProfileTag[];
   /** Best raw score any item reaches under this profile; normalises taste into 0..1. */
   maxScore: number;
+  /** Rows in discover_blocked; with none, pages skip that join. */
+  blocked: number;
   builtAt: number;
   version: number;
 }
@@ -299,7 +304,7 @@ function buildSnapshot(): ProfileSnapshot {
   const best = (
     sqlite.query(`SELECT MAX(raw) AS best FROM discover_scores WHERE snapshot = ?`).get(id) as { best: number | null }
   ).best;
-  sqlite
+  const { changes: blocked } = sqlite
     .query(
       `INSERT OR IGNORE INTO discover_blocked (snapshot, media_id)
        SELECT ?, media_id FROM media_feedback WHERE kind = 'hidden'
@@ -310,7 +315,7 @@ function buildSnapshot(): ProfileSnapshot {
        WHERE p.mode = 'mute'`,
     )
     .run(id, id);
-  return { id, profile, maxScore: best || 1, builtAt: Date.now(), version: tasteVersion() };
+  return { id, profile, maxScore: best || 1, blocked, builtAt: Date.now(), version: tasteVersion() };
 }
 
 function currentSnapshot(): ProfileSnapshot {
@@ -389,8 +394,8 @@ function ranking(snap: ProfileSnapshot, surprise: number, seed: number) {
   return {
     key: `(${1 - surprise} * ${taste} + ${surprise} * ${random})`,
     joins: `LEFT JOIN discover_scores s ON s.snapshot = ${snap.id} AND s.media_id = m.id
-            LEFT JOIN discover_blocked b ON b.snapshot = ${snap.id} AND b.media_id = m.id`,
-    unblocked: 'b.media_id IS NULL',
+            ${snap.blocked ? `LEFT JOIN discover_blocked b ON b.snapshot = ${snap.id} AND b.media_id = m.id` : ''}`,
+    unblocked: snap.blocked ? 'b.media_id IS NULL' : '1',
   };
 }
 
@@ -522,12 +527,15 @@ export function discoverFeed(input: z.input<typeof discoverQuerySchema>): MediaL
   const items = mediaInOrder(stream.served.slice(offset, offset + query.limit), stream.reasons);
   // Only the first page pays for the count; the client keeps the total from page one, the same
   // as /api/media.
+  // Joins only when a condition needs them: the plain count is an index-only scan.
   const total = cursor
     ? null
     : (
-        sqlite.query(`SELECT COUNT(*) AS c FROM media m ${rank.joins} WHERE ${conds.join(' AND ')}`).get(...params) as {
-          c: number;
-        }
+        sqlite
+          .query(
+            `SELECT COUNT(*) AS c FROM media m ${shelf || snap.blocked ? rank.joins : ''} WHERE ${conds.join(' AND ')}`,
+          )
+          .get(...params) as { c: number }
       ).c;
   const nextCursor = stream.served.length > offset + query.limit ? encodeCursor([offset + query.limit, snap.id]) : null;
   return { items, nextCursor, total };
@@ -635,8 +643,10 @@ discoverRouter.get(
   '/api/discover/profile',
   wrap(async (_req, res) => {
     const snap = currentSnapshot();
-    const direct = snap.profile.filter((t) => !t.related);
-    const related = snap.profile.filter((t) => t.related);
+    // By engagement alone, so a chip stays where it is while it's clicked through boost and mute.
+    const byBase = (a: ProfileTag, b: ProfileTag) => b.base - a.base || a.tagId - b.tagId;
+    const direct = snap.profile.filter((t) => !t.related).sort(byBase);
+    const related = snap.profile.filter((t) => t.related).sort(byBase);
     const top = Math.max(...direct.map((t) => t.base), 0) || 1;
     const shown = [...direct.slice(0, PANEL_TAGS), ...related.slice(0, PANEL_RELATED)];
     // A tag the user set a preference on stays listed even once it falls out of the top, so the
