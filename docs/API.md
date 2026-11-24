@@ -1,9 +1,9 @@
 # Sakuya API Reference
 
 The server is an Express app (`apps/server/src/index.ts`). All endpoints are mounted under
-`/api` on a single port (default `3777`, configurable via the `PORT` env var — see
-`apps/server/src/lib/config.ts`). There is no authentication/authorization layer; the API is
-meant for local/trusted-network use only.
+`/api` on a single port (default `3777`, set as `server.port` in `sakuya.config.json`). With `auth.enabled` off there is no authentication layer and the
+API is meant for local/trusted-network use only; with it on, every route below except `/api/auth/*`
+and `/api/health` needs the session cookie from `POST /api/auth/login`.
 
 Request bodies are validated with [Zod](https://zod.dev); invalid input returns `400` with
 `{ error, issues }`. Unhandled errors return `500` with `{ error }`. All routes return JSON
@@ -27,6 +27,21 @@ by name (e.g. `Media`, `Job`).
 
 ### `GET /api/health`
 Liveness check. Response: `{ ok: true }`.
+
+## Auth
+
+### `GET /api/auth/status`
+Response (`AuthStatus`): `{ enabled: boolean, unlocked: boolean }`.
+
+### `POST /api/auth/login`
+Body: `{ secret: string }`. Sets a signed, expiring session cookie. `401` on a wrong password; at
+most 5 attempts per 10 minutes. Always `{ ok: true }` when auth is off.
+
+### `POST /api/auth/logout`
+Clears the session cookie. Response: `{ ok: true }`.
+
+The desktop app's main process has no cookie; it sends the per-launch `SAKUYA_DESKTOP_TOKEN` in an
+`X-Sakuya-Desktop-Token` header instead.
 
 ---
 
@@ -114,9 +129,10 @@ Query params:
 |---|---|---|
 | `libraryId` | number | filter by library |
 | `type` | `'image'\|'video'` | filter by type |
-| `tags` | comma-separated string | AND match on tag names |
+| `tags` | comma-separated string | AND match on tag names; an old name merged into another tag matches the target |
 | `liked` | number | `1` filters to liked only |
-| `q` | string | matches filename or tag name (substring) |
+| `q` | string | matches filename or tag name from the start of a word; a merged tag's old name also finds its target |
+| `describe` | string | search by description (max 500 chars): ranks by CLIP image-embedding similarity to the text instead of `sort`, `dir` and `seed`; combines with every other filter. Blank is ignored |
 | `sort` | `'recent'\|'name'\|'random'` | default `recent` |
 | `dir` | `'asc'\|'desc'` | default depends on `sort` |
 | `seed` | number | seed for stable `random` ordering |
@@ -124,6 +140,10 @@ Query params:
 | `limit` | number | 1-200, default 60 |
 
 Response (`MediaListResponse`): `{ items: Media[], nextCursor: string | null, total: number }`.
+With `describe`, the first page also carries `semantic: { status, embeddedCount, pendingCount }`:
+`status` is `disabled` (setting off), `no-model`, `empty` (nothing indexed yet) or `ready`. Only
+indexed files are ranked; `total` counts them. The cursor of a `describe` page holds the last
+item's score and id, so it is only valid for the same description.
 
 ### `GET /api/media/ids`
 Every media id matching a filter, in the same order `GET /api/media` would return them. Backs
@@ -149,8 +169,10 @@ Groups of media sharing an identical `content_hash`, sorted by wasted bytes desc
 Response (`DuplicatesResponse`): `{ groups: DuplicateGroup[], groupCount, fileCount, wastedBytes }`.
 
 ### `POST /api/media/delete-batch`
-Bulk delete. Body: `{ ids: number[] }`. Deletes DB rows, tag links, and files/thumbnails on disk
-for existing ids (missing ids are silently skipped). Response: `{ ok: true, deleted: number }`.
+Bulk delete. Body: `{ ids: number[] }`. Moves each file, with its thumbnail and transcode, to the
+[trash](#trash) and removes its row; tags, like and board memberships are kept with the trash entry
+so a restore brings them back. Missing ids are silently skipped. Response:
+`{ ok: true, deleted: number, failed: { id, error }[] }`.
 
 ## Bulk actions
 
@@ -163,8 +185,10 @@ Shared response shape (`BulkResult`): `{ ok: true, updated: number, failed: { id
 Add and/or remove tags across a selection. Body:
 `{ ids: number[], add?: string[], remove?: string[], category?: TagCategory }`.
 Added names are lowercased with whitespace collapsed to `_`; `category` (default `user`) applies
-to newly created tags. Removing a tag a file doesn't have is a no-op, not a failure. Usage counts
-are refreshed once at the end. `400` if both `add` and `remove` are empty.
+to newly created tags. A name merged into another tag adds its target, and implied tags follow.
+Removing a tag a file doesn't have is a no-op, not a failure; removing one the AI, a sidecar or an
+implication added records a veto, so a re-tag leaves it off. Usage counts are refreshed once at the
+end. `400` if both `add` and `remove` are empty.
 
 ### `POST /api/media/like-batch`
 Body: `{ ids: number[], liked: boolean }`. Sets `liked`/`liked_at` across the selection.
@@ -196,7 +220,9 @@ isn't reliably supported across clients. Response: `BoardWithStats`.
 ## Media — single item
 
 ### `GET /api/media/:id`
-Media detail including tags. Response: `MediaDetail`.
+Media detail including tags (each with `displayName` and `source`: `ai`, `user`, `character`,
+`meta` from a gallery-dl sidecar, or `implied`), boards, and `sourceUrl`, the post the file was
+downloaded from when its sidecar named one. Response: `MediaDetail`.
 
 ### `GET /api/media/:id/file`
 Streams the raw media file (supports HTTP Range requests, ETag, conditional GET).
@@ -206,7 +232,8 @@ Rename the file on disk. Body: `{ filename: string }`. `409` if a file with that
 exists in the same directory. Response: `MediaDetail`.
 
 ### `DELETE /api/media/:id`
-Delete one media item (DB row, tags, file, thumbnail). Response: `{ ok: true }`.
+Move one media item to the [trash](#trash), as `delete-batch` does. `500` with the reason if the
+file could not be moved. Response: `{ ok: true }`.
 
 ### `POST /api/media/:id/reveal`
 Open the OS file manager to the file's location (`explorer.exe /select` on Windows, `open -R` on
@@ -217,7 +244,19 @@ Serve (generating on first request) the media's thumbnail image. If the thumbnai
 disabled and the media is an image, serves the original file instead.
 
 ### `POST /api/media/:id/thumbnail/regenerate`
-Force-regenerate the thumbnail. Response: `{ ok: true }`.
+Force-regenerate the thumbnail (and a video's sprite). Response: `{ ok: true }`.
+
+### `GET /api/media/:id/sprite`
+A video's hover-scrub sprite: 10 evenly spaced frames tiled left to right in one webp, made on
+first request when the background sprite job hasn't reached it. Headers `X-Sprite-Frames` and
+`X-Sprite-Interval` (seconds between frames; frame i is at `(i + 0.5) * interval`). Cached for a
+year when asked with `?v=<sprite.version>` from `Media.sprite`. `404` for images, with the
+thumbnail cache off, or when no frame could be read.
+
+### `GET /api/media/:id/detections`
+The characters found on one item. Response: `CharacterDetection[]` — each with its `bbox`
+(fractions of the image), `score`, `characterId`, `characterName`, `characterDisplayName`,
+`assignment` (`auto`, `user` or `rejected`) and `cropUrl`.
 
 ### `PATCH /api/media/:id/tags`
 Add/remove tags and optionally change tag categories.
@@ -227,11 +266,12 @@ Body:
 {
   add?: string[];       // tag names to add (default [])
   remove?: string[];    // tag names to remove (default [])
-  category?: 'rating'|'general'|'character'|'user'; // category for newly created `add` tags, default 'user'
-  setCategory?: Record<string, 'rating'|'general'|'character'|'user'>; // rename category of existing tags
+  category?: TagCategory; // for newly created `add` tags, default 'user'
+  setCategory?: Record<string, TagCategory>; // change the category of existing tags
 }
 ```
-Response: `MediaDetail`.
+`TagCategory` is `rating`, `general`, `character`, `user`, `artist` or `copyright`. Siblings,
+implications and vetoes apply as in `tags-batch`. Response: `MediaDetail`.
 
 ### `PATCH /api/media/:id/like`
 Body: `{ liked: boolean }`. Response: `MediaDetail`.
@@ -254,10 +294,53 @@ Update playback/view progress. Body: `{ progress: number (0-1) }`. Response: `{ 
 ### `GET /api/tags`
 Tag usage counts, optionally scoped to a library.
 
-Query params: `q?` (literal substring filter; `_` and `%` match themselves), `libraryId?` (number), `category?` (comma-separated list),
+Query params: `q?` (literal substring filter on the name or display name, and on old names merged
+into a tag; `_` and `%` match themselves), `libraryId?` (number), `category?` (comma-separated list),
 `limit?` (1-100, default 30; ignored when filtering to only the `rating` category).
 
-Response: `TagCount[]`.
+Response: `TagCount[]` (`{ name, category, displayName, count }`).
+
+### `GET /api/tags/info`
+Category and display name for tags known only by name (filter chips, Discover reasons). Query:
+`names` (comma-separated, at most 200). Unknown names are left out. Response: `TagInfo[]`
+(`{ name, category, displayName }`).
+
+### `PATCH /api/tags/:name`
+Set or clear a tag's display name. The tag's real name, used in search and links, stays the same.
+Body: `{ displayName: string | null }` (max 100 chars; blank clears it). `404` for an unknown tag,
+`409` when another tag already reads the same. Response: `TagInfo`.
+
+## Tag relations
+
+Booru-style siblings and implications. A **sibling** merges one tag into another: its links,
+vetoes and implications move to the target, and later writes of the old name land on the target.
+An **implication** adds the implied tag (source `implied`) to every item carrying the tag, kept up
+to date as tags change. Cycles are refused with `400`.
+
+Every write answers with `TagRelationResult`: `{ siblings: TagSibling[], implications:
+TagImplication[], job: Job | null }`. When a change reaches more than 5000 items, the implied tags
+are brought up to date by a `tag-relations` job, returned in `job`; otherwise inline and `job` is
+`null`.
+
+### `GET /api/tag-relations`
+Response (`TagRelations`): `{ siblings: { from, to, createdAt }[], implications: { tag, implies,
+createdAt }[] }`, each side a `TagInfo`.
+
+### `POST /api/tag-relations/siblings`
+Merge `from` into `to`. Body: `{ from: string, to: string, category?: TagCategory }` (`category`,
+default `general`, is used for a side that doesn't exist yet). `400` for a merge into the tag's
+own alias or one that would make implications loop, `409` when `from` is already merged.
+
+### `DELETE /api/tag-relations/siblings/:from`
+Stop resolving the alias. Links already moved stay on the target.
+
+### `POST /api/tag-relations/implications`
+Body: `{ tag: string, implies: string, category?: TagCategory }` (`category` as above). Either
+name may be an alias; it resolves to its target.
+
+### `DELETE /api/tag-relations/implications/:tag/:implies`
+Removes the implication and the implied links it made; a tag also added by hand stays. `404` if
+there is no such implication.
 
 ---
 
@@ -273,7 +356,7 @@ SSE stream of job updates. Events: `{ type: 'snapshot', jobs: Job[] }` on connec
 ### `POST /api/jobs/run-now`
 Manually trigger scheduled job types immediately.
 
-Body: `{ scope: 'global' | { libraryId: number }, jobType?: 'scan'|'tag'|'hash'|'cleanup' }`
+Body: `{ scope: 'global' | { libraryId: number }, jobType?: 'scan'|'tag'|'hash'|'cleanup'|'backup' }`
 
 Response: `{ ok: true }`.
 
@@ -294,7 +377,7 @@ Upsert a schedule (global if `libraryId` omitted/`null`, per-library otherwise).
 Body:
 ```ts
 {
-  jobType: 'scan'|'tag'|'hash'|'cleanup';
+  jobType: 'scan'|'tag'|'hash'|'cleanup'|'backup'; // backup is global only
   libraryId?: number | null;
   mode?: 'off'|'interval'|'after-scan';
   intervalMinutes?: number;
@@ -311,17 +394,18 @@ Response: `{ ok: true }`.
 All settings key/value pairs. Response: `Settings`.
 
 ### `PATCH /api/settings`
-Update one or more settings. Body: `Record<string, string>` — keys must be one of the editable
-keys (`ai_tagging_enabled`, `confidence_threshold`, `accent_color`, `remember_mute_state`,
-`remember_volume_level`, `continue_where_left`, `thumbnail_cache_enabled`,
-`board_remember_filters`, `downloader_concurrency`, `gifs_as_videos`, `video_transcode_enabled`,
-`discover_enabled`); an unknown key returns `400` and nothing in the request is saved. Toggling
-`gifs_as_videos` enqueues a GIF reclassification job. Response: `Settings`.
+Update one or more settings. Body: `Record<string, string>` — keys must be one of the keys in
+`DEFAULTS` in `apps/server/src/lib/settings.ts` other than `tagger_model` (for example
+`ai_tagging_enabled`, `confidence_threshold` and `confidence_threshold_character` (percent, general
+and character tags), `discover_enabled`, `backup_keep`, `character_detection_enabled`,
+`semantic_search_enabled`, `ui_style`); an unknown key returns `400` and nothing in the request is
+saved. Toggling `gifs_as_videos` enqueues a GIF reclassification job. Response: `Settings`.
 
 ## System
 
 ### `GET /api/system`
-Response (`SystemInfo`): `{ version, mediaCount, mediaBytes, dbBytes, thumbBytes }`.
+Response (`SystemInfo`): `{ version, mediaCount, mediaBytes, dbBytes, thumbBytes, installKind }`.
+`installKind` is `desktop`, `docker` or `source`, which decides how this copy updates.
 
 ### `GET /api/system/storage`
 Response (`StorageInfo`): `{ current, home, local, usingHome, locked }` — where the data dir resolved
@@ -334,7 +418,8 @@ restart. 400 if `server.dataDir` is set, the target is already in use, or a data
 there.
 
 ### `POST /api/system/clear-thumbnails`
-Delete all cached thumbnails. Response: `{ removed: number }`.
+Delete all cached thumbnails and video sprites; sprites are remade by the after-scan sprite job.
+Response: `{ removed: number }`.
 
 ### `POST /api/system/reclassify-gifs`
 Enqueue a job to reclassify existing GIFs as images/videos per the current `gifs_as_videos`
@@ -343,9 +428,50 @@ setting. Response: `Job`.
 ### `POST /api/system/regenerate-thumbnails`
 Enqueue a bulk thumbnail regeneration job. Response: `{ ok: true }`.
 
+### `POST /api/system/transcode-videos`
+Enqueue a check of every video, transcoding the ones browsers can't play. Response: `{ ok: true }`.
+
 ### `POST /api/system/cleanup`
-Run library cleanup synchronously (removes orphaned DB rows/files). Response: cleanup result
-object (see `services/cleanup.ts`).
+Run library cleanup synchronously (removes orphaned DB rows/files and trash entries past 30 days).
+Response: cleanup result object (see `services/cleanup.ts`).
+
+## Backups
+
+Database backups are written to `<dataDir>/backups` with `VACUUM INTO`, on the `backup` job
+schedule (daily by default) and before a desktop update. After each one, all but the newest
+`backup_keep` (default 7) are deleted.
+
+### `GET /api/backups`
+Response (`BackupsPayload`): `{ backups: { name, sizeBytes, createdAt }[], keep: number, dir: string }`,
+newest first.
+
+### `POST /api/backups`
+Queue a backup now. Response: `202` + `Job`; poll `/api/jobs` until it is done.
+
+## Trash
+
+Deleted media waits in `<dataDir>/trash` for 30 days, then is purged at boot, every six hours and by
+the cleanup job. Errors answer `{ error }` with the status noted.
+
+### `GET /api/trash`
+Response (`TrashPayload`): `{ items: TrashItem[], count, totalBytes, retentionDays }`, newest first.
+Each `TrashItem` has `id`, `mediaId`, `libraryId`, `libraryName` (null once the library is gone),
+`filename`, `type`, `sizeBytes`, `originalPath`, `trashedAt` and `expiresAt`.
+
+### `GET /api/trash/:id/thumb`
+The item's saved thumbnail. `404` when there is none.
+
+### `POST /api/trash/:id/restore`
+Moves the file back and re-inserts the media row under its old id with its tags, vetoes, like and
+boards. If a file now sits at the original path it comes back as `name (restored).ext`. `404` if
+not in the trash, `409` when its library or folder no longer exists, `410` when the file is missing
+from the trash folder. Response (`TrashRestoreResult`): `{ ok: true, mediaId, path, renamed }`.
+
+### `DELETE /api/trash/:id`
+Delete one entry for good. Response (`TrashRemoveResult`): `{ ok: true, removed, freedBytes }`.
+
+### `DELETE /api/trash`
+Empty the trash. Response: `TrashRemoveResult`.
 
 ---
 
@@ -371,7 +497,182 @@ Enqueue a model download. `409` if already downloading or already ready. Respons
 Enqueue AI tagging for all untagged media. `409` if the model isn't ready or there's nothing to
 tag. Response: `{ job: Job }`.
 
+Images are tagged from the file, videos from up to 5 frames spread across them (each tag at its
+highest confidence in any frame). General and character tags have separate thresholds
+(`confidence_threshold`, `confidence_threshold_character`). Tags a user removed (vetoes) stay off,
+and `user`, `meta`, `character` and `implied` links survive a re-tag.
+
 ---
+
+## Search by description
+
+### `GET /api/semantic/status`
+`{ status: 'absent'|'downloading'|'ready', enabled, modelSizeBytes, embeddedCount, pendingCount }`.
+
+Off by default (`semantic_search_enabled`). The search itself is the `describe` param on
+`GET /api/media` and `GET /api/media/ids`.
+
+### `POST /api/semantic/download`
+Queues a `model-download` job for the CLIP model (~155 MB). `409` when already downloaded or downloading.
+Response: `{ job: Job }`.
+
+### `POST /api/semantic/run`
+Queues an `embeddings` job over every file not indexed yet. `409` without the model or with nothing to do.
+New files are also indexed after each scan while `semantic_search_enabled` is `1`. Response: `{ job: Job }`.
+
+## Characters
+
+Character detection is off by default (`character_detection_enabled`). When on, an after-scan job
+finds characters in new images and videos, embeds each with CCIP and clusters them into
+characters. Naming a character gives every item it is on a `character`-category tag (link source
+`character`). Lists answer `CharacterSummary` objects: `{ id, tagId, name, displayName, hidden,
+createdAt, mediaCount, detectionCount, coverDetectionId, coverUrl, suggestion }`; `name` is the tag
+name, null until named.
+
+### `GET /api/characters/status`
+Response (`CharacterModelStatus`): `{ status: 'absent'|'downloading'|'ready'|'error', enabled,
+modelSizeBytes, pendingCount, detectionCount, characterCount }`.
+
+### `POST /api/characters/download`
+Queues a `model-download` job for the detector and CCIP models (~195 MB). `409` when already
+downloaded or downloading. Response: `{ job: Job }`.
+
+### `POST /api/characters/run`
+Queues a job over every file not scanned for characters yet. `409` without the models or with
+nothing to do. Response: `{ job: Job }`.
+
+### `GET /api/characters`
+Response (`CharactersResponse`): `{ named, suggested, unnamed, unassignedCount, tagOnly }`.
+`suggested` are unnamed clusters whose `solo` images mostly carry one WD character tag
+(`suggestion: { tag, displayName, mediaCount, soloCount }`); `tagOnly` lists character tags in use
+that no character carries (`TagCount[]`). Hidden characters are left out unless `?hidden=1`.
+
+### `GET /api/characters/:id`
+Response: `CharacterSummary`. `404` if unknown.
+
+### `GET /api/characters/:id/media`
+The character's media, newest first, with its detections on them. Query: `offset` (default 0),
+`limit` (1-200, default 60). Response (`CharacterMediaResponse`): `{ character, items: Media[],
+detections: CharacterDetection[], total, nextOffset }`.
+
+### `GET /api/characters/:id/detections`
+The character's faces, best score first, rejected ones left out. Same `offset`/`limit`. Response
+(`CharacterDetectionsResponse`): `{ items: CharacterDetection[], total, nextOffset }`.
+
+### `GET /api/characters/crops/:detectionId`
+A webp crop of one detection's box, made on first request and cached.
+
+### `POST /api/characters/:id/name`
+Body: `{ name: string }`, normalized like a tag name. Reuses a tag of that name (a `user` tag
+becomes a character tag); naming after another character's tag merges the two. `409` when the
+name is a general or rating tag, with a suggested `name_(character)` in the error. Renaming
+moves the links to the new tag. Response: `CharacterSummary`.
+
+### `POST /api/characters/:id/accept-suggestion`
+Names the character after its suggestion. `409` without one. Response: `CharacterSummary`.
+
+### `POST /api/characters/:id/dismiss-suggestion`
+Drops the suggestion for good; the character waits in `unnamed`. `409` without one. Response:
+`CharacterSummary`.
+
+### `POST /api/characters/:id/merge`
+Body: `{ into: number }`. Moves every detection into `into` and deletes this character; rejections
+stay rejected. Response: the merged `CharacterSummary`.
+
+### `POST /api/characters/:id/hidden`
+Body: `{ hidden: boolean }`. Hides the character from the list; its tag is untouched. Response:
+`CharacterSummary`.
+
+### `POST /api/characters/:id/cover`
+Body: `{ detectionId: number }`, one of the character's own detections (`400` otherwise).
+Response: `CharacterSummary`.
+
+### `POST /api/character-detections/:id/reject`
+"Not this character": the detection leaves its character and a re-run won't put it back.
+Response: `CharacterDetection`.
+
+### `POST /api/character-detections/:id/assign`
+Body: `{ characterId: number }`. Puts the detection in a character by hand. Response:
+`CharacterDetection`.
+
+### `POST /api/character-detections/:id/name`
+Body: `{ name: string }`. A face in an unnamed cluster names the whole cluster; any other face
+moves to the character with that name, created when none has it. `409` for a general tag's name.
+Response: `CharacterDetection`.
+
+## Discover
+
+The recommendation feed, while `discover_enabled` is `1`. Items carry `reasonTag` (the taste tag
+that scored them highest) and `reasonRelated`.
+
+### `GET /api/discover`
+Query: `type?`, `surprise` (0-1, default 0.3; the page offers 0.1 / 0.3 / 0.6), `shelf?` (narrows
+the feed to one shelf, for "See all"), `seed` (default 1), `cursor`, `limit` (1-200, default 60).
+Hidden items and items carrying a muted tag never appear. The feed keeps at most 4 items per folder
+and 5 per reason tag in any 20, and near-duplicates 60 apart. Response: `MediaListResponse`.
+
+### `GET /api/discover/shelves`
+Query: `type?`, `surprise`, `seed`, and `visit=1` when the page opens (for "New since your last
+visit"). Response (`DiscoverShelvesResponse`): `{ shelves: { id, title, subtitle, tag?, items }[] }`.
+Shelf ids: `new`, `like:<tag>` (because you like), `rediscover`, `offbeat`. A shelf with fewer than 3
+items is left out.
+
+### `GET /api/discover/profile`
+The taste panel. Response (`DiscoverProfileResponse`): `{ tags: DiscoverTasteTag[], activeTags,
+hiddenCount }`; each tag has `name`, `category`, `displayName`, `weight` (0-1, relative to the
+strongest), `related` and `mode`. Tags with a preference are listed even once they leave the top.
+
+### `PUT /api/discover/tags/:name`
+Body: `{ mode: 'boost' | 'less' | 'mute' | null }`. Boost doubles the tag's weight, less cuts it to a
+quarter, mute hides every item carrying it; `null` clears the preference. Response: `{ name, mode }`.
+
+### `POST /api/discover/feedback`
+"Not interested". Body: `{ mediaId: number, hidden: boolean }`. A hidden item leaves every Discover
+list and counts a little against its tags. Response: `{ mediaId, hidden }`.
+
+### `DELETE /api/discover/feedback`
+Un-hide everything. Response: `{ cleared: number }`.
+
+### `GET /api/discover/like/:id`
+More like this. Query: `limit` (1-200, default 60). Ranks by shared tags, rarer tags counting more
+and rating tags ignored; with search by description ready, image-embedding neighbours are blended in.
+Response (`DiscoverLikeResponse`): `{ source: Media, items: Media[], ranking: 'tags' | 'visual' }`.
+
+## Boards
+
+### `GET /api/boards`
+Every board, oldest first. Response: `BoardWithStats[]` (`{ id, name, createdAt, itemCount, thumbMediaId }`).
+
+### `GET /api/boards/:id`
+Response: `BoardWithStats`.
+
+### `POST /api/boards`
+Body: `{ name: string }` (1-120 chars). Response: `201` + `BoardWithStats`.
+
+### `PATCH /api/boards/:id`
+Rename. Body: `{ name: string }`. Response: `BoardWithStats`.
+
+### `DELETE /api/boards/:id`
+Delete the board; its media are untouched. Response: `{ ok: true }`.
+
+### `POST /api/boards/:id/media`
+Body: `{ mediaIds: number[] }`. Adds the media that still exist; ones already on the board are
+skipped. Response: `BoardWithStats`.
+
+### `DELETE /api/boards/:id/media/:mediaId`
+Remove one item from the board. Response: `{ ok: true }`.
+
+## Saved searches
+
+### `GET /api/saved-searches`
+Response: `SavedSearch[]`, oldest first.
+
+### `POST /api/saved-searches`
+Body: `{ name: string (1-120 chars), query: string }`. Saving under an existing name overwrites it.
+Response: `201` + `SavedSearch`.
+
+### `DELETE /api/saved-searches/:id`
+Response: `{ ok: true }`.
 
 ## Uploads
 

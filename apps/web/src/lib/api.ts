@@ -1,10 +1,23 @@
 import type {
   AuthStatus,
+  BackupsPayload,
   BoardWithStats,
+  BulkFailure,
   BulkRenameItem,
   BulkResult,
+  CharacterDetection,
+  CharacterDetectionsResponse,
+  CharacterMediaResponse,
+  CharacterModelStatus,
+  SemanticStatus,
+  CharactersResponse,
+  CharacterSummary,
   ConsoleSessionStatus,
   DashboardResponse,
+  DiscoverLikeResponse,
+  DiscoverProfileResponse,
+  DiscoverShelvesResponse,
+  DiscoverTagMode,
   DownloadBatchWithItems,
   DownloadCookie,
   DownloadLogLine,
@@ -25,8 +38,14 @@ import type {
   SystemInfo,
   TagCategory,
   TagCount,
+  TagInfo,
+  TagRelationResult,
+  TagRelations,
   TaggerModel,
   TaggerStatus,
+  TrashPayload,
+  TrashRemoveResult,
+  TrashRestoreResult,
   JobSchedulesPayload,
 } from '@sakuya/shared';
 export type { ScheduleJobType } from '@sakuya/shared';
@@ -79,6 +98,8 @@ export interface MediaFilters {
   tags: string[];
   liked?: boolean;
   q: string[];
+  /** Search by description: ranks by how well each picture fits, instead of `sort`. */
+  describe?: string;
   sort: 'recent' | 'name' | 'size' | 'random';
   dir: 'asc' | 'desc';
   seed: number;
@@ -93,6 +114,7 @@ function filterParams(filters: MediaFilters): URLSearchParams {
   if (filters.tags.length) params.set('tags', filters.tags.join(','));
   if (filters.liked) params.set('liked', '1');
   for (const term of filters.q) params.append('q', term);
+  if (filters.describe) params.set('describe', filters.describe);
   params.set('sort', filters.sort);
   params.set('dir', filters.dir);
   params.set('seed', String(filters.seed));
@@ -111,6 +133,8 @@ export interface DiscoverFilters {
   /** 0 = pure taste match, 1 = pure random. */
   surprise: number;
   seed: number;
+  /** One shelf's items only: a shelf's "See all". */
+  shelf?: string;
 }
 
 function discoverQueryString(filters: DiscoverFilters, cursor?: string): string {
@@ -118,6 +142,7 @@ function discoverQueryString(filters: DiscoverFilters, cursor?: string): string 
   if (filters.type) params.set('type', filters.type);
   params.set('surprise', String(filters.surprise));
   params.set('seed', String(filters.seed));
+  if (filters.shelf) params.set('shelf', filters.shelf);
   params.set('limit', '60');
   if (cursor) params.set('cursor', cursor);
   return params.toString();
@@ -160,6 +185,24 @@ export const api = {
   mediaDetail: (id: number) => request<MediaDetail>(`/api/media/${id}`),
   discover: (filters: DiscoverFilters, cursor?: string) =>
     request<MediaListResponse>(`/api/discover?${discoverQueryString(filters, cursor)}`),
+  discoverShelves: (filters: Omit<DiscoverFilters, 'shelf'>) => {
+    const params = new URLSearchParams({ surprise: String(filters.surprise), seed: String(filters.seed), visit: '1' });
+    if (filters.type) params.set('type', filters.type);
+    return request<DiscoverShelvesResponse>(`/api/discover/shelves?${params}`);
+  },
+  discoverProfile: () => request<DiscoverProfileResponse>('/api/discover/profile'),
+  setDiscoverTagMode: (tag: string, mode: DiscoverTagMode | null) =>
+    request<{ name: string; mode: DiscoverTagMode | null }>(`/api/discover/tags/${encodeURIComponent(tag)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ mode }),
+    }),
+  setDiscoverHidden: (mediaId: number, hidden: boolean) =>
+    request<{ mediaId: number; hidden: boolean }>('/api/discover/feedback', {
+      method: 'POST',
+      body: JSON.stringify({ mediaId, hidden }),
+    }),
+  clearDiscoverHidden: () => request<{ cleared: number }>('/api/discover/feedback', { method: 'DELETE' }),
+  moreLikeThis: (id: number) => request<DiscoverLikeResponse>(`/api/discover/like/${id}`),
   patchTags: (
     id: number,
     body: { add?: string[]; remove?: string[]; category?: TagCategory; setCategory?: Record<string, TagCategory> },
@@ -175,7 +218,10 @@ export const api = {
   deleteMedia: (id: number) => request<{ ok: true }>(`/api/media/${id}`, { method: 'DELETE' }),
   duplicates: () => request<DuplicatesResponse>('/api/media/duplicates'),
   deleteMediaBatch: (ids: number[]) =>
-    request<{ ok: true; deleted: number }>('/api/media/delete-batch', { method: 'POST', body: JSON.stringify({ ids }) }),
+    request<{ ok: true; deleted: number; failed: BulkFailure[] }>('/api/media/delete-batch', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    }),
   mediaIds: (filters: MediaFilters) => request<MediaIdsResponse>(`/api/media/ids?${filterParams(filters)}`),
   mediaByIds: (ids: number[]) =>
     request<Media[]>('/api/media/by-ids', { method: 'POST', body: JSON.stringify({ ids }) }),
@@ -196,7 +242,10 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ mediaIds }),
     }),
-  saveProgress: (id: number, body: { progress?: number; view?: boolean; watchedDelta?: number; dwellDelta?: number }) =>
+  saveProgress: (
+    id: number,
+    body: { progress?: number; view?: boolean; openSeconds?: number; watchedDelta?: number; dwellDelta?: number },
+  ) =>
     request(`/api/media/${id}/progress`, { method: 'PATCH', body: JSON.stringify(body) }),
   tags: (opts: { q?: string; libraryId?: number; limit?: number; category?: TagCategory | TagCategory[] }) => {
     const params = new URLSearchParams();
@@ -206,10 +255,43 @@ export const api = {
     if (opts.category) params.set('category', ([] as TagCategory[]).concat(opts.category).join(','));
     return request<TagCount[]>(`/api/tags?${params}`);
   },
+  tagInfo: async (names: string[]) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < names.length; i += 200) chunks.push(names.slice(i, i + 200));
+    const parts = await Promise.all(
+      chunks.map((chunk) =>
+        request<TagInfo[]>(`/api/tags/info?${new URLSearchParams({ names: chunk.join(',') })}`),
+      ),
+    );
+    return parts.flat();
+  },
+  tagRelations: () => request<TagRelations>('/api/tag-relations'),
+  addTagSibling: (body: { from: string; to: string; category?: TagCategory }) =>
+    request<TagRelationResult>('/api/tag-relations/siblings', { method: 'POST', body: JSON.stringify(body) }),
+  removeTagSibling: (from: string) =>
+    request<TagRelationResult>(`/api/tag-relations/siblings/${encodeURIComponent(from)}`, { method: 'DELETE' }),
+  addTagImplication: (body: { tag: string; implies: string; category?: TagCategory }) =>
+    request<TagRelationResult>('/api/tag-relations/implications', { method: 'POST', body: JSON.stringify(body) }),
+  removeTagImplication: (tag: string, implies: string) =>
+    request<TagRelationResult>(
+      `/api/tag-relations/implications/${encodeURIComponent(tag)}/${encodeURIComponent(implies)}`,
+      { method: 'DELETE' },
+    ),
+  renameTag: (name: string, displayName: string | null) =>
+    request<TagInfo>(`/api/tags/${encodeURIComponent(name)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ displayName }),
+    }),
   settings: () => request<Settings>('/api/settings'),
   patchSettings: (body: Partial<Record<keyof Settings, string>>) =>
     request<Settings>('/api/settings', { method: 'PATCH', body: JSON.stringify(body) }),
   system: () => request<SystemInfo>('/api/system'),
+  backups: () => request<BackupsPayload>('/api/backups'),
+  runBackup: () => request<Job>('/api/backups', { method: 'POST' }),
+  trash: () => request<TrashPayload>('/api/trash'),
+  restoreFromTrash: (id: number) => request<TrashRestoreResult>(`/api/trash/${id}/restore`, { method: 'POST' }),
+  deleteFromTrash: (id: number) => request<TrashRemoveResult>(`/api/trash/${id}`, { method: 'DELETE' }),
+  emptyTrash: () => request<TrashRemoveResult>('/api/trash', { method: 'DELETE' }),
   clearThumbnails: () => request<{ removed: number }>('/api/system/clear-thumbnails', { method: 'POST' }),
   storage: () => request<StorageInfo>('/api/system/storage'),
   migrateStorage: (target: 'home' | 'local') =>
@@ -235,6 +317,7 @@ export const api = {
       resetTagCounts: number;
       prunedJobs: number;
       prunedDownloadLogs: number;
+      purgedTrash: number;
     }>('/api/system/cleanup', { method: 'POST' }),
   taggerStatus: () => request<TaggerStatus>('/api/tagger/status'),
   taggerDownload: () => request<{ job: Job }>('/api/tagger/download', { method: 'POST' }),
@@ -243,6 +326,44 @@ export const api = {
   selectTaggerModel: (modelId: string) =>
     request<TaggerStatus>('/api/tagger/select', { method: 'POST', body: JSON.stringify({ modelId }) }),
   taggerHashAll: () => request<{ job: Job }>('/api/tagger/hash-all', { method: 'POST' }),
+  characterStatus: () => request<CharacterModelStatus>('/api/characters/status'),
+  characterDownload: () => request<{ job: Job }>('/api/characters/download', { method: 'POST' }),
+  characterRun: () => request<{ job: Job }>('/api/characters/run', { method: 'POST' }),
+  semanticStatus: () => request<SemanticStatus>('/api/semantic/status'),
+  semanticDownload: () => request<{ job: Job }>('/api/semantic/download', { method: 'POST' }),
+  semanticRun: () => request<{ job: Job }>('/api/semantic/run', { method: 'POST' }),
+  characters: (includeHidden = false) =>
+    request<CharactersResponse>(`/api/characters${includeHidden ? '?hidden=1' : ''}`),
+  character: (id: number) => request<CharacterSummary>(`/api/characters/${id}`),
+  characterMedia: (id: number, offset = 0, limit = 60) =>
+    request<CharacterMediaResponse>(`/api/characters/${id}/media?offset=${offset}&limit=${limit}`),
+  characterDetections: (id: number, offset = 0, limit = 120) =>
+    request<CharacterDetectionsResponse>(`/api/characters/${id}/detections?offset=${offset}&limit=${limit}`),
+  dismissCharacterSuggestion: (id: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/dismiss-suggestion`, { method: 'POST' }),
+  nameDetection: (detectionId: number, name: string) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/name`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  nameCharacter: (id: number, name: string) =>
+    request<CharacterSummary>(`/api/characters/${id}/name`, { method: 'POST', body: JSON.stringify({ name }) }),
+  acceptCharacterSuggestion: (id: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/accept-suggestion`, { method: 'POST' }),
+  mergeCharacter: (id: number, into: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/merge`, { method: 'POST', body: JSON.stringify({ into }) }),
+  setCharacterHidden: (id: number, hidden: boolean) =>
+    request<CharacterSummary>(`/api/characters/${id}/hidden`, { method: 'POST', body: JSON.stringify({ hidden }) }),
+  setCharacterCover: (id: number, detectionId: number) =>
+    request<CharacterSummary>(`/api/characters/${id}/cover`, { method: 'POST', body: JSON.stringify({ detectionId }) }),
+  rejectDetection: (detectionId: number) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/reject`, { method: 'POST' }),
+  assignDetection: (detectionId: number, characterId: number) =>
+    request<CharacterDetection>(`/api/character-detections/${detectionId}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ characterId }),
+    }),
+  mediaDetections: (mediaId: number) => request<CharacterDetection[]>(`/api/media/${mediaId}/detections`),
   uploadLibraryCover: (id: number, file: File) => {
     const form = new FormData();
     form.append('file', file);
@@ -275,7 +396,10 @@ export const api = {
   skipDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/skip`, { method: 'POST' }),
   redoDownloadItem: (id: number) => request<{ ok: true }>(`/api/downloader/items/${id}/redo`, { method: 'POST' }),
   removeDownloadItem: (id: number, deleteFiles: boolean) =>
-    request<{ ok: true }>(`/api/downloader/items/${id}`, { method: 'DELETE', body: JSON.stringify({ deleteFiles }) }),
+    request<{ ok: true; deleted: number; failed: BulkFailure[] }>(`/api/downloader/items/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ deleteFiles }),
+    }),
   startConsole: (command: string) =>
     request<ConsoleSessionStatus>('/api/downloader/console/start', { method: 'POST', body: JSON.stringify({ command }) }),
   sendConsoleInput: (text: string) =>
@@ -286,5 +410,9 @@ export const api = {
 export const fileUrl = (id: number) => `/api/media/${id}/file`;
 export const thumbUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/media/${id}/thumbnail?v=${cacheBust}` : `/api/media/${id}/thumbnail`;
+export const spriteUrl = (id: number, version?: number) =>
+  version ? `/api/media/${id}/sprite?v=${version}` : `/api/media/${id}/sprite`;
 export const libraryCoverUrl = (id: number, cacheBust?: number) =>
   cacheBust ? `/api/libraries/${id}/cover?v=${cacheBust}` : `/api/libraries/${id}/cover`;
+
+export const trashThumbUrl = (id: number) => `/api/trash/${id}/thumb`;

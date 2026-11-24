@@ -2,18 +2,19 @@ import fs from 'node:fs';
 import sharp from 'sharp';
 import { eq, and, isNull } from 'drizzle-orm';
 import { db, sqlite, schema } from '../db';
-import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY, LIMITS } from '../lib/config';
-import { confidenceThreshold, getSetting, setSetting } from '../lib/settings';
+import { MODEL_PATH, MODEL_TAGS_PATH, modelRepoBase, MODEL_REGISTRY } from '../lib/config';
+import { confidenceThresholds, getSetting, setSetting, type TagThresholds } from '../lib/settings';
 import { thumbPathFor } from './thumbnailer';
+import { distinctFrames, frameSignature, frameTimes, withVideoFrames } from './videoFrames';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { computeDHash } from './perceptualHash';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { phashColumns } from '../lib/phashBands';
 import { chunkIds, mediaIdsWhere } from '../lib/mediaByIds';
 import { downloadFile } from '../lib/download';
+import { createModelSession } from '../lib/modelSession';
+import { ensureTag, impliedOn, linkTag, recomputeImplied, resolveSibling } from './tagRelations';
 import type { TaggerStatus, TagCategory } from '@sakuya/shared';
-// Type-only: the native module itself is imported lazily, when a tag actually runs.
-import type { InferenceSession } from 'onnxruntime-node';
 
 const INPUT_SIZE = 448;
 
@@ -22,52 +23,11 @@ export interface LabelEntry {
   category: TagCategory;
 }
 
-let session: Promise<InferenceSession> | null = null;
 let labels: LabelEntry[] | null = null;
 let downloading = false;
 
-// The loaded model holds ~800 MB of native memory. Tagging comes in bursts (after a scan, an upload),
-// so free it once nothing has used it for a while; the next tag reloads it in a second or two.
-const SESSION_IDLE_MS = 60_000;
-let sessionIdleTimer: ReturnType<typeof setTimeout> | null = null;
-let inFlight = 0;
-
-/**
- * glibc keeps freed memory in its arenas instead of returning it to the OS: after release() the
- * process still held ~620 of the model's ~790 MB (measured). malloc_trim hands it back. No-op where
- * there is no glibc (macOS, Windows, musl).
- */
-async function trimNativeHeap(): Promise<void> {
-  if (process.platform !== 'linux') return;
-  try {
-    const { dlopen, FFIType } = await import('bun:ffi');
-    const libc = dlopen('libc.so.6', { malloc_trim: { args: [FFIType.u64], returns: FFIType.i32 } });
-    libc.symbols.malloc_trim(0);
-    libc.close();
-  } catch {
-    // Not glibc.
-  }
-}
-
-/** Free the model's native memory now. Dropping the reference alone leaves it to a GC finalizer. */
-function releaseSession(): void {
-  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
-  sessionIdleTimer = null;
-  const old = session;
-  session = null;
-  old
-    ?.then((loaded) => loaded.release())
-    .then(trimNativeHeap)
-    .catch((err: unknown) => console.error('tagger: failed to release model session:', err));
-}
-
-function scheduleSessionRelease(): void {
-  if (sessionIdleTimer) clearTimeout(sessionIdleTimer);
-  sessionIdleTimer = setTimeout(() => {
-    if (inFlight === 0) releaseSession();
-  }, SESSION_IDLE_MS);
-  sessionIdleTimer.unref();
-}
+// The loaded model holds ~800 MB of native memory, freed 60 s after the last tag.
+const model = createModelSession(MODEL_PATH, { label: 'tagger' });
 
 export function modelReady(): boolean {
   return fs.existsSync(MODEL_PATH) && fs.existsSync(MODEL_TAGS_PATH);
@@ -113,12 +73,12 @@ export function taggerStatus(): TaggerStatus {
 /** Switch the active tagger model. Clears cached model files/session so the new one must be downloaded. */
 export function selectModel(modelId: string): void {
   if (downloading) throw new Error('Cannot switch models while a download is in progress');
-  if (inFlight > 0) throw new Error('Cannot switch models while images are being tagged');
+  if (model.inFlight() > 0) throw new Error('Cannot switch models while images are being tagged');
   if (!MODEL_REGISTRY.some((m) => m.id === modelId)) throw new Error(`Unknown model: ${modelId}`);
   if (selectedModelId() === modelId) return;
   setSetting('tagger_model', modelId);
   // Model files are shared paths; a switch invalidates the currently-downloaded model.
-  releaseSession();
+  model.release();
   labels = null;
   fs.rmSync(MODEL_PATH, { force: true });
   fs.rmSync(MODEL_TAGS_PATH, { force: true });
@@ -141,32 +101,6 @@ export function parseLabels(csv: string): LabelEntry[] {
 function loadLabels(): LabelEntry[] {
   labels ??= parseLabels(fs.readFileSync(MODEL_TAGS_PATH, 'utf8'));
   return labels;
-}
-
-/** Concurrent callers share one load; two tag jobs used to each create an ~800 MB session and leak one. */
-function getSession(): Promise<InferenceSession> {
-  if (session) return session;
-  const load = loadSession();
-  session = load;
-  // A failed load must not stick, or every later tag would get the same rejection.
-  load.catch(() => {
-    if (session === load) session = null;
-  });
-  return load;
-}
-
-async function loadSession() {
-  const ort = await import('onnxruntime-node');
-  return ort.InferenceSession.create(MODEL_PATH, {
-    executionProviders: ['cpu'],
-    graphOptimizationLevel: 'all',
-    // Cap threads so bulk tagging can't monopolize every core and starve
-    // request handling (thumbnail/video serving) or other host services.
-    // Tunable via SAKUYA_MAX_CPUS / SAKUYA_ONNX_THREADS; the defaults are the 2/1 this used
-    // to hardcode.
-    intraOpNumThreads: LIMITS.onnxIntraOpThreads,
-    interOpNumThreads: LIMITS.onnxInterOpThreads,
-  });
 }
 
 /** Pad to square (white), resize to 448x448, RGB→BGR, float32 0-255, NHWC. */
@@ -194,31 +128,34 @@ export interface PredictedTag {
   confidence: number;
 }
 
-export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
+/** The model's per-label probabilities for one image, in label order. */
+export async function predictScores(imagePath: string): Promise<Float32Array> {
   if (!modelReady()) throw new Error('Tagger model not downloaded');
   const ort = await import('onnxruntime-node');
-  let probs: Float32Array;
-  inFlight++;
-  try {
-    const sess = await getSession();
+  const raw = await model.use(async (sess) => {
     const input = await preprocess(imagePath);
     const tensor = new ort.Tensor('float32', input, [1, INPUT_SIZE, INPUT_SIZE, 3]);
     const results = await sess.run({ [sess.inputNames[0]]: tensor });
-    probs = results[sess.outputNames[0]].data as Float32Array;
-  } finally {
-    inFlight--;
-    scheduleSessionRelease();
-  }
-  return selectTags(probs, loadLabels(), confidenceThreshold());
+    return results[sess.outputNames[0]].data as Float32Array;
+  });
+  return toProbabilities(raw);
+}
+
+export async function predictTags(imagePath: string): Promise<PredictedTag[]> {
+  return selectTags(await predictScores(imagePath), loadLabels(), confidenceThresholds());
+}
+
+/** The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits. */
+function toProbabilities(scores: Float32Array): Float32Array {
+  return scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
 }
 
 /**
- * The tags a model output picks: every general and character tag scoring at least `threshold`,
- * plus the single best rating whatever its score, highest confidence first.
+ * The tags a model output picks: every general and character tag scoring at least its category's
+ * threshold, plus the single best rating whatever its score, highest confidence first.
  */
-export function selectTags(scores: Float32Array, allLabels: LabelEntry[], threshold: number): PredictedTag[] {
-  // The exported model normally ends in a sigmoid; apply one ourselves if outputs are raw logits.
-  const probs = scores.some((v) => v < -0.0001 || v > 1.0001) ? scores.map((v) => 1 / (1 + Math.exp(-v))) : scores;
+export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresholds: TagThresholds): PredictedTag[] {
+  const probs = toProbabilities(scores);
 
   const out: PredictedTag[] = [];
   let bestRating: PredictedTag | null = null;
@@ -229,7 +166,7 @@ export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresh
       if (!bestRating || confidence > bestRating.confidence) {
         bestRating = { name: label.name, category: 'rating', confidence };
       }
-    } else if (confidence >= threshold) {
+    } else if (confidence >= (label.category === 'character' ? thresholds.character : thresholds.general)) {
       out.push({ name: label.name, category: label.category, confidence });
     }
   }
@@ -238,10 +175,19 @@ export function selectTags(scores: Float32Array, allLabels: LabelEntry[], thresh
   return out;
 }
 
+/** One score per label for a whole video: each label at its highest score in any of its frames. */
+export function combineFrameScores(frames: Float32Array[]): Float32Array {
+  const out = new Float32Array(frames[0]?.length ?? 0);
+  for (const frame of frames) {
+    const probs = toProbabilities(frame);
+    for (let i = 0; i < out.length && i < probs.length; i++) if (probs[i] > out[i]) out[i] = probs[i];
+  }
+  return out;
+}
+
+/** The id a link to `name` is written under: the tag itself, or the tag it was merged into. */
 export function upsertTag(name: string, category: TagCategory): number {
-  const existing = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
-  if (existing) return existing.id;
-  return db.insert(schema.tags).values({ name, category }).returning().get().id;
+  return resolveSibling(ensureTag(name, category));
 }
 
 let tagLinksChanges = 0;
@@ -271,10 +217,62 @@ export function refreshUsageCounts(tagIds: number[]): void {
   bumpTasteVersion();
 }
 
+const unlinkReturningSource = sqlite.prepare(
+  'DELETE FROM media_tags WHERE media_id = ? AND tag_id = ? RETURNING source',
+);
+const insertVeto = sqlite.prepare(
+  'INSERT INTO media_tag_vetoes (media_id, tag_id, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING',
+);
+const deleteVeto = sqlite.prepare('DELETE FROM media_tag_vetoes WHERE media_id = ? AND tag_id = ?');
+const vetoedIds = sqlite.prepare('SELECT tag_id FROM media_tag_vetoes WHERE media_id = ?');
+const clearKeptScores = sqlite.prepare(
+  `UPDATE media_tags SET confidence = NULL WHERE media_id = ? AND source IN ('meta', 'character') AND confidence IS NOT NULL`,
+);
+
+/**
+ * Take a tag off one item by hand. Removing a tag something else put there (the AI, a sidecar, an
+ * implication) records a veto so that source leaves it off from now on.
+ */
+export function unlinkTag(mediaId: number, tagId: number): void {
+  const removed = unlinkReturningSource.get(mediaId, tagId) as { source: string } | null;
+  if (removed && (removed.source !== 'user' || impliedOn(mediaId, tagId))) insertVeto.run(mediaId, tagId, Date.now());
+}
+
+/** Adding a tag by hand overrides any earlier rejection of it. */
+export function clearVeto(mediaId: number, tagId: number): void {
+  deleteVeto.run(mediaId, tagId);
+}
+
+/** How many frames a video is tagged from. Measured in docs/video-tagging.md. */
+export const VIDEO_TAG_FRAMES = 5;
+
+/**
+ * A video's tags from frames sampled across it, or null when none could be extracted. The model is
+ * the expensive part (seconds per frame on a small CPU), so it runs at most VIDEO_TAG_FRAMES times
+ * whatever the video's length, and only once per distinct-looking frame.
+ */
+async function predictVideoTags(sourcePath: string, durationSeconds: number | null): Promise<PredictedTag[] | null> {
+  const times = frameTimes(durationSeconds, VIDEO_TAG_FRAMES);
+  if (!times.length || !fs.existsSync(sourcePath)) return null;
+  const scores = await withVideoFrames(sourcePath, times, async (frames) => {
+    const signatures = await Promise.all(frames.map((frame) => frameSignature(frame)));
+    const out: Float32Array[] = [];
+    for (const i of distinctFrames(signatures)) out.push(await predictScores(frames[i]));
+    return out;
+  });
+  if (!scores.length) return null;
+  return selectTags(combineFrameScores(scores), loadLabels(), confidenceThresholds());
+}
+
 export async function tagOneMedia(mediaId: number): Promise<number> {
   const row = db.select().from(schema.media).where(eq(schema.media.id, mediaId)).get();
   if (!row) throw new Error(`media ${mediaId} not found`);
-  // Videos are tagged from their extracted thumbnail frame.
+  if (row.type === 'video') {
+    if (!modelReady()) throw new Error('Tagger model not downloaded');
+    const predicted = await predictVideoTags(row.path, row.durationSeconds ?? null);
+    if (predicted) return applyPredictedTags(mediaId, predicted);
+  }
+  // Images are tagged from the original; a video ffmpeg can't sample falls back to its thumbnail frame.
   const imagePath = row.type === 'video' ? thumbPathFor(row.id) : row.path;
   if (!fs.existsSync(imagePath)) throw new Error(`no taggable image for media ${mediaId}`);
   let predicted: PredictedTag[];
@@ -290,7 +288,13 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
       throw err;
     }
   }
+  return applyPredictedTags(mediaId, predicted);
+}
 
+/** Replace an item's AI tags with `predicted`, minus any the user vetoed on it. */
+export function applyPredictedTags(mediaId: number, predicted: PredictedTag[]): number {
+  const vetoed = new Set((vetoedIds.all(mediaId) as { tag_id: number }[]).map((r) => r.tag_id));
+  let kept = 0;
   // One transaction for the swap: the old AI tags and the new ones commit together, so a reader
   // never sees the item momentarily untagged, and the ~30 inserts (each rewriting the item's
   // search-index row via trigger) share one commit instead of paying one each.
@@ -305,19 +309,22 @@ export async function tagOneMedia(mediaId: number): Promise<number> {
     db.delete(schema.mediaTags)
       .where(and(eq(schema.mediaTags.mediaId, mediaId), eq(schema.mediaTags.source, 'ai')))
       .run();
+    // The AI's scores kept on sidecar and character links are re-written below for what it still predicts.
+    clearKeptScores.run(mediaId);
 
     for (const tag of predicted) {
+      // Checked by id after the sibling lookup: a veto on a merged tag covers its aliases too.
       const tagId = upsertTag(tag.name, tag.category);
+      if (vetoed.has(tagId)) continue;
+      kept++;
       touched.add(tagId);
-      db.insert(schema.mediaTags)
-        .values({ mediaId, tagId, confidence: tag.confidence, source: 'ai' })
-        .onConflictDoNothing()
-        .run();
+      linkTag(mediaId, tagId, 'ai', tag.confidence);
     }
+    for (const tagId of recomputeImplied([mediaId])) touched.add(tagId);
     db.update(schema.media).set({ taggedAt: Date.now() }).where(eq(schema.media.id, mediaId)).run();
     refreshUsageCounts([...touched]);
   })();
-  return predicted.length;
+  return kept;
 }
 
 export function enqueueTagJob(mediaIds: number[], label: string, libraryId: number | null = null) {
@@ -388,7 +395,7 @@ export function enqueueModelDownload() {
         }
       });
       labels = null;
-      releaseSession();
+      model.release();
       return 'Model downloaded and ready.';
     } finally {
       downloading = false;

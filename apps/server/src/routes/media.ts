@@ -3,20 +3,29 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { z } from 'zod';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { eq, sql, inArray } from 'drizzle-orm';
 import type { SQLQueryBindings } from 'bun:sqlite';
 import { db, sqlite, schema } from '../db';
 import { wrap, intParam, encodeCursor, decodeCursor } from '../lib/http';
 import { thumbPathFor, generateThumbnail, enqueueThumbnailRegenerate } from '../services/thumbnailer';
-import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts } from '../services/tagger';
+import { enqueueTagJob, modelReady, upsertTag, refreshUsageCounts, unlinkTag, clearVeto } from '../services/tagger';
 import { playablePathFor } from '../services/transcoder';
-import { removeMediaRows } from '../services/mediaRemoval';
+import {
+  SPRITE_FRAMES,
+  enqueueSpriteCatchUp,
+  generateSprite,
+  hasCurrentSprite,
+  spritePathFor,
+} from '../services/videoSprite';
+import { trashMedia } from '../services/trash';
+import { canonicalTagNames, linkTag, recomputeImplied, resolveSibling, siblingTargetName } from '../services/tagRelations';
 import { rowToMedia, countMedia, MEDIA_SELECT, type MediaSqlRow } from '../lib/rowToMedia';
 import { mediaRowsByIds, chunkIds, type MediaRow } from '../lib/mediaByIds';
 import { bumpTasteVersion } from '../lib/tasteVersion';
 import { thumbnailCacheEnabled } from '../lib/settings';
 import { hammingDistance } from '../services/perceptualHash';
 import { phashBands } from '../lib/phashBands';
+import { describeSearch, sortScores, topAfter, type Scored } from '../services/semantic';
 import {
   MEDIA_TYPES,
   TAG_CATEGORIES,
@@ -39,6 +48,8 @@ const filterSchema = z.object({
   tags: z.string().optional(),
   liked: z.coerce.number().int().optional(),
   q: z.union([z.string(), z.array(z.string())]).optional(),
+  /** Search by description: ranks by image-embedding similarity instead of `sort`. */
+  describe: z.string().max(500).optional(),
   sort: z.enum(['recent', 'name', 'size', 'random']).default('recent'),
   dir: z.enum(['asc', 'desc']).optional(),
   seed: z.coerce.number().int().default(1),
@@ -87,8 +98,14 @@ function pathIndexed(filePath: string): boolean {
  * of full scan to under 10ms — and it's what search-as-you-type users expect. Terms that tokenize
  * to nothing (pure punctuation) match nothing rather than erroring.
  */
-function ftsMatchExpr(terms: string[]): string {
-  return terms.map((term) => `"${term.replace(/"/g, '""')}"*`).join(' AND ');
+function ftsMatchExpr(terms: string[], aliasTarget: (name: string) => string | null): string {
+  const quote = (term: string) => `"${term.replace(/"/g, '""')}"`;
+  return terms
+    .map((term) => {
+      const target = aliasTarget(normalizeTagName(term));
+      return target ? `(${quote(term)}* OR ${quote(target)})` : `${quote(term)}*`;
+    })
+    .join(' AND ');
 }
 
 /**
@@ -98,7 +115,8 @@ function ftsMatchExpr(terms: string[]): string {
 function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: SQLQueryBindings[] } {
   // Deduped because the HAVING below counts distinct tags against this length: "a,a" or
   // "Blue Hair,blue_hair" would otherwise require two different tags and match nothing.
-  const tagNames = [...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))];
+  // A merged tag's old name finds what it was merged into.
+  const tagNames = canonicalTagNames([...new Set((query.tags ?? '').split(',').map(normalizeTagName).filter(Boolean))]);
 
   const conds: string[] = [];
   const params: SQLQueryBindings[] = [];
@@ -124,7 +142,7 @@ function buildMediaFilter(query: MediaFilterQuery): { conds: string[]; params: S
     .filter(Boolean);
   if (qTerms.length) {
     conds.push('m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH ?)');
-    params.push(ftsMatchExpr(qTerms));
+    params.push(ftsMatchExpr(qTerms, siblingTargetName));
   }
   if (tagNames.length) {
     const placeholders = tagNames.map(() => '?').join(',');
@@ -152,10 +170,40 @@ function sortDir(query: MediaFilterQuery): 'asc' | 'desc' {
   return query.dir ?? (query.sort === 'name' ? 'asc' : 'desc');
 }
 
+/** The [score, id] a describe page's cursor holds: the last item it showed. */
+function describeCursor(cursor: string | undefined): Scored | undefined {
+  if (!cursor) return undefined;
+  const [score, id] = decodeCursor(cursor);
+  if (typeof score !== 'number' || typeof id !== 'number') {
+    throw Object.assign(new Error('Invalid cursor'), { status: 400 });
+  }
+  return { score, id };
+}
+
 mediaRouter.get(
   '/api/media',
   wrap(async (req, res) => {
     const query = listQuerySchema.parse(req.query);
+    const describe = query.describe?.trim();
+    if (describe) {
+      const after = describeCursor(query.cursor);
+      const { info, ranking } = await describeSearch(describe, buildMediaFilter(query), !after);
+      const page = topAfter(ranking, query.limit, after);
+      const rows = page.length
+        ? (sqlite
+            .query(`${MEDIA_SELECT} WHERE m.id IN (${page.map(() => '?').join(',')})`)
+            .all(...page.map((r) => r.id)) as MediaSqlRow[])
+        : [];
+      const byId = new Map(rows.map((r) => [r.id, rowToMedia(r)]));
+      const last = page[page.length - 1];
+      const body: MediaListResponse = {
+        items: page.map((r) => byId.get(r.id)).filter((m) => m !== undefined),
+        nextCursor: page.length === query.limit ? encodeCursor([last.score, last.id]) : null,
+        total: after ? null : ranking.ids.length,
+        semantic: info,
+      };
+      return res.json(body);
+    }
     const dir = sortDir(query);
     const { conds, params } = buildMediaFilter(query);
     const keyExpr = sortKeyExpr(query);
@@ -209,6 +257,12 @@ mediaRouter.get(
   wrap(async (req, res) => {
     const query = filterSchema.parse(req.query);
     const { conds, params } = buildMediaFilter(query);
+    const describe = query.describe?.trim();
+    if (describe) {
+      const { ranking } = await describeSearch(describe, { conds, params });
+      const ids = sortScores(ranking).map((r) => r.id);
+      return res.json({ ids, total: ids.length } satisfies MediaIdsResponse);
+    }
     const keyExpr = sortKeyExpr(query);
     const dir = sortDir(query);
     const rows = sqlite
@@ -274,13 +328,8 @@ mediaRouter.post(
   wrap(async (req, res) => {
     const { ids } = deleteBatchSchema.parse(req.body);
     const rows = mediaRowsByIds(ids);
-    const found = ids.filter((id) => rows.has(id));
-
-    // Rows go first and atomically: a half-applied delete would leave media_tags pointing at
-    // rows that no longer exist. Files are unlinked only once that commit succeeded.
-    removeMediaRows(found);
-    for (const id of found) fs.unlink(rows.get(id)!.path, () => {});
-    res.json({ ok: true, deleted: found.length });
+    const { removed, failed } = await trashMedia(ids.filter((id) => rows.has(id)).map((id) => rows.get(id)!));
+    res.json({ ok: true, deleted: removed.length, failed });
   }),
 );
 
@@ -312,7 +361,7 @@ mediaRouter.post(
     const placeholders = ids.map(() => '?').join(',');
     const rows = sqlite
       .query(
-        `SELECT t.name, t.category, COUNT(*) AS count
+        `SELECT t.name, t.category, t.display_name AS displayName, COUNT(*) AS count
          FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
          WHERE mt.media_id IN (${placeholders})
          GROUP BY t.id ORDER BY count DESC, t.name`,
@@ -343,30 +392,31 @@ mediaRouter.post(
     const addTagIds = addNames.map((name) => upsertTag(name, body.category));
     const removeTagIds = removeNames
       .map((name) => db.select().from(schema.tags).where(eq(schema.tags.name, name)).get()?.id)
-      .filter((id): id is number => id !== undefined);
+      .filter((id): id is number => id !== undefined)
+      .map(resolveSibling);
 
     // Resolve every media row once too, rather than re-querying inside the loop.
     const rows = mediaRowsByIds(body.ids);
     const failed: BulkFailure[] = [];
     let updated = 0;
-    // Prepared once: building a Drizzle query per link added ~280ms to a 5000-item batch.
-    const link = sqlite.prepare(
-      `INSERT INTO media_tags (media_id, tag_id, confidence, source) VALUES (?, ?, NULL, 'user') ON CONFLICT DO NOTHING`,
-    );
-    const unlink = sqlite.prepare('DELETE FROM media_tags WHERE media_id = ? AND tag_id = ?');
+    const touched = new Set([...addTagIds, ...removeTagIds]);
     const apply = sqlite.transaction(() => {
       for (const id of body.ids) {
         if (!rows.has(id)) {
           failed.push({ id, error: 'Not found' });
           continue;
         }
-        for (const tagId of addTagIds) link.run(id, tagId);
-        for (const tagId of removeTagIds) unlink.run(id, tagId);
+        for (const tagId of addTagIds) {
+          linkTag(id, tagId, 'user');
+          clearVeto(id, tagId);
+        }
+        for (const tagId of removeTagIds) unlinkTag(id, tagId);
         updated++;
       }
+      for (const tagId of recomputeImplied(body.ids.filter((id) => rows.has(id)))) touched.add(tagId);
     });
     apply();
-    refreshUsageCounts([...addTagIds, ...removeTagIds]);
+    refreshUsageCounts([...touched]);
 
     const result: BulkResult = { ok: true, updated, failed };
     res.json(result);
@@ -517,10 +567,11 @@ function getDetail(id: number): MediaDetail | null {
   if (!row) return null;
   const tagRows = sqlite
     .query(
-      `SELECT t.name, t.category, mt.confidence, mt.source
+      `SELECT t.name, t.category, t.display_name AS displayName, mt.confidence, mt.source
        FROM media_tags mt JOIN tags t ON t.id = mt.tag_id
        WHERE mt.media_id = ?
-       ORDER BY CASE t.category WHEN 'rating' THEN 0 WHEN 'character' THEN 1 ELSE 2 END, mt.confidence DESC, t.name`,
+       ORDER BY CASE t.category WHEN 'artist' THEN 0 WHEN 'copyright' THEN 1 WHEN 'rating' THEN 2
+                WHEN 'character' THEN 3 ELSE 4 END, mt.confidence DESC, t.name`,
     )
     .all(id) as MediaDetail['tags'];
   const boardRows = sqlite
@@ -530,7 +581,7 @@ function getDetail(id: number): MediaDetail | null {
        WHERE bm.media_id = ? ORDER BY b.name`,
     )
     .all(id) as MediaDetail['boards'];
-  return { ...rowToMedia(row), tags: tagRows, boards: boardRows };
+  return { ...rowToMedia(row), tags: tagRows, boards: boardRows, sourceUrl: row.source_url ?? null };
 }
 
 mediaRouter.get(
@@ -577,8 +628,8 @@ mediaRouter.delete(
   '/api/media/:id',
   wrap(async (req, res) => {
     const row = mediaOr404(req.params.id);
-    removeMediaRows([row.id]);
-    fs.unlink(row.path, () => {});
+    const { failed } = await trashMedia([row]);
+    if (failed.length) return res.status(500).json({ error: failed[0].error });
     res.json({ ok: true });
   }),
 );
@@ -616,8 +667,33 @@ mediaRouter.get(
       if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
       await generateThumbnail(row.path, id, row.type, row.durationSeconds);
       db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, id)).run();
+      if (row.type === 'video' && row.spriteFrames === null) enqueueSpriteCatchUp(row.libraryId);
     }
     res.sendFile(thumb, { cacheControl: true, maxAge: '7d', immutable: false });
+  }),
+);
+
+mediaRouter.get(
+  '/api/media/:id/sprite',
+  wrap(async (req, res) => {
+    const row = mediaOr404(req.params.id);
+    // A sprite is part of the thumbnail cache: with the cache off, cards keep their still.
+    if (row.type !== 'video' || !thumbnailCacheEnabled()) return res.status(404).json({ error: 'No preview' });
+    const sprite = spritePathFor(row.id);
+    const sourceThere = fs.existsSync(row.path);
+    let frames = row.spriteFrames;
+    // An offline source keeps serving the sprite it already has, the way its thumbnail does.
+    if (sourceThere ? !hasCurrentSprite(row.id, row.path) : !fs.existsSync(sprite)) {
+      if (!sourceThere) return res.status(404).json({ error: 'Source missing' });
+      if (!(await generateSprite(row))) return res.status(404).json({ error: 'No preview' });
+      frames = SPRITE_FRAMES;
+    }
+    frames ||= SPRITE_FRAMES;
+    res.set('X-Sprite-Frames', String(frames));
+    res.set('X-Sprite-Interval', ((row.durationSeconds ?? 0) / frames).toFixed(3));
+    // Cards ask with ?v=<sprite_at>, which changes whenever the sprite is rewritten.
+    res.set('Cache-Control', req.query.v ? 'private, max-age=31536000, immutable' : 'private, max-age=3600');
+    res.sendFile(sprite, { cacheControl: false });
   }),
 );
 
@@ -628,6 +704,7 @@ mediaRouter.post(
     if (!fs.existsSync(row.path)) return res.status(404).json({ error: 'Source missing' });
     const thumb = await generateThumbnail(row.path, row.id, row.type, row.durationSeconds);
     db.update(schema.media).set({ thumbnailPath: thumb }).where(eq(schema.media.id, row.id)).run();
+    if (row.type === 'video' && thumbnailCacheEnabled()) void generateSprite(row);
     res.json({ ok: true });
   }),
 );
@@ -650,21 +727,19 @@ mediaRouter.patch(
       const name = normalizeTagName(raw);
       if (!name) continue;
       const tagId = upsertTag(name, body.category);
-      db.insert(schema.mediaTags)
-        .values({ mediaId: id, tagId, confidence: null, source: 'user' })
-        .onConflictDoNothing()
-        .run();
+      linkTag(id, tagId, 'user');
+      clearVeto(id, tagId);
       touched.push(tagId);
     }
     for (const raw of body.remove) {
       const name = normalizeTagName(raw);
       const tag = db.select().from(schema.tags).where(eq(schema.tags.name, name)).get();
       if (!tag) continue;
-      db.delete(schema.mediaTags)
-        .where(and(eq(schema.mediaTags.mediaId, id), eq(schema.mediaTags.tagId, tag.id)))
-        .run();
-      touched.push(tag.id);
+      const tagId = resolveSibling(tag.id);
+      unlinkTag(id, tagId);
+      touched.push(tagId);
     }
+    touched.push(...recomputeImplied([id]));
     if (body.setCategory) {
       for (const [rawName, category] of Object.entries(body.setCategory)) {
         const name = normalizeTagName(rawName);
@@ -748,9 +823,18 @@ mediaRouter.post(
   }),
 );
 
+/**
+ * An open shorter than this is a skip, not a view: counting it put every item you flicked past
+ * into the taste profile and sank it as "seen".
+ */
+export const MIN_VIEW_SECONDS = 2;
+
 const progressSchema = z.object({
   progress: z.number().min(0).max(1).optional(),
   view: z.boolean().optional(),
+  // How long the item had been open when the view was reported. Clients that predate it send a
+  // bare view on open, which still counts.
+  openSeconds: z.number().min(0).optional(),
   watchedDelta: z.number().min(0).max(60).optional(),
   // Dwell is flushed on close/tab-hide, so a single delta can be much longer than a video tick.
   dwellDelta: z.number().min(0).max(3600).optional(),
@@ -761,9 +845,11 @@ mediaRouter.patch(
   wrap(async (req, res) => {
     const id = intParam(req.params.id);
     const body = progressSchema.parse(req.body);
+    const view = body.view && (body.openSeconds === undefined || body.openSeconds >= MIN_VIEW_SECONDS);
+    if (!view && body.progress === undefined && !body.watchedDelta && !body.dwellDelta) return res.json({ ok: true });
     const updates: Record<string, unknown> = { lastViewedAt: Date.now() };
     if (body.progress !== undefined) updates.viewProgress = body.progress;
-    if (body.view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
+    if (view) updates.viewCount = sql`${schema.media.viewCount} + 1`;
     if (body.watchedDelta) updates.watchedSeconds = sql`${schema.media.watchedSeconds} + ${body.watchedDelta}`;
     if (body.dwellDelta) updates.dwellSeconds = sql`${schema.media.dwellSeconds} + ${body.dwellDelta}`;
     db.update(schema.media).set(updates).where(eq(schema.media.id, id)).run();

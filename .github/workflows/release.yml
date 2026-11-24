@@ -1,0 +1,126 @@
+name: Release
+
+# Run by hand from the Actions tab: pick the branch, type a version like 1.8.0, and it does the rest.
+# The one thing it can't write is the release notes, so commit apps/web/src/releases/<version>.md first:
+# it becomes the GitHub release body and the in-app What's new.
+#
+# 1. prepare: sets the root package.json to the version (committing that if it changed), runs the CI
+#    checks, then pushes the v<version> tag.
+# 2. build: builds the Windows installer and Linux AppImage from that tag (desktop.yml).
+# 3. publish: creates the release as a draft, uploads the installers and the latest*.yml and blockmaps
+#    the desktop app reads to update, then publishes it. Publishing last means the app never sees a
+#    release without its update files.
+#
+# If build or publish fails, use "Re-run failed jobs": the tag is already pushed, so a full re-run
+# stops at prepare. To start over, delete the tag (and the draft release, if one was made).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, like 1.8.0. apps/web/src/releases/<version>.md must exist.
+        required: true
+        type: string
+      prerelease:
+        description: Mark as a pre-release. Installed desktop apps don't update to pre-releases.
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: v${{ inputs.version }}
+    env:
+      VERSION: ${{ inputs.version }}
+      BRANCH: ${{ github.ref_name }}
+    steps:
+      - name: Release from a branch
+        if: github.ref_type != 'branch'
+        run: |
+          echo "::error::Run this from a branch, not the tag '$BRANCH'"
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        run: |
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must look like 1.8.0, got '$VERSION'"
+            exit 1
+          fi
+          if [ ! -f "apps/web/src/releases/$VERSION.md" ]; then
+            echo "::error::Commit apps/web/src/releases/$VERSION.md to $BRANCH first. It is the release notes."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists"
+            exit 1
+          fi
+
+      - name: Set package.json to the version
+        run: npm pkg set version="$VERSION"
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # Same checks as ci.yml. The test run includes version.test.ts, which fails unless this version
+      # is also the newest release notes.
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun run test
+      - run: bun run build
+
+      - name: Commit the version and push the tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if ! git diff --quiet -- package.json; then
+            git commit -m "Release $VERSION" -- package.json
+            git push origin "HEAD:$BRANCH"
+          fi
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/desktop.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          sparse-checkout: apps/web/src/releases
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create the release
+        run: |
+          gh release create "$TAG" --draft --verify-tag \
+            --title "Sakuya $VERSION" \
+            --notes-file "apps/web/src/releases/$VERSION.md" \
+            ${{ inputs.prerelease && '--prerelease' || '' }}
+          gh release upload "$TAG" dist/Sakuya-* dist/latest*.yml dist/*.blockmap
+          gh release edit "$TAG" --draft=false

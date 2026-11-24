@@ -43,6 +43,9 @@ export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 const MODELS_DIR = path.join(DATA_DIR, 'models');
 export const MODEL_PATH = path.join(MODELS_DIR, 'model.onnx');
 export const MODEL_TAGS_PATH = path.join(MODELS_DIR, 'selected_tags.csv');
+export const CHARACTER_MODELS_DIR = path.join(MODELS_DIR, 'characters');
+export const CHARACTER_CROPS_DIR = path.join(DATA_DIR, 'character-crops');
+export const CLIP_MODELS_DIR = path.join(MODELS_DIR, 'clip');
 export const DOWNLOADER_DIR = path.join(DATA_DIR, 'downloader');
 export const DOWNLOADER_BIN_DIR = path.join(DOWNLOADER_DIR, 'bin');
 export const DOWNLOADER_COOKIES_DIR = path.join(DOWNLOADER_DIR, 'cookies');
@@ -90,6 +93,37 @@ export function modelRepoBase(id: string): string {
   return `https://huggingface.co/${def.repo}/resolve/main`;
 }
 
+const PERSON_DETECT = 'https://huggingface.co/deepghs/anime_person_detection/resolve/main/person_detect_v1.3_s';
+const CCIP = 'https://huggingface.co/deepghs/ccip_onnx/resolve/main/ccip-caformer-24-randaug-pruned';
+
+/**
+ * Character detection: a YOLOv8 anime person detector (MIT) finds each character, and CCIP
+ * (OpenRAIL) embeds the crop so the same character can be recognised across images. Downloaded
+ * on request into CHARACTER_MODELS_DIR, never bundled.
+ */
+export const CHARACTER_MODEL_FILES = [
+  { file: 'detector.onnx', url: `${PERSON_DETECT}/model.onnx`, approxBytes: 44_583_231 },
+  { file: 'detector_threshold.json', url: `${PERSON_DETECT}/threshold.json`, approxBytes: 48 },
+  { file: 'ccip_feat.onnx', url: `${CCIP}/model_feat.onnx`, approxBytes: 150_248_245 },
+  { file: 'ccip_metrics.onnx', url: `${CCIP}/model_metrics.onnx`, approxBytes: 1_649 },
+  { file: 'ccip_cluster.json', url: `${CCIP}/cluster.json`, approxBytes: 370 },
+] as const;
+
+const CLIP = 'https://huggingface.co/Xenova/clip-vit-base-patch32/resolve/main';
+
+/**
+ * Search by description: OpenAI CLIP ViT-B/32 (MIT), the int8 ONNX export by Xenova (Transformers.js).
+ * The smallest well-known CLIP with separate image and text encoders; downloaded on request into
+ * CLIP_MODELS_DIR, never bundled.
+ */
+export const CLIP_MODEL_ID = 'clip-vit-b32-q8';
+export const CLIP_MODEL_FILES = [
+  { file: 'vision.onnx', url: `${CLIP}/onnx/vision_model_quantized.onnx`, approxBytes: 89_117_001 },
+  { file: 'text.onnx', url: `${CLIP}/onnx/text_model_quantized.onnx`, approxBytes: 64_504_507 },
+  { file: 'vocab.json', url: `${CLIP}/vocab.json`, approxBytes: 862_328 },
+  { file: 'merges.txt', url: `${CLIP}/merges.txt`, approxBytes: 524_619 },
+] as const;
+
 export const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.bmp', '.tiff']);
 export const VIDEO_EXTS = new Set(['.mp4', '.webm', '.mkv', '.mov', '.avi', '.m4v', '.ts', '.wmv']);
 
@@ -97,6 +131,6 @@ if (!DATA_DIR_PINNED && DATA_DIR !== LOCAL_DATA_DIR && fs.existsSync(path.join(L
   console.warn(`[sakuya] using ${DATA_DIR} — the database still sitting in ${LOCAL_DATA_DIR} is ignored`);
 }
 
-for (const dir of [DATA_DIR, THUMBS_DIR, TRANSCODES_DIR, UPLOADS_DIR, MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
+for (const dir of [DATA_DIR, THUMBS_DIR, TRANSCODES_DIR, UPLOADS_DIR, MODELS_DIR, CHARACTER_MODELS_DIR, CHARACTER_CROPS_DIR, CLIP_MODELS_DIR, DOWNLOADER_BIN_DIR, DOWNLOADER_COOKIES_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }

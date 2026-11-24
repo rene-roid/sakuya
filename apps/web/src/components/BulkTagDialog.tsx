@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
-import { normalizeTagName, type Media, type TagCategory } from '@sakuya/shared';
+import { normalizeTagName, tagLabelText, type Media, type TagCategory } from '@sakuya/shared';
 import { api } from '../lib/api';
-import { CATEGORIES } from '../lib/format';
+import { CATEGORIES, categoryLabel } from '../lib/format';
 import { TagSearchInput } from './TagSearchInput';
+import { TagName } from './TagName';
 import { BulkConfirmDialog, type BulkChangeRow } from './BulkConfirmDialog';
 import { Modal } from './Modal';
 
@@ -41,14 +42,16 @@ export function BulkTagDialog({
   });
 
   const countFor = (name: string) => present?.find((t) => t.name === name)?.count ?? 0;
+  const removeLabel = (name: string) => tagLabelText(present?.find((t) => t.name === name) ?? { name });
+  const addLabels = add.map((name) => tagLabelText({ name, category })).join(', ');
   const hasChanges = add.length > 0 || remove.length > 0;
 
   if (confirming) {
     const detail = (
       <span>
-        {add.length > 0 && <span className="text-emerald-400">+{add.join(', ')}</span>}
+        {add.length > 0 && <span className="text-emerald-400">+{addLabels}</span>}
         {add.length > 0 && remove.length > 0 && ' · '}
-        {remove.length > 0 && <span className="text-rose-400">−{remove.join(', ')}</span>}
+        {remove.length > 0 && <span className="text-rose-400">−{remove.map(removeLabel).join(', ')}</span>}
       </span>
     );
     const rows: BulkChangeRow[] = selected.map((item) => ({ id: item.id, label: item.filename, detail }));
@@ -59,13 +62,13 @@ export function BulkTagDialog({
           <span>
             {add.length > 0 && (
               <>
-                Adding <strong className="text-zinc-200">{add.join(', ')}</strong> as {category} tag
+                Adding <strong className="text-zinc-200">{addLabels}</strong> as {category} tag
                 {add.length === 1 ? '' : 's'} to all {ids.length}.{' '}
               </>
             )}
             {remove.map((name) => (
               <span key={name}>
-                Removing <strong className="text-zinc-200">{name}</strong> from {countFor(name)} of {ids.length}.{' '}
+                Removing <strong className="text-zinc-200">{removeLabel(name)}</strong> from {countFor(name)} of {ids.length}.{' '}
               </span>
             ))}
           </span>
@@ -90,7 +93,7 @@ export function BulkTagDialog({
       </div>
 
       <div className="mb-1.5 text-xs font-bold tracking-[0.4px] text-zinc-500">ADD</div>
-      <div className="mb-1.5 flex gap-1">
+      <div className="mb-1.5 flex flex-wrap gap-1">
         {CATEGORIES.map((c) => (
           <div
             key={c}
@@ -99,7 +102,7 @@ export function BulkTagDialog({
               category === c ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
             }`}
           >
-            {c}
+            {categoryLabel(c)}
           </div>
         ))}
       </div>
@@ -126,6 +129,7 @@ export function BulkTagDialog({
             return (
               <div
                 key={tag.name}
+                title={tag.name}
                 onClick={() => setRemove((prev) => (staged ? prev.filter((t) => t !== tag.name) : [...prev, tag.name]))}
                 className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-semibold ${
                   staged
@@ -133,7 +137,7 @@ export function BulkTagDialog({
                     : 'border-line-strong bg-zinc-800 text-zinc-300 hover:border-line-hover'
                 }`}
               >
-                <span>{tag.name}</span>
+                <TagName tag={tag} />
                 <span className={staged ? 'text-rose-400/70' : 'text-zinc-500'}>{tag.count}</span>
                 {staged && <X size={11} />}
               </div>

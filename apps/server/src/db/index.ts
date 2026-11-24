@@ -54,6 +54,8 @@ CREATE TABLE IF NOT EXISTS media (
   indexed_at INTEGER,
   tagged_at INTEGER,
   transcoded_at INTEGER,
+  sprite_frames INTEGER,
+  sprite_at INTEGER,
   last_viewed_at INTEGER,
   view_progress REAL NOT NULL DEFAULT 0,
   view_count INTEGER NOT NULL DEFAULT 0,
@@ -69,7 +71,9 @@ CREATE TABLE IF NOT EXISTS media (
   phash_b4 INTEGER,
   phash_b5 INTEGER,
   phash_b6 INTEGER,
-  phash_b7 INTEGER
+  phash_b7 INTEGER,
+  source_url TEXT,
+  sidecar_mtime INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS media_path_idx ON media(path);
 -- (library_id, created_at) rather than library_id alone: browsing a library sorts by created_at,
@@ -87,7 +91,8 @@ CREATE TABLE IF NOT EXISTS tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'general',
-  usage_count INTEGER NOT NULL DEFAULT 0
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  display_name TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS tags_name_idx ON tags(name);
 CREATE TABLE IF NOT EXISTS media_tags (
@@ -98,6 +103,30 @@ CREATE TABLE IF NOT EXISTS media_tags (
   PRIMARY KEY (media_id, tag_id)
 );
 CREATE INDEX IF NOT EXISTS media_tags_tag_idx ON media_tags(tag_id);
+-- AI tags the user removed from one item, so a retag doesn't put them back.
+CREATE TABLE IF NOT EXISTS media_tag_vetoes (
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, tag_id)
+);
+CREATE INDEX IF NOT EXISTS media_tag_vetoes_tag_idx ON media_tag_vetoes(tag_id);
+-- Booru-style siblings: from_tag_id is an alias of to_tag_id. Every write of the alias lands on
+-- the target, so to_tag_id is never itself an alias.
+CREATE TABLE IF NOT EXISTS tag_siblings (
+  from_tag_id INTEGER PRIMARY KEY REFERENCES tags(id) ON DELETE CASCADE,
+  to_tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS tag_siblings_to_idx ON tag_siblings(to_tag_id);
+-- tag_id implies implies_tag_id: an item carrying the first gets the second with source 'implied'.
+CREATE TABLE IF NOT EXISTS tag_implications (
+  tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  implies_tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (tag_id, implies_tag_id)
+);
+CREATE INDEX IF NOT EXISTS tag_implications_implies_idx ON tag_implications(implies_tag_id);
 CREATE TABLE IF NOT EXISTS boards (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -180,6 +209,71 @@ CREATE TABLE IF NOT EXISTS saved_searches (
   created_at INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX IF NOT EXISTS saved_searches_name_idx ON saved_searches(name);
+-- Deleted media waiting out the retention window. trashed_path is relative to <dataDir>/trash so a
+-- data-dir move keeps it valid; media_json is the media row with its tags, vetoes and boards.
+CREATE TABLE IF NOT EXISTS trash (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL,
+  library_id INTEGER NOT NULL,
+  filename TEXT NOT NULL,
+  type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL DEFAULT 0,
+  original_path TEXT NOT NULL,
+  trashed_path TEXT NOT NULL,
+  trashed_at INTEGER NOT NULL,
+  media_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS trash_trashed_at_idx ON trash(trashed_at);
+CREATE TABLE IF NOT EXISTS characters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+  cover_detection_id INTEGER REFERENCES character_detections(id) ON DELETE SET NULL,
+  hidden INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  dismissed_suggestion TEXT
+);
+CREATE INDEX IF NOT EXISTS characters_tag_idx ON characters(tag_id);
+CREATE TABLE IF NOT EXISTS character_detections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  x REAL NOT NULL,
+  y REAL NOT NULL,
+  w REAL NOT NULL,
+  h REAL NOT NULL,
+  score REAL NOT NULL,
+  embedding BLOB NOT NULL,
+  character_id INTEGER REFERENCES characters(id) ON DELETE SET NULL,
+  assignment TEXT NOT NULL DEFAULT 'auto',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS character_detections_media_idx ON character_detections(media_id);
+CREATE INDEX IF NOT EXISTS character_detections_character_idx ON character_detections(character_id);
+CREATE TABLE IF NOT EXISTS character_scans (
+  media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  scanned_at INTEGER NOT NULL,
+  detections INTEGER NOT NULL
+);
+-- Search by description: one CLIP image embedding per media item, 512 float16 values. The model column
+-- names the encoder, so switching models re-embeds instead of mixing two spaces.
+CREATE TABLE IF NOT EXISTS media_embeddings (
+  media_id INTEGER PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+  model TEXT NOT NULL,
+  embedding BLOB NOT NULL,
+  created_at INTEGER NOT NULL
+);
+-- Discover steering. Keyed by tag name rather than id: a cleanup prunes unused tag rows, and a
+-- mute has to survive the tag coming back on the next tag run.
+CREATE TABLE IF NOT EXISTS tag_preferences (
+  tag TEXT PRIMARY KEY,
+  mode TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS media_feedback (
+  media_id INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  at INTEGER NOT NULL,
+  PRIMARY KEY (media_id, kind)
+);
 
 -- Free-text search index over filenames/paths and tag names. Replaces a pair of unindexable
 -- LIKE '%term%' scans; see buildMediaFilter in routes/media.ts.
@@ -245,6 +339,17 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 21, sql: 'DROP INDEX IF EXISTS media_tags_media_idx' },
   // Superseded by media_type_created_idx, which the CREATE block above adds.
   { version: 22, sql: 'DROP INDEX IF EXISTS media_type_idx' },
+  // A label shown instead of the canonical name, which URLs, filters and search keep using.
+  { version: 23, sql: 'ALTER TABLE tags ADD COLUMN display_name TEXT' },
+  // The post a gallery-dl download came from, and the mtime of the sidecar it was read from so a
+  // rescan only re-reads a sidecar that changed.
+  { version: 41, sql: 'ALTER TABLE media ADD COLUMN source_url TEXT' },
+  { version: 42, sql: 'ALTER TABLE media ADD COLUMN sidecar_mtime INTEGER' },
+  // The WD tag a user said an unnamed character is not, so it stops being suggested.
+  { version: 45, sql: 'ALTER TABLE characters ADD COLUMN dismissed_suggestion TEXT' },
+  // The hover-scrub sprite: how many frames it holds (0 when generation failed) and when it was written.
+  { version: 47, sql: 'ALTER TABLE media ADD COLUMN sprite_frames INTEGER' },
+  { version: 48, sql: 'ALTER TABLE media ADD COLUMN sprite_at INTEGER' },
 ];
 const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
 const ADD_COLUMN = /^ALTER TABLE (\w+) ADD COLUMN (\w+)/i;
@@ -295,6 +400,8 @@ if (unbanded.length > 0) {
 // yet. Creating them after the backfill is also cheaper than maintaining them during it.
 // IF NOT EXISTS keeps this idempotent across both fresh and migrated databases.
 sqlite.exec(BANDS.map((i) => `CREATE INDEX IF NOT EXISTS media_phash_b${i}_idx ON media(phash_b${i});`).join('\n'));
+// After the migrations for the same reason: display_name is added by one.
+sqlite.exec('CREATE UNIQUE INDEX IF NOT EXISTS tags_display_name_idx ON tags(display_name COLLATE NOCASE)');
 
 // Populate the search index for rows that predate it. Keyed on which rows are missing rather
 // than a migration version, so it also heals a database that lost the index or was written to by

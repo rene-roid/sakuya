@@ -4,6 +4,7 @@ import { Navbar } from './components/Navbar';
 import { ReleaseNotesDialog } from './components/ReleaseNotesDialog';
 import { UiStylePicker } from './components/UiStylePicker';
 import { UpdateToast } from './components/UpdateToast';
+import { UploadTray } from './components/UploadButton';
 import { LoginGate } from './components/LoginGate';
 import { useAuth } from './hooks/useAuth';
 import { applyUiStyle } from './hooks/useUiStyle';
@@ -16,6 +17,10 @@ import { Discover } from './routes/Discover';
 import { LibraryView } from './routes/LibraryView';
 import { Boards, BoardView } from './routes/Boards';
 import { Settings } from './routes/settings';
+import { Duplicates } from './routes/Duplicates';
+import { Trash } from './routes/Trash';
+import { Characters } from './routes/Characters';
+import { Character } from './routes/Character';
 import { DownloaderPage } from './routes/downloader/DownloaderPage';
 
 export function App() {
@@ -49,6 +54,7 @@ export function App() {
           {settings &&
             (settings.ui_style_chosen !== '1' ? <UiStylePicker current={settings.ui_style} /> : <ReleaseNotesDialog />)}
           <UpdateToast />
+          <UploadTray />
           <Navbar />
           <Routes>
             <Route path="/" element={<Dashboard />} />
@@ -57,6 +63,10 @@ export function App() {
             <Route path="/boards" element={<Boards />} />
             <Route path="/boards/:id" element={<BoardView />} />
             <Route path="/library/:id" element={<LibraryView />} />
+            <Route path="/duplicates" element={<Duplicates />} />
+            <Route path="/trash" element={<Trash />} />
+            <Route path="/characters" element={<Characters />} />
+            <Route path="/characters/:id" element={<Character />} />
             <Route path="/downloader" element={<DownloaderPage />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>

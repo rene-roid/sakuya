@@ -7,6 +7,8 @@ import { db, schema } from '../db';
 import { enqueueJob, eachWithProgress, type JobHandle } from './jobQueue';
 import { mediaRowsByIds, type MediaRow } from '../lib/mediaByIds';
 import { run, FFMPEG_PATH } from '../lib/run';
+import { thumbnailCacheEnabled } from '../lib/settings';
+import { generateSprite } from './videoSprite';
 
 export function thumbPathFor(mediaId: number): string {
   return path.join(THUMBS_DIR, `${mediaId}.webp`);
@@ -99,6 +101,7 @@ function regenerateJob(label: string, rows: (typeof schema.media.$inferSelect)[]
         if (!fs.existsSync(row.path)) return;
         await generateThumbnail(row.path, row.id, row.type, row.durationSeconds ?? null);
         db.update(schema.media).set({ thumbnailPath: thumbPathFor(row.id) }).where(eq(schema.media.id, row.id)).run();
+        if (row.type === 'video' && thumbnailCacheEnabled()) await generateSprite(row);
         regenerated++;
       },
     );

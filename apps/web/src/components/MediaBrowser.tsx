@@ -6,6 +6,7 @@ import { FilterToolbar } from './FilterToolbar';
 import { MediaGrid } from './MediaGrid';
 import { SelectionBar } from './SelectionBar';
 import { MediaViewer } from './MediaViewer';
+import { DescribeNotice } from './DescribeNotice';
 
 /**
  * A filterable media page: title with the item count, the sticky filter toolbar, the grid, and
@@ -33,6 +34,7 @@ export function MediaBrowser({
   const selection = useSelection(media.items, JSON.stringify(query));
   const [viewerId, setViewerId] = useState<number | null>(null);
   const centered = sidebar ? '' : 'mx-auto max-w-[1400px] ';
+  const semantic = filters.describe ? media.data?.pages[0]?.semantic : undefined;
 
   const page = (
     <>
@@ -41,6 +43,7 @@ export function MediaBrowser({
           <h1 className="m-0 text-[22px] font-extrabold glass:text-[24px] glass:font-semibold">{title}</h1>
           <span className="text-[13px] text-zinc-500">
             {media.total} item{media.total === 1 ? '' : 's'}
+            {semantic?.status === 'ready' && <span className="hidden sm:inline">, best match first</span>}
           </span>
           {headerExtra}
         </div>
@@ -51,6 +54,7 @@ export function MediaBrowser({
         </div>
       </div>
       <div className={`${centered}px-4 sm:px-8 pb-16 pt-5`}>
+        {semantic && <DescribeNotice info={semantic} />}
         <MediaGrid
           items={media.items}
           hasNextPage={!!media.hasNextPage}
@@ -59,6 +63,8 @@ export function MediaBrowser({
           isLoading={media.isLoading}
           onOpen={(index) => setViewerId(media.items[index].id)}
           selection={selection}
+          // The notice above already says why a description found nothing.
+          empty={semantic && semantic.status !== 'ready' ? <div /> : undefined}
         />
       </div>
     </>

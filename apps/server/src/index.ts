@@ -13,13 +13,19 @@ import { uploadsRouter } from './routes/uploads';
 import { jobsRouter } from './routes/jobs';
 import { settingsRouter } from './routes/settings';
 import { taggerRouter } from './routes/tagger';
+import { charactersRouter } from './routes/characters';
+import { semanticRouter } from './routes/semantic';
 import { dashboardRouter } from './routes/dashboard';
 import { downloaderRouter } from './routes/downloader';
 import { savedSearchesRouter } from './routes/savedSearches';
 import { boardsRouter } from './routes/boards';
+import { backupsRouter } from './routes/backups';
+import { trashRouter } from './routes/trash';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
 import { scheduleAll } from './services/jobScheduler';
+import { startTrashPurge } from './services/trash';
+import { clearStaleFrames } from './services/videoFrames';
 
 // Set once here, before any thumbnail or tagger preprocessing can touch it — sharp is a singleton
 // and this is a runtime setter.
@@ -56,10 +62,14 @@ app.use(tagsRouter);
 app.use(jobsRouter);
 app.use(settingsRouter);
 app.use(taggerRouter);
+app.use(charactersRouter);
+app.use(semanticRouter);
 app.use(dashboardRouter);
 app.use(downloaderRouter);
 app.use(savedSearchesRouter);
 app.use(boardsRouter);
+app.use(backupsRouter);
+app.use(trashRouter);
 
 type RouteError = { status?: number; name?: string; message?: string; issues?: unknown } | null | undefined;
 
@@ -68,6 +78,9 @@ app.use((err: RouteError, _req: express.Request, res: express.Response, _next: e
   if (status >= 500) console.error(err);
   res.status(status).json({ error: err?.message ?? 'Internal error', issues: err?.issues });
 });
+
+// Before any job can start: a tag job's frames live here only while it runs.
+clearStaleFrames();
 
 const { port, host } = CONFIG.server;
 app.listen(port, host, () => {
@@ -78,4 +91,5 @@ app.listen(port, host, () => {
   const limits = describeLimits(LIMITS_REPORT);
   if (limits) console.log(limits);
   scheduleAll();
+  startTrashPurge();
 });

@@ -1,20 +1,40 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
-import { X, RotateCw, ChevronLeft, ChevronRight, ChevronDown, FolderOpen, Copy, Pencil, Trash2 } from 'lucide-react';
+import {
+  X,
+  RotateCw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  FolderOpen,
+  Copy,
+  Pencil,
+  Trash2,
+  Sparkles,
+  ExternalLink,
+  Merge,
+  ArrowRight,
+} from 'lucide-react';
 import type { Board, Media, MediaTag, TagCategory } from '@sakuya/shared';
 import { api, fileUrl, thumbUrl } from '../lib/api';
-import { CATEGORIES, formatBytes, formatDuration, timeAgo } from '../lib/format';
+import { CATEGORIES, categoryLabel, formatBytes, formatDuration, timeAgo } from '../lib/format';
 import { patchCachedMedia } from '../lib/mediaCache';
+import { TRASH_DAYS } from '../lib/trash';
 import { toast, toastError } from './Toast';
 import { useSettings } from '../hooks/useSettings';
 import { HeartButton } from './HeartButton';
 import { ConfirmDialog } from './ConfirmDialog';
+import { TagName, TagRenameInput } from './TagName';
+import { TagRelationDialog, type TagRelationKind } from './TagRelationDialog';
+import { CharacterBoxes, CharacterBoxesButton, useCharacterBoxesToggle } from './characters/CharacterOverlay';
 
 const MUTE_STORAGE_KEY = 'sakuya:videoMuted';
 const VOLUME_STORAGE_KEY = 'sakuya:videoVolume';
 /** Flipping past an image with the arrow keys isn't interest — anything shorter is discarded. */
 const MIN_DWELL_SECONDS = 1;
+/** Matches the server's MIN_VIEW_SECONDS. */
+const VIEW_AFTER_SECONDS = 2;
 /**
  * Watched seconds are batched to this many before a progress write. At 1s, playing a video sent
  * a PATCH (and a database write) every second for as long as it played.
@@ -85,6 +105,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   const navigate = useNavigate();
   const [tagInput, setTagInput] = useState('');
   const [addCategory, setAddCategory] = useState<TagCategory>('general');
+  const [relation, setRelation] = useState<{ tag: MediaTag; kind: TagRelationKind } | null>(null);
   // Lets the viewer jump to a duplicate/similar item that isn't in the parent list.
   const [jumpItem, setJumpItem] = useState<Media | null>(null);
   // Tracks the item we jumped from via the similar/duplicates panel, so it can be
@@ -104,6 +125,8 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
   const lastSavedProgress = useRef(0);
   const completedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [showCharacters, toggleCharacters] = useCharacterBoxesToggle();
   // Watch-time tracking: accumulates real seconds played between flushes (see saveProgress).
   const lastPlayedTime = useRef(0);
   const pendingWatchedSeconds = useRef(0);
@@ -163,14 +186,19 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
     [item],
   );
 
-  // Mark viewed (updates lastViewedAt + viewCount for both images and videos) when a new item opens.
+  // Mark viewed (updates lastViewedAt + viewCount for both images and videos) once an item has
+  // stayed open VIEW_AFTER_SECONDS; stepping past it sooner is a skip and records nothing.
   useEffect(() => {
     if (!item) return;
     completedRef.current = false;
     lastSavedProgress.current = item.viewProgress ?? 0;
     lastPlayedTime.current = 0;
     pendingWatchedSeconds.current = 0;
-    api.saveProgress(item.id, { view: true }).catch(() => {});
+    const mediaId = item.id;
+    const timer = setTimeout(() => {
+      api.saveProgress(mediaId, { view: true, openSeconds: VIEW_AFTER_SECONDS }).catch(() => {});
+    }, VIEW_AFTER_SECONDS * 1000);
+    return () => clearTimeout(timer);
   }, [item?.id]);
 
   // Dwell time: the still-image counterpart to a video's watched seconds. Counts only while the
@@ -331,7 +359,8 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      toast('File deleted');
+      queryClient.invalidateQueries({ queryKey: ['trash'] });
+      toast('Moved to Trash');
       onClose();
     },
     onError: (err: Error) => {
@@ -365,6 +394,9 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
         className="relative flex min-h-[65vh] min-w-0 flex-1 items-center justify-center p-2 sm:min-h-0 sm:p-10"
       >
         <div className="absolute right-4 top-4 z-10 flex items-center gap-2">
+          {item.type === 'image' && (
+            <CharacterBoxesButton mediaId={item.id} on={showCharacters} onToggle={toggleCharacters} />
+          )}
           <HeartButton mediaId={item.id} liked={detail?.liked ?? item.liked} size="lg" />
           <button
             className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-lg bg-white/5 text-zinc-100 hover:bg-white/10"
@@ -404,12 +436,14 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
         ) : (
           <img
             key={item.id}
+            ref={imgRef}
             src={fileUrl(item.id)}
             alt={displayName}
             style={size ? { width: size.width, height: size.height } : undefined}
             className="max-h-[95%] max-w-[98%] rounded-xl object-contain shadow-[0_20px_60px_rgba(0,0,0,0.6)] sm:max-h-[85%] sm:max-w-[92%]"
           />
         )}
+        {showCharacters && item.type === 'image' && <CharacterBoxes mediaId={item.id} imgRef={imgRef} />}
 
         {hasSimilar && (
           <SimilarPanel
@@ -456,7 +490,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
           <button
             className="flex h-[18px] w-[18px] flex-none cursor-pointer items-center justify-center rounded text-zinc-500 hover:bg-rose-500/20 hover:text-rose-400"
             onClick={() => setShowDeleteConfirm(true)}
-            title="Delete file"
+            title="Move to Trash"
           >
             <Trash2 size={12} />
           </button>
@@ -488,6 +522,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
               </button>
             </span>
           </div>
+          {detail?.id === item.id && detail.sourceUrl && <SourceRow url={detail.sourceUrl} />}
           <MetaRow label="Size" value={formatBytes(item.sizeBytes)} />
           <MetaRow
             label="Dimensions"
@@ -500,8 +535,19 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
             <MetaRow label="Watched" value={formatDuration(item.watchedSeconds) ?? '—'} />
           )}
         </div>
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
+        <div className="mb-2 flex items-center gap-3">
+          <div className="mr-auto text-xs font-bold tracking-[0.4px] text-zinc-500">TAGS</div>
+          <button
+            className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-zinc-400 hover:text-zinc-100"
+            title="Items that look like this one or share its tags"
+            onClick={() => {
+              handleClose();
+              navigate(`/discover?like=${item.id}`);
+            }}
+          >
+            <Sparkles size={13} />
+            More like this
+          </button>
           <button
             className="flex items-center gap-1 cursor-pointer text-[11.5px] font-semibold text-accent hover:opacity-80"
             onClick={() => api.retag(item.id).then(() => toast('Re-tagging with AI…'), toastError)}
@@ -510,19 +556,34 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
             AI re-tag
           </button>
         </div>
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          {(detail?.tags ?? []).map((tag) => (
+        {TAG_GROUPS.map((group) => {
+          const tags = (detail?.tags ?? []).filter((t) => group.categories.includes(t.category));
+          if (!tags.length) return null;
+          const pills = tags.map((tag) => (
             <TagPill
               key={tag.name}
               tag={tag}
               onOpen={() => openTag(tag.name)}
               onRemove={() => tagMutation.mutate({ remove: [tag.name] })}
               onSetCategory={(category) => tagMutation.mutate({ setCategory: { [tag.name]: category } })}
+              onRelation={(kind) => setRelation({ tag, kind })}
             />
-          ))}
-          {detail && detail.tags.length === 0 && <div className="text-[11.5px] text-zinc-600">No tags yet</div>}
-        </div>
-        <div className="mb-1.5 flex gap-1">
+          ));
+          return group.title ? (
+            <div key={group.title} className="mb-2 flex items-start gap-2">
+              <div className="w-[46px] flex-none pt-[5px] text-[10.5px] font-bold tracking-[0.4px] text-zinc-500">
+                {group.title}
+              </div>
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">{pills}</div>
+            </div>
+          ) : (
+            <div key="rest" className="mb-3 flex flex-wrap gap-1.5">
+              {pills}
+            </div>
+          );
+        })}
+        {detail && detail.tags.length === 0 && <div className="mb-3 text-[11.5px] text-zinc-600">No tags yet</div>}
+        <div className="mb-1.5 flex flex-wrap gap-1">
           {CATEGORIES.map((c) => (
             <div
               key={c}
@@ -531,7 +592,7 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
                 addCategory === c ? 'bg-accent text-white' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
               }`}
             >
-              {c}
+              {categoryLabel(c)}
             </div>
           ))}
         </div>
@@ -544,17 +605,18 @@ export function MediaViewer({ items, itemId, onItemChange, onClose, onNearEnd }:
               setTagInput('');
             }
           }}
-          placeholder={`Add ${addCategory} tag, press Enter…`}
+          placeholder={`Add ${categoryLabel(addCategory)} tag, press Enter…`}
           className="w-full rounded-lg border border-line bg-zinc-900 px-2.5 py-2 text-[12.5px] text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-line-hover"
         />
         <BoardsSection mediaId={item.id} boards={detail?.id === item.id ? detail.boards : []} />
       </div>
+      {relation && <TagRelationDialog tag={relation.tag} kind={relation.kind} onClose={() => setRelation(null)} />}
       {showDeleteConfirm && (
         <ConfirmDialog
-          title="Delete this file?"
+          title="Move this file to Trash?"
           danger
-          confirmLabel="Delete"
-          body={`"${displayName}" will be permanently removed from disk and the library. This cannot be undone.`}
+          confirmLabel="Move to Trash"
+          body={`"${displayName}" moves to the Trash with its tags, like and boards. You can restore it from Settings › Storage for ${TRASH_DAYS} days.`}
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => deleteMutation.mutate()}
         />
@@ -662,12 +724,45 @@ function BoardsSection({ mediaId, boards }: { mediaId: number; boards: Board[] }
   );
 }
 
+/** Artist and series get a labelled row each, first, the way a booru post lists them. */
+const TAG_GROUPS: { title: string | null; categories: TagCategory[] }[] = [
+  { title: 'ARTIST', categories: ['artist'] },
+  { title: 'SERIES', categories: ['copyright'] },
+  { title: null, categories: ['rating', 'character', 'general', 'user'] },
+];
+
 function categoryClasses(category: TagCategory): string {
   return category === 'rating'
     ? 'bg-accent/20 text-violet-300'
     : category === 'character'
       ? 'bg-emerald-500/15 text-emerald-300'
-      : 'bg-zinc-800 text-zinc-200';
+      : category === 'artist'
+        ? 'bg-amber-500/15 text-amber-300'
+        : category === 'copyright'
+          ? 'bg-sky-500/15 text-sky-300'
+          : 'bg-zinc-800 text-zinc-200';
+}
+
+function SourceRow({ url }: { url: string }) {
+  let host = '';
+  try {
+    host = new URL(url).host.replace(/^www\./, '');
+  } catch {}
+  return (
+    <div className="flex justify-between gap-3 text-[12.5px]">
+      <span className="flex-none text-zinc-500">Source</span>
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={url}
+        className="flex min-w-0 items-center gap-1.5 font-semibold text-accent hover:opacity-80"
+      >
+        <span className="truncate">View source{host && <span className="font-normal text-zinc-500"> · {host}</span>}</span>
+        <ExternalLink size={12} className="flex-none" />
+      </a>
+    </div>
+  );
 }
 
 function TagPill({
@@ -675,36 +770,77 @@ function TagPill({
   onOpen,
   onRemove,
   onSetCategory,
+  onRelation,
 }: {
   tag: MediaTag;
   onOpen: () => void;
   onRemove: () => void;
   onSetCategory: (category: TagCategory) => void;
+  onRelation: (kind: TagRelationKind) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  if (renaming) {
+    return (
+      <div className={`flex items-center rounded-full text-xs ${categoryClasses(tag.category)}`}>
+        <TagRenameInput tag={tag} onDone={() => setRenaming(false)} className="h-6 w-[150px] rounded-full px-2.5 py-0" />
+      </div>
+    );
+  }
   return (
     <div
-      title={tag.confidence != null ? `${tag.source} · ${(tag.confidence * 100).toFixed(0)}%` : tag.source}
-      className={`relative flex items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)}`}
+      title={`${tag.name} · ${tag.confidence != null ? `${tag.source} ${(tag.confidence * 100).toFixed(0)}%` : tag.source}`}
+      className={`relative flex min-w-0 max-w-full items-center gap-[5px] rounded-full py-1 pl-2.5 pr-[5px] text-xs ${categoryClasses(tag.category)} ${
+        // Added by an implication, so it goes away with the tag that implies it.
+        tag.source === 'implied' ? 'outline-1 -outline-offset-1 outline-dashed outline-white/30' : ''
+      }`}
     >
-      <span className="cursor-pointer hover:underline" onClick={onOpen}>
-        {tag.name}
+      <span className="flex min-w-0 cursor-pointer hover:underline" onClick={onOpen}>
+        <TagName tag={tag} />
       </span>
       <button
-        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+        className="flex h-[15px] w-[15px] flex-none cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={() => setMenuOpen((v) => !v)}
-        title="Change category"
+        title="Rename, merge or change category"
       >
         <ChevronDown size={11} />
       </button>
       <button
-        className="flex h-[15px] w-[15px] cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
+        className="flex h-[15px] w-[15px] flex-none cursor-pointer items-center justify-center rounded-full bg-white/10 hover:bg-white/20"
         onClick={onRemove}
       >
         <X size={11} />
       </button>
       {menuOpen && (
         <div className="absolute left-0 top-[26px] z-20 flex flex-col overflow-hidden rounded-lg border border-line-strong bg-zinc-900 shadow-xl">
+          <div
+            className="flex cursor-pointer items-center gap-1.5 border-b border-line px-3 py-1.5 text-[11.5px] text-zinc-200 hover:bg-zinc-800"
+            onClick={() => {
+              setMenuOpen(false);
+              setRenaming(true);
+            }}
+          >
+            <Pencil size={11} />
+            Rename…
+          </div>
+          {(
+            [
+              ['merge', 'Merge into…', <Merge key="merge" size={11} />],
+              ['imply', 'Implies…', <ArrowRight key="imply" size={11} />],
+            ] as const
+          ).map(([kind, label, icon], i) => (
+            <div
+              key={kind}
+              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1.5 text-[11.5px] text-zinc-200 hover:bg-zinc-800 ${i === 1 ? 'border-b border-line' : ''}`}
+              onClick={() => {
+                setMenuOpen(false);
+                onRelation(kind);
+              }}
+            >
+              {icon}
+              {label}
+            </div>
+          ))}
           {CATEGORIES.map((c) => (
             <div
               key={c}
@@ -714,7 +850,7 @@ function TagPill({
                 onSetCategory(c);
               }}
             >
-              {c}
+              {categoryLabel(c)}
             </div>
           ))}
         </div>

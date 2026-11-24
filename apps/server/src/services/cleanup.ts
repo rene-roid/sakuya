@@ -3,6 +3,7 @@ import path from 'node:path';
 import { sqlite, db, schema } from '../db';
 import { THUMBS_DIR, TRANSCODES_DIR } from '../lib/config';
 import { enqueueJob, type JobHandle } from './jobQueue';
+import { purgeTrash, TRASH_RETENTION_DAYS } from './trash';
 
 /**
  * How long finished jobs and the logs of finished downloads are kept.
@@ -28,6 +29,7 @@ export interface CleanupResult {
   resetTagCounts: number;
   prunedJobs: number;
   prunedDownloadLogs: number;
+  purgedTrash: number;
 }
 
 export function performCleanup(now: number = Date.now()): CleanupResult {
@@ -37,12 +39,14 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
   // entry per media row, so the per-file query made this scale quadratically with library size.
   const liveIds = new Set(db.select({ id: schema.media.id }).from(schema.media).all().map((r) => r.id));
 
-  // Thumbnails and transcodes share the one-file-per-media-id layout; a transcode orphan is often
-  // hundreds of megabytes.
-  const [removedThumbs, removedTranscodes] = [
-    [THUMBS_DIR, '.webp'],
-    [TRANSCODES_DIR, '.mp4'],
-  ].map(([dir, ext]) => {
+  // Thumbnails, video sprites and transcodes share the one-file-per-media-id layout; a transcode
+  // orphan is often hundreds of megabytes.
+  const [removedThumbs, removedTranscodes] = (
+    [
+      [THUMBS_DIR, ['.webp', '.sprite.webp']],
+      [TRANSCODES_DIR, ['.mp4']],
+    ] as const
+  ).map(([dir, exts]) => {
     if (!fs.existsSync(dir)) return 0;
     let removed = 0;
     for (const entry of fs.readdirSync(dir)) {
@@ -52,8 +56,8 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
         const mtime = fs.statSync(file, { throwIfNoEntry: false })?.mtimeMs;
         if (mtime === undefined || mtime >= now - STALE_PART_MS) continue;
       } else {
-        const match = /^(\d+)(\.\w+)$/.exec(entry);
-        if (!match || match[2] !== ext || liveIds.has(Number(match[1]))) continue;
+        const match = /^(\d+)((?:\.\w+)+)$/.exec(entry);
+        if (!match || !(exts as readonly string[]).includes(match[2]) || liveIds.has(Number(match[1]))) continue;
       }
       fs.rmSync(file, { force: true });
       removed++;
@@ -83,7 +87,9 @@ export function performCleanup(now: number = Date.now()): CleanupResult {
     )
     .run(cutoff).changes;
 
-  return { removedThumbs, removedTranscodes, resetTagCounts, prunedJobs, prunedDownloadLogs };
+  const purgedTrash = purgeTrash(now).removed;
+
+  return { removedThumbs, removedTranscodes, resetTagCounts, prunedJobs, prunedDownloadLogs, purgedTrash };
 }
 
 export function enqueueCleanupJob() {
@@ -97,7 +103,8 @@ export function enqueueCleanupJob() {
         `Removed ${result.removedThumbs} orphan thumbnails and ${result.removedTranscodes} orphan transcodes, ` +
         `recomputed usage count for ${result.resetTagCounts} tags, ` +
         `pruned ${result.prunedJobs} finished jobs and ${result.prunedDownloadLogs} download log lines ` +
-        `older than ${RETENTION_DAYS} days.`
+        `older than ${RETENTION_DAYS} days, ` +
+        `and purged ${result.purgedTrash} trash items older than ${TRASH_RETENTION_DAYS} days.`
       );
     },
     null,

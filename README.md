@@ -49,21 +49,31 @@ collection with an AI booru-style tagger, then gets out of your way.
 ## Features
 
 - 🗂 **Libraries** — organize media into libraries backed by watched folders, with auto-scan that cleans up missing files and thumbnails; drag to reorder, rename inline
-- 🤖 **AI Tagging** — auto-tags images with a booru-style ONNX model (WD SwinV2), sorted into rating / character / general tag groups; swap in a different tagger model from Settings
-- ✍️ **Manual Tags** — add, edit, or promote your own tags alongside the AI-generated ones
+- 🤖 **AI Tagging** — auto-tags images with a booru-style ONNX model (WD SwinV2), sorted into rating / character / general tag groups, with separate confidence thresholds for character and general tags; swap in a different tagger model from Settings
+- 🎞 **Video Tagging** — videos are tagged from five frames spread across them, skipping frames that repeat one already scored
+- ✍️ **Manual Tags** — add, edit, or promote your own tags alongside the AI-generated ones; an AI tag you remove stays off after a re-tag, and any tag can get a display name
+- 🔗 **Tag Merges & Implications** — booru-style siblings and implications: merge an alias into its tag, and have a character imply its series
+- 🏷 **gallery-dl Metadata** — downloads keep their site's artist, series, character and general tags plus a link back to the post
+- 🧑‍🤝‍🧑 **Characters** — opt-in detection that finds characters in your images, groups each one across the library, and turns a named group into a character tag
 - 🔎 **Explore & Search** — indexed full-text search with tag autocomplete, removable filter chips, and saved searches you can replay from the sidebar
-- ✨ **Discover** — an opt-in recommendation feed built from what you like, watch and linger on, with a surprise slider and "I'm feeling lucky"
+- 💬 **Search by Description** — opt-in CLIP search: type "a witch flying on a broom" and get the pictures that show it
+- ✨ **Discover** — an opt-in recommendation feed built from what you like, watch and linger on, with shelves, "More like this", boost / less / mute per tag, "Not interested", and a feed that spreads out folders and near-duplicates
 - 📌 **Boards** — hand-picked collections of media, managed straight from the viewer
 - ❤️ **Likes** — heart anything from its thumbnail or detail view; liked media collects into its own library and filters Explore
 - ☑️ **Multi-select & Bulk Actions** — tag, like, rename (pattern or regex), re-tag, regenerate thumbnails, add to boards or delete many files at once, each behind a preview of what will change
 - ▶️ **Continue Watching** — resumes videos where you left off, updates live, and won't re-add a video that just autolooped
-- 🔍 **Duplicate & Similar Detection** — scan a library and review duplicates/near-duplicates side by side, batch-delete what you don't need
-- 🖼 **Thumbnails** — automatic thumbnails for images and video (Sharp + FFmpeg), with an opt-out if you'd rather serve originals
+- 🔍 **Duplicate & Similar Detection** — scan a library and review duplicates/near-duplicates side by side on their own page, batch-delete what you don't need
+- 🗑 **Trash** — deletes go to a trash for 30 days and restore with their tags, like and boards
+- 💾 **Backups** — scheduled database backups that keep the newest few
+- 📤 **Uploads** — drop files onto a library, with progress that follows you around the app
+- 🖼 **Thumbnails** — automatic thumbnails for images and video (Sharp + FFmpeg), with an opt-out if you'd rather serve originals; hover a video card to scrub through its frames
 - ⬇️ **Downloader** — batch-download from URLs with gallery-dl (auto-installed), cookie file support, an interactive console, and live progress over SSE
 - 🎬 **Transcoding** — browser-incompatible video formats are converted to mp4 in the background and served automatically
 - 📊 **Job Tracking** — every scan/tag/thumbnail/download/model-download runs as a trackable background job
 - 🔒 **Private by Default** — listens on loopback only; open it to your network with an optional password gate (signed, expiring sessions)
 - 🎚 **Resource Limits** — one CPU budget sizes job concurrency and every thread pool, plus a real memory ceiling enforced by the OS
+- ⚙️ **Searchable Settings** — every setting on one page, found by typing what you want to change
+- 🖥 **Desktop App** — Windows and Linux installers that update themselves in the background
 
 ## Tech Stack
 
@@ -72,7 +82,7 @@ collection with an AI booru-style tagger, then gets out of your way.
 | Runtime & package manager | [Bun](https://bun.sh) |
 | Backend | Express + TypeScript, SQLite via Drizzle ORM |
 | Frontend | React 18 + Vite, React Router, Tailwind CSS |
-| ML | ONNX Runtime (`onnxruntime-node`), WD SwinV2 tagger |
+| ML | ONNX Runtime (`onnxruntime-node`), WD SwinV2 tagger, CCIP for characters, CLIP ViT-B/32 for search by description |
 | Media processing | Sharp (images), FFmpeg/FFprobe (video/transcoding) |
 | Downloads | gallery-dl |
 
@@ -95,10 +105,17 @@ Prefer scripts? `./setup.sh` installs Bun for you if it's missing, `./run.sh` st
 
 ### Desktop app
 
-Each `v*` tag attaches a Linux AppImage and a Windows installer (`.exe`) to its GitHub release. Both
+Each release attaches a Linux AppImage and a Windows installer (`.exe`) to its GitHub page. Both
 bundle Bun and keep their config and data in `~/.sakuya/`. Closing the window leaves Sakuya running in
 the tray. **Start at Login** in the tray menu (or the window's Sakuya menu) turns autostart on or off.
+The app updates itself: it downloads a new release in the background, backs up the database, and
+restarts into it when you say so or on the next start. **Update Automatically** in the tray menu turns
+this off.
 To build one locally: `cd desktop && npm ci && npm run stage && npm run dist`.
+
+To release, commit the notes as `apps/web/src/releases/X.Y.Z.md`, then run the **Release** workflow
+from the Actions tab (or `gh workflow run release.yml -f version=X.Y.Z`). It bumps `package.json`,
+runs the checks, tags `vX.Y.Z`, builds both installers and publishes the GitHub release.
 
 ### Docker
 

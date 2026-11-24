@@ -1,9 +1,13 @@
 import { memo, type MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import type { Media } from '@sakuya/shared';
 import { thumbUrl } from '../lib/api';
 import { formatDuration } from '../lib/format';
 import { HeartButton } from './HeartButton';
+import { TagName, useTagLabelText } from './TagName';
+import { DiscoverCardMenu } from './DiscoverCardMenu';
+import { VideoScrub } from './VideoScrub';
 
 function VideoBadge() {
   return (
@@ -31,12 +35,34 @@ function DurationBadge({ seconds }: { seconds: number | null }) {
  * click handler: a per-card closure would be a new prop on every parent render and defeat the
  * memo entirely.
  */
+function ReasonBadge({ tag, related }: { tag: string; related: boolean }) {
+  const label = useTagLabelText(tag);
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      title={`${related ? `Related to tags you like: "${label}"` : `Recommended because you like "${label}"`}. Click to browse it.`}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigate(`/explore?tags=${encodeURIComponent(tag)}`);
+      }}
+      className={`absolute bottom-1.5 left-1.5 flex max-w-[85%] cursor-pointer rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur hover:brightness-110 ${
+        related ? 'bg-teal-500/85' : 'bg-accent/85'
+      }`}
+    >
+      {related && <span className="mr-1 flex-none">~</span>}
+      <TagName tag={tag} />
+    </button>
+  );
+}
+
 export const MediaCard = memo(function MediaCard({
   item,
   index,
   onActivate,
   selectMode,
   selected,
+  discoverMenu,
 }: {
   item: Media;
   index: number;
@@ -44,6 +70,8 @@ export const MediaCard = memo(function MediaCard({
   /** In select mode a click toggles the card instead of opening the viewer. */
   selectMode?: boolean;
   selected?: boolean;
+  /** Discover's "⋯" menu: Not interested, Less of, More like this. */
+  discoverMenu?: boolean;
 }) {
   return (
     <div className="cursor-pointer select-none" onClick={(e) => onActivate(index, e)}>
@@ -58,22 +86,10 @@ export const MediaCard = memo(function MediaCard({
           loading="lazy"
           className="h-full w-full object-cover"
         />
+        {item.type === 'video' && <VideoScrub media={item} />}
         {item.type === 'video' && <VideoBadge />}
         <DurationBadge seconds={item.durationSeconds} />
-        {item.reasonTag && (
-          <div
-            title={
-              item.reasonRelated
-                ? `Related to tags you like: "${item.reasonTag}"`
-                : `Recommended because you like "${item.reasonTag}"`
-            }
-            className={`absolute bottom-1.5 left-1.5 max-w-[85%] truncate rounded px-1.5 py-px glass:bottom-2 glass:left-2 glass:rounded-full glass:px-2 glass:py-0.5 text-[9.5px] font-bold tracking-wide text-white backdrop-blur ${
-              item.reasonRelated ? 'bg-teal-500/85' : 'bg-accent/85'
-            }`}
-          >
-            {item.reasonRelated ? `~ ${item.reasonTag}` : item.reasonTag}
-          </div>
-        )}
+        {item.reasonTag && <ReasonBadge tag={item.reasonTag} related={!!item.reasonRelated} />}
         {selectMode ? (
           <>
             {!selected && <div className="absolute inset-0 bg-zinc-950/40" />}
@@ -86,12 +102,11 @@ export const MediaCard = memo(function MediaCard({
             </div>
           </>
         ) : (
-          <div
-            className={`absolute right-1.5 top-1.5 transition-opacity ${
-              item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-            }`}
-          >
-            <HeartButton mediaId={item.id} liked={item.liked} />
+          <div className="absolute right-1.5 top-1.5 flex items-center gap-1.5">
+            {discoverMenu && <DiscoverCardMenu item={item} />}
+            <div className={`transition-opacity ${item.liked ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <HeartButton mediaId={item.id} liked={item.liked} />
+            </div>
           </div>
         )}
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2.5 pb-2 pt-6 opacity-0 transition-opacity group-hover:opacity-100">
@@ -119,6 +134,7 @@ export function WideCard({
     <div className="group w-[200px] flex-none cursor-pointer" onClick={onClick}>
       <div className="relative h-[112px] w-[200px] overflow-hidden rounded-media border border-line bg-zinc-900 glass:border-white/[0.07] glass:transition-colors glass:group-hover:border-white/25">
         <img src={thumbUrl(item.id)} alt={item.filename} loading="lazy" className="h-full w-full object-cover" />
+        {item.type === 'video' && <VideoScrub media={item} />}
         {showProgress && (
           <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15">
             <div className="h-full bg-accent" style={{ width: `${Math.round(item.viewProgress * 100)}%` }} />

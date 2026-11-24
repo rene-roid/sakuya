@@ -11,7 +11,8 @@ import { migrateDataDir } from '../lib/storage';
 import { enqueueBulkThumbnailRegenerate } from '../services/thumbnailer';
 import { enqueueBulkTranscodeCheck } from '../services/transcoder';
 import { enqueueGifReclassifyJob } from '../services/scanner';
-import { scheduleAll } from '../services/jobScheduler';
+import { resolveSchedule, scheduleAll } from '../services/jobScheduler';
+import { installKind } from '../lib/installKind';
 import { performCleanup } from '../services/cleanup';
 import { SCHEDULE_JOB_TYPES, SCHEDULE_MODES, type SystemInfo, type StorageInfo, type JobSchedule, type JobSchedulesPayload } from '@sakuya/shared';
 
@@ -74,6 +75,7 @@ settingsRouter.get(
       mediaBytes: media.b,
       dbBytes: fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0,
       thumbBytes: await dirSize(THUMBS_DIR),
+      installKind: installKind(),
     };
     res.json(info);
   }),
@@ -129,6 +131,8 @@ settingsRouter.post(
       fs.rmSync(path.join(THUMBS_DIR, entry), { force: true });
       removed++;
     }
+    // Sprites live in the same folder; without this the after-scan job would never remake them.
+    sqlite.query('UPDATE media SET sprite_frames = NULL, sprite_at = NULL WHERE sprite_frames IS NOT NULL').run();
     res.json({ removed });
   }),
 );
@@ -151,6 +155,7 @@ settingsRouter.get(
     for (const r of globalRows) {
       globals[r.jobType] = { mode: r.mode, intervalMinutes: r.intervalMinutes };
     }
+    globals.backup ??= resolveSchedule('backup', null);
     const perLibrary: Record<number, Record<string, JobSchedule>> = {};
     for (const row of perLibRows) {
       if (row.libraryId === null) continue;

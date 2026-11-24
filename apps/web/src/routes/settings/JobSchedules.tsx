@@ -17,24 +17,24 @@ export const INTERVAL_OPTIONS: IntervalOption[] = [
   { label: '24 hours', minutes: 1440 },
 ];
 
-const JOB_TYPES: { key: ScheduleJobType; label: string; icon: LucideIcon; recommended?: string }[] = [
+const JOB_TYPES: { key: ScheduleJobType; label: string; icon: LucideIcon }[] = [
   { key: 'scan', label: 'Library scan', icon: Search },
-  { key: 'tag', label: 'AI tagging', icon: Tag, recommended: 'Recommended: After every scan' },
-  { key: 'hash', label: 'Duplicate detection', icon: Fingerprint, recommended: 'Recommended: After every scan' },
+  { key: 'tag', label: 'AI tagging', icon: Tag },
+  { key: 'hash', label: 'Duplicate detection', icon: Fingerprint },
   { key: 'cleanup', label: 'Cleanup orphan data', icon: Trash2 },
 ];
 
 /** All possible <select> values as a discriminated string set. */
-type SelectValue = 'off' | 'after-scan' | 'inherit' | `int:${number}`;
+export type SelectValue = 'off' | 'after-scan' | 'inherit' | `int:${number}`;
 
-function scheduleToValue(schedule: JobSchedule | undefined, scope: 'global' | 'per-library'): SelectValue {
+export function scheduleToValue(schedule: JobSchedule | undefined, scope: 'global' | 'per-library'): SelectValue {
   if (scope === 'per-library' && (!schedule || schedule.useGlobal)) return 'inherit';
   if (!schedule || schedule.mode === 'off') return 'off';
   if (schedule.mode === 'after-scan') return 'after-scan';
   return `int:${schedule.intervalMinutes}`;
 }
 
-function valueToPatch(value: SelectValue, jobType: ScheduleJobType, libraryId?: number): UpdateJobScheduleBody {
+export function valueToPatch(value: SelectValue, jobType: ScheduleJobType, libraryId?: number): UpdateJobScheduleBody {
   const base: UpdateJobScheduleBody = { jobType, libraryId: libraryId ?? null };
   if (value === 'inherit') return { ...base, useGlobal: true };
   if (value === 'off') return { ...base, mode: 'off', intervalMinutes: 0, useGlobal: false };
@@ -43,7 +43,7 @@ function valueToPatch(value: SelectValue, jobType: ScheduleJobType, libraryId?: 
   return { ...base, mode: 'interval', intervalMinutes: minutes, useGlobal: false };
 }
 
-function ScheduleSelect({
+export function ScheduleSelect({
   value,
   disabled,
   onChange,
@@ -75,7 +75,7 @@ function ScheduleSelect({
   );
 }
 
-export function JobsConfigureTab() {
+export function PerLibrarySchedules() {
   const queryClient = useQueryClient();
   const { data: schedules } = useQuery({ queryKey: ['job-schedules'], queryFn: api.jobSchedules });
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
@@ -85,101 +85,30 @@ export function JobsConfigureTab() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['job-schedules'] });
       queryClient.invalidateQueries({ queryKey: ['libraries'] });
-      toast('Schedule updated');
     },
   });
 
   const runNowMutation = useMutation({
-    mutationFn: (args: { scope: 'global' | { libraryId: number }; jobType?: ScheduleJobType }) =>
-      api.runJobsNow(args.scope, args.jobType),
+    mutationFn: (libraryId: number) => api.runJobsNow({ libraryId }),
     onSuccess: () => toast('Jobs enqueued'),
   });
 
-  const regenerateThumbnailsMutation = useMutation({
-    mutationFn: api.regenerateAllThumbnails,
-    onSuccess: () => toast('Thumbnail regeneration enqueued'),
-  });
-
-  const globals = schedules?.globals ?? {};
-
+  if (libraries && libraries.length === 0) {
+    return <div className="px-0.5 text-[12.5px] text-zinc-600">No libraries yet.</div>;
+  }
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-xl border border-line bg-surface p-[18px]">
-        <div className="mb-1 text-[13.5px] font-bold">Global defaults</div>
-        <div className="mb-3 text-[12px] text-zinc-500">
-          Apply to every library that doesn't set its own override.
-        </div>
-        <div className="flex flex-col gap-2.5">
-          {JOB_TYPES.map((jt) => {
-            const schedule = globals[jt.key];
-            const value = scheduleToValue(schedule, 'global');
-            return (
-              <div
-                key={jt.key}
-                className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2"
-              >
-                <div>
-                  <div className="text-[13px] font-semibold text-zinc-200">{jt.label}</div>
-                  {jt.recommended && <div className="text-[11px] text-zinc-500">{jt.recommended}</div>}
-                </div>
-                <div className="flex items-center gap-2">
-                  <ScheduleSelect
-                    value={value}
-                    disabled={updateMutation.isPending}
-                    onChange={(next) => updateMutation.mutate(valueToPatch(next, jt.key))}
-                    showInherit={false}
-                    showAfterScan={jt.key !== 'scan' && jt.key !== 'cleanup'}
-                  />
-                  <button
-                    disabled={runNowMutation.isPending}
-                    onClick={() => runNowMutation.mutate({ scope: 'global', jobType: jt.key })}
-                    className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
-                  >
-                    Run all now
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-
-          <div className="flex items-center justify-between rounded-field border border-line bg-zinc-900 px-3 py-2">
-            <div>
-              <div className="text-[13px] font-semibold text-zinc-200">Thumbnails</div>
-              <div className="text-[11px] text-zinc-500">Regenerate all cached thumbnails across every library</div>
-            </div>
-            <button
-              disabled={regenerateThumbnailsMutation.isPending}
-              onClick={() => regenerateThumbnailsMutation.mutate()}
-              className="cursor-pointer rounded-btn border border-line px-3 py-[5px] text-[12px] font-semibold text-zinc-300 hover:text-zinc-100 disabled:opacity-40"
-            >
-              Regenerate all
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-xl border border-line bg-surface p-[18px]">
-        <div className="mb-1 text-[13.5px] font-bold">Per-library</div>
-        <div className="mb-3 text-[12px] text-zinc-500">
-          Override the global defaults per library. Leave as “Use global” to inherit.
-        </div>
-        <div className="flex flex-col gap-3">
-          {(libraries ?? []).map((lib) => (
-            <LibraryScheduleCard
-              key={lib.id}
-              lib={lib}
-              schedules={schedules?.perLibrary[lib.id]}
-              onChange={(body) => updateMutation.mutate(body)}
-              onRunAll={() => runNowMutation.mutate({ scope: { libraryId: lib.id } })}
-              pending={updateMutation.isPending}
-              runPending={runNowMutation.isPending}
-            />
-          ))}
-          {libraries && libraries.length === 0 && (
-            <div className="text-[12.5px] text-zinc-600">No libraries yet.</div>
-          )}
-        </div>
-      </div>
+    <div className="overflow-hidden rounded-panel border border-line bg-surface glass:bg-white/[0.03]">
+      {(libraries ?? []).map((lib) => (
+        <LibraryScheduleCard
+          key={lib.id}
+          lib={lib}
+          schedules={schedules?.perLibrary[lib.id]}
+          onChange={(body) => updateMutation.mutate(body)}
+          onRunAll={() => runNowMutation.mutate(lib.id)}
+          pending={updateMutation.isPending}
+          runPending={runNowMutation.isPending}
+        />
+      ))}
     </div>
   );
 }
@@ -209,8 +138,10 @@ function LibraryScheduleCard({
   const [expanded, setExpanded] = useState(() => hasCustom);
 
   return (
-    <div className={`rounded-panel border bg-zinc-900/60 p-3 ${hasCustom ? 'border-l-[3px] border-l-amber-600/70 border-line' : 'border-line'}`}>
+    <div className="border-t border-line px-3.5 py-3 first:border-t-0">
       <button
+        type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
         className="flex w-full cursor-pointer items-center gap-2.5 text-left"
       >

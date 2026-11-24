@@ -4,9 +4,7 @@ import { Pencil, X, Upload, RotateCw, ChevronUp, ChevronDown, Check } from 'luci
 import { api, thumbUrl, libraryCoverUrl } from '../../lib/api';
 import { toast } from '../../components/Toast';
 import { Modal } from '../../components/Modal';
-import { INTERVAL_OPTIONS } from './JobsConfigureTab';
-import { useScanAllLibraries } from '../../hooks/useScanAllLibraries';
-import { TabHeader } from './index';
+import { INTERVAL_OPTIONS } from './JobSchedules';
 import type { LibraryWithStats } from '@sakuya/shared';
 
 const FOLDER_STATUS_COLOR: Record<string, string> = {
@@ -16,7 +14,7 @@ const FOLDER_STATUS_COLOR: Record<string, string> = {
   error: 'text-red-500',
 };
 
-export function LibrariesTab() {
+export function LibraryManager() {
   const queryClient = useQueryClient();
   const { data: libraries } = useQuery({ queryKey: ['libraries'], queryFn: api.libraries });
   const [newName, setNewName] = useState('');
@@ -36,8 +34,6 @@ export function LibrariesTab() {
     },
   });
 
-  const scanAllMutation = useScanAllLibraries(libraries);
-
   const reorderMutation = useMutation({
     mutationFn: (ids: number[]) => api.reorderLibraries(ids),
     onSuccess: () => invalidate(),
@@ -54,16 +50,6 @@ export function LibrariesTab() {
 
   return (
     <div>
-      <div className="flex items-center justify-between">
-        <TabHeader title="Libraries" subtitle="Manage read-only folder imports per library." />
-        <button
-          disabled={!libraries?.length || scanAllMutation.isPending}
-          onClick={() => scanAllMutation.mutate()}
-          className="mb-4 cursor-pointer rounded-btn border border-line px-3 py-1.5 text-[12.5px] font-semibold text-zinc-400 hover:text-zinc-200 disabled:opacity-40"
-        >
-          Scan All
-        </button>
-      </div>
       {(libraries ?? []).map((lib, i) => (
         <LibraryCard
           key={lib.id}
@@ -74,7 +60,7 @@ export function LibrariesTab() {
           canMoveDown={i < (libraries?.length ?? 0) - 1}
         />
       ))}
-      <div className="rounded-xl border border-dashed border-line p-4">
+      <div className="rounded-panel border border-dashed border-line p-4">
         <div className="mb-2.5 text-[13.5px] font-bold">New library</div>
         <div className="flex gap-2">
           <input
@@ -190,7 +176,7 @@ function LibraryCard({
   });
 
   return (
-    <div className="mb-3.5 rounded-xl border border-line bg-surface p-4">
+    <div className="mb-2.5 rounded-panel border border-line bg-surface p-4 glass:bg-white/[0.03]">
       <div className="mb-2.5 flex items-center gap-2.5">
         <div className="flex flex-1 items-center gap-2.5">
           <div

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
+import type { MouseEvent, ReactNode } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 import type { Media } from '@sakuya/shared';
 import { MediaCard } from './MediaCard';
@@ -17,6 +17,10 @@ interface MediaGridProps {
   onOpen: (index: number) => void;
   /** When passed, the grid supports multi-select: click toggles, shift extends, ctrl/cmd enters. */
   selection?: SelectionApi;
+  /** Cards get Discover's feedback menu. */
+  discoverMenu?: boolean;
+  /** Shown instead of the default when there are no items. */
+  empty?: ReactNode;
 }
 
 export function MediaGrid({
@@ -27,6 +31,8 @@ export function MediaGrid({
   isLoading,
   onOpen,
   selection,
+  discoverMenu,
+  empty,
 }: MediaGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
@@ -87,6 +93,7 @@ export function MediaGrid({
   }, [virtualRows, rowCount, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (!isLoading && items.length === 0) {
+    if (empty) return <>{empty}</>;
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
         <div className="mb-2.5 text-[34px]">◌</div>
@@ -116,6 +123,7 @@ export function MediaGrid({
                     selectMode={selection?.active}
                     selected={selection?.ids.has(item.id)}
                     onActivate={handleActivate}
+                    discoverMenu={discoverMenu}
                   />
                 </div>
               ))}

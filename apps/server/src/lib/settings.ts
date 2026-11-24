@@ -4,7 +4,10 @@ import { DEFAULT_MODEL_ID } from './config';
 
 export const DEFAULTS: Record<string, string> = {
   ai_tagging_enabled: '1',
+  // Percent. The original single threshold, now the general one; characters get their own, much
+  // stricter one because a wrong character name is worse than a missing one.
   confidence_threshold: '35',
+  confidence_threshold_character: '85',
   accent_color: '#8b5cf6',
   remember_mute_state: '0',
   remember_volume_level: '1',
@@ -25,6 +28,12 @@ export const DEFAULTS: Record<string, string> = {
   ui_style_chosen: '0',
   // The Liquid Glass dashboard banner; its close button turns this off.
   dashboard_hero: '1',
+  // How many database backups <dataDir>/backups keeps; older ones are deleted after each backup.
+  backup_keep: '7',
+  // Off until switched on: the job downloads ~195 MB of models and is slow on small CPUs.
+  character_detection_enabled: '0',
+  // Off until switched on: search by description downloads ~155 MB and embeds every file.
+  semantic_search_enabled: '0',
 };
 
 export function getSetting(key: string): string {
@@ -50,9 +59,23 @@ export function aiTaggingEnabled(): boolean {
   return getSetting('ai_tagging_enabled') === '1';
 }
 
-export function confidenceThreshold(): number {
-  const pct = Number(getSetting('confidence_threshold'));
-  return Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) / 100 : 0.35;
+function thresholdSetting(key: string): number {
+  const raw = getSetting(key);
+  const pct = raw.trim() === '' ? NaN : Number(raw);
+  return (Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) : Number(DEFAULTS[key])) / 100;
+}
+
+export interface TagThresholds {
+  general: number;
+  character: number;
+}
+
+/** Minimum model confidence, 0-1, per tag category. */
+export function confidenceThresholds(): TagThresholds {
+  return {
+    general: thresholdSetting('confidence_threshold'),
+    character: thresholdSetting('confidence_threshold_character'),
+  };
 }
 
 export function thumbnailCacheEnabled(): boolean {
@@ -70,4 +93,17 @@ export function gifsAsVideos(): boolean {
 
 export function videoTranscodeEnabled(): boolean {
   return getSetting('video_transcode_enabled') === '1';
+}
+
+export function backupKeep(): number {
+  const n = Number(getSetting('backup_keep'));
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 7;
+}
+
+export function characterDetectionEnabled(): boolean {
+  return getSetting('character_detection_enabled') === '1';
+}
+
+export function semanticSearchEnabled(): boolean {
+  return getSetting('semantic_search_enabled') === '1';
 }

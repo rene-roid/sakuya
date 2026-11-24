@@ -8,8 +8,10 @@ function useInfiniteMedia<F>(
   key: string,
   filters: F,
   fetchPage: (filters: F, cursor?: string) => Promise<MediaListResponse>,
+  enabled = true,
 ) {
   const query = useInfiniteQuery({
+    enabled,
     queryKey: [key, filters],
     queryFn: ({ pageParam }) => fetchPage(filters, pageParam || undefined),
     initialPageParam: '',
@@ -24,4 +26,5 @@ function useInfiniteMedia<F>(
 }
 
 export const useMediaInfinite = (filters: MediaFilters) => useInfiniteMedia('media', filters, api.mediaList);
-export const useDiscoverInfinite = (filters: DiscoverFilters) => useInfiniteMedia('discover', filters, api.discover);
+export const useDiscoverInfinite = (filters: DiscoverFilters, enabled = true) =>
+  useInfiniteMedia('discover', filters, api.discover, enabled);

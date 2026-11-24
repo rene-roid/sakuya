@@ -1,12 +1,14 @@
 import { Fragment, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus, ListChecks, MoreVertical } from 'lucide-react';
+import { Shuffle, ArrowUp, ArrowDown, Heart, X, BookmarkPlus, ListChecks, MoreVertical, TextSearch } from 'lucide-react';
 import { TagSearchInput } from './TagSearchInput';
+import { TagName } from './TagName';
 import { MenuItem, MenuLabel, MenuPanel } from './Menu';
 import { Segmented, TYPE_OPTIONS } from './Segmented';
 import { api } from '../lib/api';
 import { exploreQueryString } from '../hooks/useFilters';
 import { useOverflowCount } from '../hooks/useOverflowCount';
+import { useSettings } from '../hooks/useSettings';
 import type { FilterState, FilterActions } from '../hooks/useFilters';
 import type { SelectionApi } from '../hooks/useSelection';
 
@@ -59,9 +61,11 @@ export function FilterToolbar({
   const rowRef = useRef<HTMLDivElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showAllChips, setShowAllChips] = useState(false);
+  const describeEnabled = useSettings()?.semantic_search_enabled === '1';
+  const [describing, setDescribing] = useState(!!filters.describe);
   const query = exploreQueryString(filters);
   const hasFilters =
-    filters.tags.length > 0 || filters.q.length > 0 || filters.liked || filters.typeParam !== 'all';
+    filters.tags.length > 0 || filters.q.length > 0 || !!filters.describe || filters.liked || filters.typeParam !== 'all';
   const saveSearch = useMutation({
     mutationFn: (name: string) => api.createSavedSearch({ name, query }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['saved-searches'] }),
@@ -172,12 +176,21 @@ export function FilterToolbar({
             libraryId={filters.libraryId}
             placeholder="Add tag filter, press Enter…"
             showChips={false}
+            describe={
+              describeEnabled
+                ? { active: describing, onToggle: () => setDescribing((on) => !on), onSubmit: actions.setDescribe }
+                : undefined
+            }
           />
         </div>
       ),
     },
   ];
 
+  // A description ranks by fit, so there is no order to pick.
+  if (filters.describe) {
+    for (const id of ['sort', 'randomize']) items.splice(items.findIndex((item) => item.id === id), 1);
+  }
   if (hasFilters) {
     items.push({
       id: 'clear',
@@ -218,7 +231,7 @@ export function FilterToolbar({
   }
 
   const collapsible = items.filter((item) => !item.pinned);
-  const signature = `${items.map((i) => i.id).join('|')}|${filters.sort}|${filters.dir}|${filters.liked}`;
+  const signature = `${items.map((i) => i.id).join('|')}|${filters.sort}|${filters.dir}|${filters.liked}|${describing}`;
   const hiddenCount = useOverflowCount(rowRef, boxRef, collapsible.length, signature);
   // Collapse right to left: the last `hiddenCount` collapsible controls move into the menu.
   const hiddenIds = new Set(collapsible.slice(collapsible.length - hiddenCount).map((item) => item.id));
@@ -231,6 +244,17 @@ export function FilterToolbar({
   // Tag filters and free-text terms read the same way — an active filter you can click off —
   // so they share one list rather than sitting in two places with two shapes.
   const chips = [
+    ...(filters.describe
+      ? [
+          {
+            id: 'describe',
+            label: filters.describe,
+            tag: false,
+            describe: true,
+            remove: () => actions.setDescribe(''),
+          },
+        ]
+      : []),
     ...filters.tags.map((tag) => ({ id: `tag:${tag}`, label: tag, tag: true, remove: () => actions.removeTag(tag) })),
     ...filters.q.map((term) => ({
       id: `q:${term}`,
@@ -283,7 +307,8 @@ export function FilterToolbar({
                 chip.tag ? 'border-accent/40 bg-accent/15 text-violet-300' : 'border-line-strong bg-zinc-800 text-zinc-300'
               }`}
             >
-              {chip.label}
+              {'describe' in chip && <TextSearch size={12} className="-ml-0.5 text-zinc-400" />}
+              {chip.tag ? <TagName tag={chip.label} /> : 'describe' in chip ? `“${chip.label}”` : chip.label}
               <span
                 title={`Remove ${chip.label}`}
                 className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded-full ${
