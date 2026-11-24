@@ -34,11 +34,12 @@ services:
     # mem_limit: "3g"
     volumes:
       # Long syntax so a missing file is an error. Short syntax would silently create a *directory*
-      # named sakuya.config.json on the host.
+      # named sakuya.config.json on the host. Writable so Settings > Security can change the login
+      # password; set read_only: true to keep it host-only (the password is then changed here).
       - type: bind
         source: ./sakuya.config.json
         target: /app/sakuya.config.json
-        read_only: true
+        read_only: false
         bind:
           create_host_path: false
       # Data (DB, downloaded tagger model, thumbnails, uploads).

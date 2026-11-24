@@ -1,4 +1,5 @@
 import type {
+  AuthSettings,
   AuthStatus,
   BackupsPayload,
   BoardWithStats,
@@ -152,6 +153,11 @@ export const api = {
   authStatus: () => request<AuthStatus>('/api/auth/status'),
   login: (secret: string) => request<{ ok: true }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ secret }) }),
   logout: () => request<{ ok: true }>('/api/auth/logout', { method: 'POST' }),
+  authSettings: () => request<AuthSettings>('/api/auth/settings'),
+  changePassword: (body: { current?: string; next: string }) =>
+    request<AuthSettings>('/api/auth/password', { method: 'POST', body: JSON.stringify(body) }),
+  disableLogin: (current: string) =>
+    request<AuthSettings>('/api/auth/disable', { method: 'POST', body: JSON.stringify({ current }) }),
   dashboard: () => request<DashboardResponse>('/api/dashboard'),
   savedSearches: () => request<SavedSearch[]>('/api/saved-searches'),
   createSavedSearch: (body: { name: string; query: string }) =>

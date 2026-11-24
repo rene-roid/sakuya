@@ -151,7 +151,7 @@ gitignored, and every key is optional. Restart after editing it.
 | `server.dataDir` | `null` | DB, thumbnails, uploads and models. `null` = `~/.sakuya` if it exists, else `apps/server/data`. |
 | `server.https` | `false` | Mark the login cookie `Secure`. Only with HTTPS in front. |
 | `web.port` | `5173` | Web interface port. |
-| `auth.enabled` / `auth.secret` | `false` / `""` | Require a password. Changing the secret signs everyone out. |
+| `auth.enabled` / `auth.secret` | `false` / `""` | Require a password. Changing the secret signs everyone out. Settings > Security sets or changes it (asking for the current one first); editing this file works too and applies without a restart, which is how you reset a forgotten one. |
 | `limits.cpus` | `null` | CPU budget in cores (fractions allowed). Sizes job concurrency and ffmpeg/onnx/libvips threads. |
 | `limits.memory` | `null` | Hard memory ceiling, e.g. `"2g"`, enforced via systemd (Linux) or a job object (Windows). |
 

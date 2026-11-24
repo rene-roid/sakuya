@@ -35,7 +35,7 @@ test('ids are unique kebab-case and every entry sits in a known section', () => 
   for (const entry of SETTINGS) expect(sectionIds.has(entry.section)).toBe(true);
 });
 
-test('there are eight sections in three sidebar groups, each with at least one setting', () => {
+test('there are nine sections in three sidebar groups, each with at least one setting', () => {
   expect(SECTIONS.map((s) => `${s.group}/${s.id}`)).toEqual([
     'Preferences/general',
     'Preferences/playback',
@@ -43,6 +43,7 @@ test('there are eight sections in three sidebar groups, each with at least one s
     'Library/tagging',
     'Library/processing',
     'Library/jobs',
+    'System/security',
     'System/storage',
     'System/about',
   ]);
@@ -133,6 +134,12 @@ test('backup finds the Storage backup rows and the Jobs schedule, and trash find
   expect(ids('trash')).toEqual(['trash']);
   expect(settingHref('trash')).toBe('/settings?tab=storage#trash');
   expect(settingHref('schedule-backup')).toBe('/settings?tab=jobs#schedule-backup');
+});
+
+test('password finds the Security rows', () => {
+  expect(ids('password')).toEqual(['login-password', 'password-file']);
+  expect(ids('forgot')).toEqual(['password-file']);
+  expect(settingHref('login-password')).toBe('/settings?tab=security#login-password');
 });
 
 test('an empty or unmatched query finds nothing', () => {

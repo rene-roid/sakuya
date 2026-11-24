@@ -57,7 +57,7 @@
           "default": false
         },
         "secret": {
-          "description": "The password. Required when auth is enabled. Changing it signs every session out.",
+          "description": "The password. Required when auth is enabled. Changing it signs every session out. Settings > Security can change it; an edit here applies without a restart.",
           "type": "string",
           "default": ""
         }

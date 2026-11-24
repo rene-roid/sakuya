@@ -307,6 +307,55 @@ function initialFile(seed: Record<string, Record<string, unknown>>): string {
   return `${JSON.stringify(content, null, 2)}\n`;
 }
 
+// --- Writing the login back ------------------------------------------------------------------
+
+/** The env vars that pin the login inside Docker, so the file's auth section is ignored. */
+export function authPinnedByEnv(env: Env = process.env): string[] {
+  if (env.SAKUYA_DOCKER !== '1') return [];
+  return ['SAKUYA_AUTH_ENABLED', 'SAKUYA_AUTH_SECRET'].filter((name) => env[name] !== undefined && env[name] !== '');
+}
+
+/**
+ * Rewrite only the "auth" section of the config file, keeping every other key as it is. Settings >
+ * Security calls this; editing the file by hand does the same job.
+ *
+ * Written to a temp file and renamed over the original, so a crash can't leave half a config. A
+ * Docker single-file bind mount can't be renamed over (EBUSY), and a folder we can't create files
+ * in can still hold a writable file, so either falls back to writing in place.
+ */
+export function writeAuthConfig(file: string, auth: { enabled: boolean; secret: string }): void {
+  let raw: Record<string, unknown> = {};
+  let mode = 0o600;
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    mode = fs.statSync(file).mode & 0o777;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      // Never clobber a file someone is halfway through editing.
+      throw new ConfigError(file, `is not valid JSON (${(err as Error).message}); fix it before changing the password`);
+    }
+    if (!isObject(parsed)) throw new ConfigError(file, 'must contain a JSON object');
+    raw = parsed;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  raw.auth = { ...(isObject(raw.auth) ? raw.auth : {}), enabled: auth.enabled, secret: auth.secret };
+  const text = `${JSON.stringify(raw, null, 2)}\n`;
+
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, text, { mode });
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EBUSY' && code !== 'EXDEV' && code !== 'EACCES' && code !== 'EPERM') throw err;
+    fs.writeFileSync(file, text);
+  }
+}
+
 // --- Loading ---------------------------------------------------------------------------------
 
 export interface LoadedConfig {

@@ -42,10 +42,20 @@ import {
 } from './BackupsAndTrash';
 import { UpdatesPanel } from '../../components/UpdatesPanel';
 import { TagRelations } from './TagRelations';
+import { LoginPasswordPanel, PasswordFileMeta } from './Security';
 
 export type SettingsKey = keyof Settings;
 
-export type SectionId = 'general' | 'playback' | 'libraries' | 'tagging' | 'processing' | 'jobs' | 'storage' | 'about';
+export type SectionId =
+  | 'general'
+  | 'playback'
+  | 'libraries'
+  | 'tagging'
+  | 'processing'
+  | 'jobs'
+  | 'security'
+  | 'storage'
+  | 'about';
 
 export interface SettingsSection {
   id: SectionId;
@@ -67,6 +77,7 @@ export const SECTIONS: readonly SettingsSection[] = [
     subtitle: 'Thumbnails, transcodes and image hashes.',
   },
   { id: 'jobs', label: 'Jobs', group: 'Library', subtitle: 'When background work runs.' },
+  { id: 'security', label: 'Security', group: 'System', subtitle: 'The password that locks Sakuya.' },
   {
     id: 'storage',
     label: 'Storage',
@@ -610,6 +621,31 @@ export const SETTINGS: readonly SettingEntry[] = [
     kind: 'custom',
     block: true,
     Control: JobHistory,
+  },
+
+  {
+    id: 'login-password',
+    section: 'security',
+    group: 'Login',
+    label: 'Login password',
+    description:
+      'Ask for a password before anyone can open Sakuya. Changing or turning it off needs the current password, and signs every other device out.',
+    keywords: 'password login lock unlock auth secret sign in protect security',
+    kind: 'custom',
+    block: true,
+    Control: LoginPasswordPanel,
+  },
+  {
+    id: 'password-file',
+    section: 'security',
+    group: 'Login',
+    label: 'Forgot the password?',
+    description:
+      'Edit auth.secret in sakuya.config.json and save. No current password is needed there: whoever can edit that file already controls this install.',
+    keywords: 'password reset recover forgot lost config file auth secret sakuya',
+    kind: 'custom',
+    Control: () => null,
+    Meta: PasswordFileMeta,
   },
 
   {

@@ -77,7 +77,7 @@ setting on hover.
 | `server.https` | `false` | Marks the login cookie `Secure`. Only with HTTPS in front: a `Secure` cookie is silently dropped over plain HTTP, which is a supported LAN setup. |
 | `web.port` | `5173` | Port of the web interface (the Vite dev server). |
 | `auth.enabled` | `false` | Require a password. |
-| `auth.secret` | `""` | The password; required when `auth.enabled` is on. Changing it signs every session out. |
+| `auth.secret` | `""` | The password; required when `auth.enabled` is on. Changing it signs every session out. Settings > Security writes both `auth` keys back here after checking the current password. A hand edit of the `auth` section applies within a few seconds without a restart (every other key still needs one), so a forgotten password is reset by editing this file. |
 | `limits.cpus` | `null` | CPU budget in cores, fractions allowed. See [Resource limits](#resource-limits). |
 | `limits.memory` | `null` | Memory ceiling: `"2g"`, `"512m"`, or a byte count. See [Resource limits](#resource-limits). |
 

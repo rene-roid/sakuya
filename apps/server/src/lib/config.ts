@@ -17,6 +17,7 @@ for (const warning of loaded.warnings) console.warn(`[sakuya] ${warning}`);
 
 export const CONFIG = loaded.config;
 export const CONFIG_FILE = loaded.file;
+export const IN_DOCKER = loaded.docker;
 
 export const HOME_DATA_DIR = path.join(os.homedir(), '.sakuya');
 export const LOCAL_DATA_DIR = path.join(serverRoot, 'data');

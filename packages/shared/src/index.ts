@@ -559,6 +559,16 @@ export interface AuthStatus {
   unlocked: boolean;
 }
 
+/** Settings > Security: the login as stored in sakuya.config.json. */
+export interface AuthSettings {
+  enabled: boolean;
+  /** The config file holding the password, as this process sees it (a container path in Docker). */
+  configFile: string;
+  docker: boolean;
+  /** Why it can't be changed from the app here, or null when it can. */
+  lockedReason: string | null;
+}
+
 export interface JobSchedule {
   mode: ScheduleMode;
   intervalMinutes: number;

@@ -23,6 +23,7 @@ import { backupsRouter } from './routes/backups';
 import { trashRouter } from './routes/trash';
 import { authRouter } from './routes/auth';
 import { requireAuth } from './lib/auth';
+import { watchConfigFile } from './lib/authConfig';
 import { scheduleAll } from './services/jobScheduler';
 import { startTrashPurge } from './services/trash';
 import { clearStaleFrames } from './services/videoFrames';
@@ -92,4 +93,5 @@ app.listen(port, host, () => {
   if (limits) console.log(limits);
   scheduleAll();
   startTrashPurge();
+  watchConfigFile();
 });
