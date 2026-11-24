@@ -122,5 +122,5 @@ jobs:
             --title "Sakuya $VERSION" \
             --notes-file "apps/web/src/releases/$VERSION.md" \
             ${{ inputs.prerelease && '--prerelease' || '' }}
-          gh release upload "$TAG" dist/Sakuya-* dist/latest*.yml dist/*.blockmap
+          gh release upload "$TAG" dist/Sakuya-*.exe dist/Sakuya-*.AppImage dist/latest*.yml dist/*.blockmap
           gh release edit "$TAG" --draft=false
